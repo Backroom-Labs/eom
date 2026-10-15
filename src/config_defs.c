@@ -18,6 +18,11 @@
 
 #define NVS_NAMESPACE "config"
 #define NVS_LAST_CONFIG_FILE "_filename"
+#define NVS_EMBEDDED_HASH "_embed_hash"
+
+// data/config.json, compiled into the firmware (see EMBED_TXTFILES in src/CMakeLists.txt).
+extern const char embedded_config_start[] asm("_binary_config_json_start");
+extern const char embedded_config_end[] asm("_binary_config_json_end");
 
 static const char* TAG = "config_defs";
 
@@ -25,6 +30,60 @@ static StaticSemaphore_t sFileMutexStatic;
 static SemaphoreHandle_t sFileMutex = NULL;
 
 extern CONFIG_DEFS;
+
+static uint32_t _fnv1a(const char* data, size_t len) {
+    uint32_t hash = 2166136261u;
+    for (size_t i = 0; i < len; i++) {
+        hash ^= (uint8_t)data[i];
+        hash *= 16777619u;
+    }
+    return hash;
+}
+
+/**
+ * @brief Apply the firmware's built-in data/config.json if it changed since it was last applied.
+ *
+ * Settings saved on the device (e.g. changed from the UI) are kept until data/config.json is edited
+ * and the firmware reflashed; then every key in that file overrides the saved value.
+ */
+static void _apply_embedded_config(void) {
+    esp_err_t err;
+    nvs_handle_t nvs;
+    uint32_t stored_hash = 0;
+    // EMBED_TXTFILES appends a NUL terminator, which isn't part of the file:
+    size_t len = embedded_config_end - embedded_config_start - 1;
+    uint32_t hash = _fnv1a(embedded_config_start, len);
+
+    err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Can't open NVS to check built-in config: %s", esp_err_to_name(err));
+        return;
+    }
+
+    nvs_get_u32(nvs, NVS_EMBEDDED_HASH, &stored_hash);
+    if (stored_hash == hash) {
+        nvs_close(nvs);
+        return;
+    }
+
+    cJSON* root = cJSON_Parse(embedded_config_start);
+    if (root == NULL) {
+        ESP_LOGE(TAG, "Built-in config.json is not valid JSON, ignoring it.");
+        nvs_close(nvs);
+        return;
+    }
+
+    ESP_LOGI(TAG, "Built-in config.json changed (%08lx -> %08lx), applying it.",
+             (unsigned long)stored_hash, (unsigned long)hash);
+    json_to_config_merge(root, &Config);
+    cJSON_Delete(root);
+
+    if (config_save_to_sd(Config._filename, &Config) == ESP_OK) {
+        nvs_set_u32(nvs, NVS_EMBEDDED_HASH, hash);
+        nvs_commit(nvs);
+    }
+    nvs_close(nvs);
+}
 
 static esp_err_t _store_last_filename(void) {
     esp_err_t err;
@@ -71,6 +130,7 @@ esp_err_t config_init(void) {
     ESP_LOGI(TAG, "Config loaded from SD: %s\n", Config._filename);
 
     nvs_close(nvs);
+    _apply_embedded_config();
 
     ESP_LOGI(TAG, "Config initialization complete.");
     return ESP_OK;
@@ -101,6 +161,7 @@ defaults:
         }
     }
 
+    _apply_embedded_config();
     return err;
 }
 

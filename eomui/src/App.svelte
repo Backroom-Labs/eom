@@ -1046,7 +1046,7 @@
         await BleClient.initialize();
         
         const device = await BleClient.requestDevice({
-          namePrefix: 'Libotoy',
+          namePrefix: 'EOM',
           optionalServices: [BT_SERVICE_UUID],
         });
         
