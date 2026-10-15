@@ -22,7 +22,7 @@ CONFIG_DEFS {
     CFG_NUMBER(ap_max_connections, 4);
 
     // Bluetooth Settings
-    CFG_STRING(bt_display_name, "Libotoy");
+    CFG_STRING(bt_display_name, "EOM_BT");
     CFG_BOOL(bt_on, true);
     CFG_BOOL(force_bt_coex, true);
 
@@ -60,11 +60,11 @@ CONFIG_DEFS {
     CFG_ENUM(vibration_mode, vibration_mode_t, Depletion);
 
     // Post-Orgasm Torture
-    CFG_BOOL(use_post_orgasm, false);
+    CFG_BOOL(use_post_orgasm, true);
     CFG_NUMBER(clench_pressure_sensitivity, 300);
     CFG_NUMBER(clench_time_to_orgasm_ms, 1500);
     CFG_NUMBER(clench_time_threshold_ms, 900);
-    CFG_BOOL(clench_detector_in_edging, false);
+    CFG_BOOL(clench_detector_in_edging, true);
     CFG_NUMBER(auto_edging_duration_minutes, 30);
     CFG_NUMBER(post_orgasm_duration_seconds, 10);
     CFG_BOOL(post_orgasm_menu_lock, false);
