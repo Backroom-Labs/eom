@@ -21,7 +21,8 @@ You could use the app by itself to control multiple sex toys at once without am 
 
 ## Web UI
 
-[The UI is posted at https://rubberyfun.github.io/endless-orgasm-machine/eomui/public](https://rubberyfun.github.io/endless-orgasm-machine/eomui/public) and can be installed on your Android or PC as a PWA app for offline use. 
+[The UI is posted at https://backroom-labs.github.io/eom/eomui/public
+](https://backroom-labs.github.io/eom/eomui/public) and can be installed on your Android or PC as a PWA app for offline use. 
 
 This is what the app view looks like:
 (the purple icon switches between chart mode and realtime mode)
