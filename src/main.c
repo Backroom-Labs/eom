@@ -8,6 +8,7 @@
 #include "orgasm_control.h"
 #include "polyfill.h"
 #include "system/http_server.h"
+#include "system/ota.h"
 #include "version.h"
 #include "wifi_manager.h"
 #include <esp_https_ota.h>
@@ -22,6 +23,13 @@
 
 
 char* TAG = "main";
+
+// A freshly installed OTA image boots in the ESP_OTA_IMG_PENDING_VERIFY state. It's confirmed once it
+// has run this long with the control loop ticking; if it crashes or fails the check before then,
+// the bootloader rolls back to the previous image.
+#define BOOT_HEALTH_CHECK_DELAY_MS (30 * 1000)
+
+static volatile uint32_t main_task_ticks = 0;
 
 
 void spiffs_init() {
@@ -105,6 +113,7 @@ static void main_task(void* args) {
     for (;;) {
         orgasm_control_tick();
         eom_hal_led_tick();
+        main_task_ticks++;
 
         //send_output1();
         vTaskDelay(1);
@@ -198,8 +207,8 @@ static void sleep_monitor_task(void* args) {
     }
 }
 
-esp_err_t run_boot_diagnostic(void) {
-    esp_err_t err = ESP_ERR_INVALID_ARG;
+// Returns true if this is a new OTA image that still has to prove it works.
+static bool boot_needs_verification(void) {
     esp_ota_img_states_t ota_state = ESP_OTA_IMG_UNDEFINED;
 
     const esp_partition_t* configured = esp_ota_get_boot_partition();
@@ -216,7 +225,7 @@ esp_err_t run_boot_diagnostic(void) {
         ESP_LOGW(
             TAG,
             "(This can happen if either the OTA boot data or preferred boot image become corrupted "
-            "somehow.)"
+            "somehow, or after a rollback.)"
         );
     }
 
@@ -228,20 +237,23 @@ esp_err_t run_boot_diagnostic(void) {
         running->address
     );
 
-    if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK) {
-        if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
-            // if (diagnostic_is_ok) {
-            ESP_LOGI(TAG, "Diagnostics completed successfully! Continuing execution ...");
-            esp_ota_mark_app_valid_cancel_rollback();
-            err = ESP_OK;
-            // } else {
-            // ESP_LOGE(TAG, "Diagnostics failed! Start rollback to the previous version ...");
-            // esp_ota_mark_app_invalid_rollback_and_reboot();
-            // }
-        }
+    return esp_ota_get_state_partition(running, &ota_state) == ESP_OK &&
+           ota_state == ESP_OTA_IMG_PENDING_VERIFY;
+}
+
+static void boot_health_check_task(void* args) {
+    uint32_t ticks_before = main_task_ticks;
+    vTaskDelay(pdMS_TO_TICKS(BOOT_HEALTH_CHECK_DELAY_MS));
+
+    if (main_task_ticks != ticks_before) {
+        ESP_LOGI(TAG, "Update complete, firmware %s confirmed.", EOM_VERSION);
+        esp_ota_mark_app_valid_cancel_rollback();
+    } else {
+        ESP_LOGE(TAG, "Control loop isn't running, rolling back to the previous firmware.");
+        esp_ota_mark_app_invalid_rollback_and_reboot();
     }
 
-    return err;
+    vTaskDelete(NULL);
 }
 
 void app_main() {
@@ -272,14 +284,9 @@ void app_main() {
 
     printf("Claus Macher presents the Endless Orgasm Machine\n");
     printf("Version: %s\n", EOM_VERSION);
+    printf("Board: %s\n", ota_get_board());
 
-    //Post-Update Diagnostics
-    esp_err_t dxerr = run_boot_diagnostic();
-    if (dxerr != ESP_ERR_INVALID_ARG) {
-        if (dxerr == ESP_OK) {
-            ESP_LOGI(TAG, "%s\n%s", "Update complete.", EOM_VERSION);
-        }
-    }
+    bool verify_boot = boot_needs_verification();
 
     // Green = prepare Networking
     // vTaskDelayUntil(&boot_tick, 1000UL / portTICK_PERIOD_MS);
@@ -312,5 +319,9 @@ void app_main() {
     xTaskCreate(ble_task, "BT", 1024 * 12, NULL, tskIDLE_PRIORITY + 2, NULL);
     xTaskCreate(sleep_monitor_task, "SLEEP", 1024 * 4, NULL, tskIDLE_PRIORITY, NULL);
     xTaskCreate(loop_task, "LOOP", 1024 * 8, NULL, tskIDLE_PRIORITY, NULL);
+    if (verify_boot) {
+        ESP_LOGI(TAG, "New firmware, confirming in %d s if it stays healthy.", BOOT_HEALTH_CHECK_DELAY_MS / 1000);
+        xTaskCreate(boot_health_check_task, "BOOTCHK", 1024 * 4, NULL, tskIDLE_PRIORITY + 1, NULL);
+    }
     ESP_LOGI(TAG, "Tasks created, entering main loop.");
 }   

@@ -64,6 +64,8 @@ All updates are done over USB from PlatformIO (there is no over-the-air update y
 |Filesystem: ```config.json```, ```server.crt```, ```server.key```|SPIFFS partition|```Upload Filesystem Image``` (```pio run -e <board> -t uploadfs```)|
 |Settings saved from the UI|NVS + SPIFFS|The UI, or overwritten as described below|
 
+**Firmware signing (groundwork for OTA updates).**  Every build signs ```firmware.bin``` with an ECDSA key that is generated into ```keys/``` on your first build (requires ```openssl```; see [tools/gen_signing_keys.py](tools/gen_signing_keys.py)).  The device will only accept over-the-air updates signed with the same key as the firmware it is running, so **back up ```keys/```**: it is not committed to git, and if you lose it, devices have to be updated over USB once more.  New firmware that crashes or stops running within 30 seconds of its first boot is rolled back automatically.
+
 ### Small code changes: firmware upload only
 For day-to-day changes to anything in ```src/``` or a ```build_flags``` pin change in [platformio.ini](platformio.ini), you only need to reflash the firmware:
 
