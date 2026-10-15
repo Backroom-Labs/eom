@@ -203,11 +203,12 @@ struct config {
     // Output continuous stream of arousal data over serial for backwards compatibility with other
     // software.
     bool classic_serial;
-    // Enable SSL server, which will eat all your RAM!
+    // Enable the SSL (wss://) server on port 443. Falls back to plain ws:// if no certificate is
+    // found. Generate one with tools/gen_cert.py (runs automatically on PlatformIO builds).
     bool use_ssl;
-    // Path to cacert.pem, which will be needed to run SSL server.
+    // Path to the server certificate. Defaults to /spiffs/server.crt.
     char* ssl_servercert_path;
-    // Path to prvtkey.pem, which will be needed to run SSL server.
+    // Path to the server private key. Defaults to /spiffs/server.key.
     char* ssl_prvtkey_path;
     // Local hostname for your device.
     char hostname[64];

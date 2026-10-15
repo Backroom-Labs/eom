@@ -9,11 +9,10 @@
 #include "system/websocket_handler.h"
 #include "util/fs.h"
 #include "esp_wifi.h"
-#include <dirent.h>
-#include <stdio.h>
+#include <stdlib.h>
 
-#define DEFAULT_CACERT_PATH "/spiffs/ui/server.crt"
-#define DEFAULT_PRVTKEY_PATH "/spiffs/ui/server.key"
+#define DEFAULT_CACERT_PATH "/spiffs/server.crt"
+#define DEFAULT_PRVTKEY_PATH "/spiffs/server.key"
 
 static const char* TAG = "http_server";
 static httpd_handle_t _server = NULL;
@@ -30,13 +29,37 @@ static const httpd_uri_t routes[] = {
     },
 };
 
-
 static void init_routes(httpd_handle_t server) {
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); i++) {
         httpd_uri_t route = routes[i];
         ESP_LOGI(TAG, "* Route: %s", route.uri);
         httpd_register_uri_handler(server, &route);
     }
+}
+
+// Loads the TLS certificate and key from SPIFFS. Returns false (and frees anything loaded) if
+// either is missing, so the caller can fall back to a plain ws:// server.
+static bool load_ssl_credentials(httpd_ssl_config_t* ssl_config) {
+    const char* cert_path =
+        Config.ssl_servercert_path ? Config.ssl_servercert_path : DEFAULT_CACERT_PATH;
+    const char* key_path = Config.ssl_prvtkey_path ? Config.ssl_prvtkey_path : DEFAULT_PRVTKEY_PATH;
+
+    char* cert = NULL;
+    char* key = NULL;
+    size_t cert_len = fs_read_file(cert_path, &cert);
+    size_t key_len = fs_read_file(key_path, &key);
+
+    if (cert_len == 0 || key_len == 0) {
+        free(cert);
+        free(key);
+        return false;
+    }
+
+    ssl_config->servercert = (const uint8_t*)cert;
+    ssl_config->servercert_len = cert_len;
+    ssl_config->prvtkey_pem = (const uint8_t*)key;
+    ssl_config->prvtkey_len = key_len;
+    return true;
 }
 
 static httpd_handle_t start_webserver(void) {
@@ -54,73 +77,32 @@ static httpd_handle_t start_webserver(void) {
     config.open_fn = websocket_open_fd;
     config.close_fn = websocket_close_fd;
 
-    if (!Config.use_ssl) {
-        ESP_LOGI(TAG, "Starting server on port: %d", config.server_port);
-        err = httpd_start(&server, &config);
-    } else {
+    httpd_ssl_config_t ssl_config = HTTPD_SSL_CONFIG_DEFAULT();
+    bool use_ssl = Config.use_ssl && load_ssl_credentials(&ssl_config);
+
+    if (Config.use_ssl && !use_ssl) {
+        ESP_LOGW(
+            TAG,
+            "use_ssl is set but no certificate/key found on SPIFFS; falling back to plain ws://"
+        );
+    }
+
+    if (use_ssl) {
+        // The secure server listens on ssl_config.port_secure (443), not websocket_port.
         ESP_LOGI(
             TAG,
             "Starting SSL server on port: %d (%d bytes free)",
-            config.server_port,
+            ssl_config.port_secure,
             esp_get_free_heap_size()
         );
-
-        httpd_ssl_config_t ssl_config = HTTPD_SSL_CONFIG_DEFAULT();
         ssl_config.httpd = config;
-        DIR *dir = opendir("/spiffs");
-        if (!dir) {
-            ESP_LOGE(TAG, "Failed to open /spiffs directory. Is SPIFFS mounted?");
-            return NULL;
-        } else {
-            struct dirent *entry;
-            while ((entry = readdir(dir)) != NULL) {
-                ESP_LOGI(TAG, "Found file: %s", entry->d_name);
-            }
-        }
-        closedir(dir);
-        char path[CONFIG_PATH_MAX];
-
-        sniprintf(
-            path,
-            CONFIG_PATH_MAX,
-            "%s",
-            Config.ssl_servercert_path ? Config.ssl_servercert_path : DEFAULT_CACERT_PATH
-        );
-
-        ssl_config.servercert_len = fs_read_file(path, (char**)&ssl_config.servercert);
-        //servercert = ssl_config.servercert;
-
-        if (ssl_config.servercert_len <= 0) {
-            ESP_LOGE(TAG, "Error reading CA Certificate.");
-            return NULL;
-        } else {
-            ESP_LOGD(TAG, "%d%s", ssl_config.servercert_len, ssl_config.servercert);
-        }
-
-        sniprintf(
-            path,
-            CONFIG_PATH_MAX,
-            "%s",
-            Config.ssl_prvtkey_path ? Config.ssl_prvtkey_path : DEFAULT_PRVTKEY_PATH
-        );
-
-        ssl_config.prvtkey_len = fs_read_file(path, (char**)&ssl_config.prvtkey_pem);
-        //prvtkey_pem = ssl_config.prvtkey_pem;
-
-        if (ssl_config.prvtkey_len <= 0) {
-            ESP_LOGE(TAG, "Error reading SSL Private Key.");
-            return NULL;
-        } else {
-            ESP_LOGI(TAG, "%d%s", ssl_config.prvtkey_len, ssl_config.prvtkey_pem);
-        }
-
-        ESP_LOGI(TAG, "SSL Certificates provisioned. (%d bytes free)", esp_get_free_heap_size());
         err = httpd_ssl_start(&server, &ssl_config);
-        
-
-        ESP_LOGI(TAG, "SSL Server started.");
-
-
+        // httpd_ssl_start copies the credentials, so the buffers can be released.
+        free((void*)ssl_config.servercert);
+        free((void*)ssl_config.prvtkey_pem);
+    } else {
+        ESP_LOGI(TAG, "Starting server on port: %d", config.server_port);
+        err = httpd_start(&server, &config);
     }
 
     if (err != ESP_OK) {
@@ -130,15 +112,11 @@ static httpd_handle_t start_webserver(void) {
 
     ESP_LOGI(TAG, "Server started, registering routes.");
     init_routes(server);
-    
-    // Start the WebSocket ping timer
-    //websocket_start_ping_timer();
 
     return server;
 }
 
 static void stop_webserver(httpd_handle_t server) {
-    //websocket_stop_ping_timer();
     httpd_stop(server);
 }
 
