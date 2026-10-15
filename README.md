@@ -21,19 +21,15 @@ You could use the app by itself to control multiple sex toys at once without am 
 
 ## Web UI
 
-[The UI is posted at https://backroom-labs.github.io/eom/eomui/public
-](https://backroom-labs.github.io/eom/eomui/public) and can be installed on your Android or PC as a PWA app for offline use. 
+[The UI is posted at https://backroom-labs.github.io/eom/eomui/public](https://backroom-labs.github.io/eom/eomui/public) and can be installed on your Android or PC as a PWA app for offline use. 
 
 This is what the app view looks like:
 (the purple icon switches between chart mode and realtime mode)
 ![Screenshot](doc/Screenshot3.png)
 
-For legacy purposes the UI is also on the ESP32 itself and can be found by visiting the ```/ui``` endpoint at the IP address of your device.  You can watch the serial output to determine the IP.  Due to space limitations the embedded version can't connect to other toys.  It's basically for monitoring the websocket output.
+The UI is not hosted on the device; the ESP32 only serves the WebSocket API (and Bluetooth). Use the hosted PWA above, or the Android/iOS app.
 
-Example: If you join the EOM WiFi access point the IP will be: ```192.168.4.1``` you should visit ```http://192.168.4.1/ui```  It will automatically open a connection to the websocket endpoint at ```http://192.168.4.1/```.
-
-
-![Screenshot](doc/Screenshot.png) 
+To connect over WiFi, click the WebSocket button and enter your EOM's address. If you join the EOM WiFi access point it is ```wss://192.168.4.1/```.  Because the hosted UI is served over https, browsers require a secure (```wss://```) connection: visit ```https://192.168.4.1/``` once and accept the self-signed certificate before connecting.  Bluetooth needs none of this.
 
 ### So how do I get one
 Well, I'll get a store together eventually but for now you'll have to build it yourself.  These instructions are meant to make the simplest build possible so you can get playing. 
@@ -61,7 +57,7 @@ If you go with an inflatable plug you're on your own...There are not yet any fil
 ## bluetooth usage
 WiFi is NOT necessary anymore!  The UI can work through bluetooth now! No ip address, wifi setup, or anything else needed.  Just connect to your EOM directly by clicking the bluetooth icon.  Android or PC Chrome only! Sorry Apple and Firefox enthusiasts but those two have deemed web bluetooth an unacceptable risk and it will never be available.
 
-So how do you get that running? It is now configured as a PWA!  This means you can pull it up once from https://rubberyfun.github.io/endless-orgasm-machine/eomui/public and install it as an app.  It does not require an internet connection to work after installation...its just there in app mode ready to go.  I'll probably end up splitting the UI into an embedded version and an app version.  
+So how do you get that running? It is now configured as a PWA!  This means you can pull it up once from https://backroom-labs.github.io/eom/eomui/public and install it as an app.  It does not require an internet connection to work after installation...its just there in app mode ready to go.
 
 
 ### bluetooth usage with Xtoys:

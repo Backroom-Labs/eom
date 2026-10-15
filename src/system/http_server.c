@@ -9,95 +9,17 @@
 #include "system/websocket_handler.h"
 #include "util/fs.h"
 #include "esp_wifi.h"
-#include <sys/stat.h>
 #include <dirent.h>
 #include <stdio.h>
 
 #define DEFAULT_CACERT_PATH "/spiffs/ui/server.crt"
 #define DEFAULT_PRVTKEY_PATH "/spiffs/ui/server.key"
-#define SCRATCH_BUFSIZE  16384
 
 static const char* TAG = "http_server";
 static httpd_handle_t _server = NULL;
-static char* index_html = NULL;
-char scratch[SCRATCH_BUFSIZE];
-struct stat file_stat;
 
-esp_err_t http_handler(httpd_req_t* req) {
-    char filepath[128];
-    strcpy(filepath, "/spiffs");
-    
-    // If filepath doesn't contain "/ui", append it
-    if (strstr(req->uri, "/ui") == NULL) {
-        strncat(filepath, "/ui", sizeof(filepath) - strlen(filepath) - 1);
-    }
-    strncat(filepath, req->uri, sizeof(filepath) - strlen(filepath) - 1);
-    
-    if ((filepath[strlen(filepath) - 1] == '/')) {
-        strncat(filepath, "index.html", sizeof(filepath) - strlen(filepath) - 1);
-    }
-    if (strchr(filepath, '.') == NULL) {
-        strncat(filepath, "/index.html", sizeof(filepath) - strlen(filepath) - 1);
-    }
-    ESP_LOGI(TAG, "Sending file : %s", filepath);
-    httpd_resp_set_type(req, "text/html");
-
-    FILE* fd = fopen(filepath, "r");
-    if (!fd) {
-        ESP_LOGE(TAG, "Failed to read existing file : %s", filepath);
-        /* Respond with 500 Internal Server Error */
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to read existing file");
-        return ESP_FAIL;
-    }
-
-    /* Use local scratch buffer for temporary storage */
-    char *chunk = scratch;
-    size_t chunksize;
-    do {
-        /* Read file in chunks into the scratch buffer */
-        chunksize = fread(chunk, 1, SCRATCH_BUFSIZE, fd);
-
-        if (chunksize > 0) {
-            /* Send the buffer contents as HTTP response chunk */
-            if (httpd_resp_send_chunk(req, chunk, chunksize) != ESP_OK) {
-                fclose(fd);
-                ESP_LOGE(TAG, "File sending failed!");
-                httpd_resp_send_chunk(req, NULL, 0);
-                httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to send file");
-               return ESP_FAIL;
-           }
-        }
-    } while (chunksize != 0);
-    /* Close file after sending complete */
-    fclose(fd);
-    httpd_resp_send_chunk(req, NULL, 0);
-    return ESP_OK;
-}
-
-esp_err_t http_or_websocket_handler(httpd_req_t* req) {
-    //havent figured out how to serve both ws and http on same route yet .. for now start with "/ui" endpoint.  "/"" endpoint needs to be ws for backwards compatibility
-
-    //if (req->hdr_fields_len > 0) { // Check for headers to avoid crashing on empty requests
-    char dummy[128];
-    esp_err_t hdr_ret = httpd_req_get_hdr_value_str(req, "Upgrade", dummy, sizeof(dummy));
-    char *upgrade_header = (hdr_ret == ESP_OK) ? dummy : NULL;
-        if (upgrade_header != NULL && strcmp(upgrade_header, "websocket") == 0) {
-            ESP_LOGI("Handler", "WebSocket upgrade request received");
-            //return httpd_ws_upgrade_req_begin(req); // Initiate WebSocket handshake
-            return websocket_handler(req);
-        }
-    //}
-    // If not a WebSocket upgrade, handle as a standard HTTP GET request
-    return http_handler(req);
-
-    // if (httpd_req_get_hdr_value_len(req, "Sec-WebSocket-Key") > 0) {
-    //     return websocket_handler(req);
-    // } else {
-    //     return http_handler(req);
-    // }
-}
-
-static const httpd_uri_t routes[] = { 
+// The UI is hosted externally (PWA / native app); the device only serves the WebSocket API.
+static const httpd_uri_t routes[] = {
     {
         .uri = "/",
         .method = HTTP_GET,
@@ -105,23 +27,7 @@ static const httpd_uri_t routes[] = {
         .user_ctx = NULL,
         .is_websocket = true,
         .handle_ws_control_frames = true,
-    } ,
-    {
-        .uri = "/ui",
-        .method = HTTP_GET,
-        .handler = &http_handler,
-        .user_ctx = NULL,
-        .is_websocket = false,
-        .handle_ws_control_frames = false,
-    } ,
-    {
-        .uri = "/ui/",
-        .method = HTTP_GET,
-        .handler = &http_handler,
-        .user_ctx = NULL,
-        .is_websocket = false,
-        .handle_ws_control_frames = false,
-    } ,
+    },
 };
 
 
