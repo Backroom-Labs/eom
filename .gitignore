@@ -46,3 +46,7 @@ eomui/buttplug/**
 !eomui/buttplug/client/ButtplugClientDevice.d.ts
 !eomui/buttplug/wasm/
 !eomui/buttplug/wasm/**
+
+# Capacitor/Android build outputs
+eomui/android/app/build/
+eomui/android/app/release/
