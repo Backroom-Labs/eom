@@ -73,10 +73,6 @@ size_t fs_read_file(const char* path, char** data) {
     return fsize + 1;
 }
 
-const char* fs_sd_root(void) {
-    return (const char*)'/';
-}
-
 int fs_strcmp_ext(const char* path, const char* extension) {
     if (extension[0] == '.') extension++;
     const char* path_ext = path;

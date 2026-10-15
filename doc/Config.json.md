@@ -15,7 +15,7 @@ Here is a quick summary of config variables:
 |`force_bt_coex`|Boolean|false|Force BT and WiFi at the same time.|
 |`led_brightness`|Byte|128|Status LED maximum brightness.|
 |`websocket_port`|Int|80|Port to listen for incoming Websocket connections.|
-|`use_ssl`|Boolean|true|Enable SSL server, which is a bit annoying to accept unsigned certificates but required for xtoys compatibility|
+|`use_ssl`|Boolean|true|Enable the SSL (`wss://`) server on port 443. Required for the hosted (https) UI and xtoys over WiFi. Uses `/spiffs/server.crt` and `/spiffs/server.key`, generated per machine by `tools/gen_cert.py`; falls back to plain `ws://` on `websocket_port` if they are missing. Accept the self-signed certificate once by visiting `https://<device-ip>/`|
 |`hostname`|String|"eom3k"|Local hostname for your device.|
 |`chart_window_s`|Int|5|The number of seconds to display in the chart history.  Higher numbers can cause sluggish behavior on slower devices|
 |`max_denied`|Int|20|Maximum number of denials before forcing an orgasm (in orgasm mode).|

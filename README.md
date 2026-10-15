@@ -21,19 +21,15 @@ You could use the app by itself to control multiple sex toys at once without am 
 
 ## Web UI
 
-[The UI is posted at https://backroom-labs.github.io/eom/eomui/public
-](https://backroom-labs.github.io/eom/eomui/public) and can be installed on your Android or PC as a PWA app for offline use. 
+[The UI is posted at https://backroom-labs.github.io/eom/eomui/public](https://backroom-labs.github.io/eom/eomui/public) and can be installed on your Android or PC as a PWA app for offline use. 
 
 This is what the app view looks like:
 (the purple icon switches between chart mode and realtime mode)
 ![Screenshot](doc/Screenshot3.png)
 
-For legacy purposes the UI is also on the ESP32 itself and can be found by visiting the ```/ui``` endpoint at the IP address of your device.  You can watch the serial output to determine the IP.  Due to space limitations the embedded version can't connect to other toys.  It's basically for monitoring the websocket output.
+The UI is not hosted on the device; the ESP32 only serves the WebSocket API (and Bluetooth). Use the hosted PWA above, or the Android/iOS app.
 
-Example: If you join the EOM WiFi access point the IP will be: ```192.168.4.1``` you should visit ```http://192.168.4.1/ui```  It will automatically open a connection to the websocket endpoint at ```http://192.168.4.1/```.
-
-
-![Screenshot](doc/Screenshot.png) 
+To connect over WiFi, click the WebSocket button and enter your EOM's address. If you join the EOM WiFi access point it is ```wss://192.168.4.1/```.  Because the hosted UI is served over https, browsers require a secure (```wss://```) connection: visit ```https://192.168.4.1/``` once and accept the self-signed certificate before connecting.  Bluetooth needs none of this.
 
 ### So how do I get one
 Well, I'll get a store together eventually but for now you'll have to build it yourself.  These instructions are meant to make the simplest build possible so you can get playing. 
@@ -51,7 +47,7 @@ If you go with an inflatable plug you're on your own...There are not yet any fil
 - Open this repo and let all the PlatformIO dependencies download
 - If you want to use websockets alongside or instead of bluetooth set "wifi_on" to true and configure your wifi ssid and password at the top of [data/config.json](data/config.json) or skip this step to let it broadcast its own access point: ```EOM```.  You can have it both ways: Set it up to connect to your home wifi but if you're away EOM will go into access point mode after it fails to find it.
 - figure out the board you're using.  For a Xiao Seeed Esp32-S3 choose '''esp32-s3-devkitm-1'''.  For Waveshare Esp32-S3 choose ```waveshare_esp32_s3_zero```.  For a generic ESP32 like Wroom choose ```esp32dev```
-- Under ```PlatformIO -> Project Tasks -> <your board> -> Platform``` choose ```Build Filesystem Image``` then ```Upload Filesystem Image```
+- Under ```PlatformIO -> Project Tasks -> <your board> -> Platform``` choose ```Build Filesystem Image``` then ```Upload Filesystem Image```.  This uploads ```config.json``` plus a self-signed TLS certificate for ```wss://```, which is generated into ```data/``` on your first build (requires ```openssl```; see [tools/gen_cert.py](tools/gen_cert.py)).  The certificate and key are unique to your machine and are not committed to git.
 - Under ```PlatformIO -> Project Tasks -> <your board> -> General``` choose ```Build``` then eventually ```Upload and Monitor```
 - Watch for your device's IP address to be displayed in the monitor window 
 (In access point mode it is 192.168.4.1)
@@ -61,7 +57,7 @@ If you go with an inflatable plug you're on your own...There are not yet any fil
 ## bluetooth usage
 WiFi is NOT necessary anymore!  The UI can work through bluetooth now! No ip address, wifi setup, or anything else needed.  Just connect to your EOM directly by clicking the bluetooth icon.  Android or PC Chrome only! Sorry Apple and Firefox enthusiasts but those two have deemed web bluetooth an unacceptable risk and it will never be available.
 
-So how do you get that running? It is now configured as a PWA!  This means you can pull it up once from https://rubberyfun.github.io/endless-orgasm-machine/eomui/public and install it as an app.  It does not require an internet connection to work after installation...its just there in app mode ready to go.  I'll probably end up splitting the UI into an embedded version and an app version.  
+So how do you get that running? It is now configured as a PWA!  This means you can pull it up once from https://backroom-labs.github.io/eom/eomui/public and install it as an app.  It does not require an internet connection to work after installation...its just there in app mode ready to go.
 
 
 ### bluetooth usage with Xtoys:
@@ -93,7 +89,7 @@ Tested boards: ESP32DEV, ESP32-WROOM32, ESP32-C6 (WaveShare), ESP32-S3 (Seeed an
 
 ### Customization suggestions 
 - You can use [Xtoys.app](https://xtoys.app) as a control panel to ramp up any number of vibrators, strokers, or e-stim units in sync with the EOM over bluetooth.  See [this Xtoys layout for an example](https://xtoys.app/layouts/-OcwSDDWBei-Bg4xwe5o)
-- If you want to connect Xtoys via wifi you will need to enable SSL in ```data/config.json``` and use the edge-o-matic Xtoys device.  The bluetooth connection is more useful since it sends pleasure level rather than arousal but there are some existing xtoys scripts that work with the edge-o-matic arousal level.
+- If you want to connect Xtoys via wifi you will need SSL enabled (```use_ssl``` in ```data/config.json```, on by default) and use the edge-o-matic Xtoys device.  The bluetooth connection is more useful since it sends pleasure level rather than arousal but there are some existing xtoys scripts that work with the edge-o-matic arousal level.
 - You can use an inexpensive [Vibrating inflatable buttplug](https://www.amazon.com/Lovehoney-Black-Inflatable-Vibrating-Back/dp/B092VVXM63) and remove its control box to wire it directly to the EOM with a power circuit.  A [non-vibrating plug](https://www.amazon.com/Inflatable-Expandable-Stimulator-Beginners-Detachable/dp/B0DSPKVPM1) is even less expensive if you'll be controlling your pleasure wirelessly.
 - If an [MPXV5100GP](https://octopart.com/search?q=MPXV5100GP&currency=USD) pressure sensor is too inconvenient or expensive to source you could use an easy to find [generic car exhaust pressure sensor](https://www.amazon.com/dp/B0997VKYQ9) since they are almost all analog 15psi 5v sensors.  The pin with the notch is Vin, middle is ground, third is Vout. Everything tested was 3V compatible.
 - If you use an ESP32 board with an integrated screen ([Example 1](https://www.amazon.com/ideaspark-Development-Integrated-Wireless-Micropython), [Example 2](https://www.amazon.com/Waveshare-Development-Frequency-Single-Core-Processor/dp/B0DHTMYTCY)) you can enable the screen in [include/config.h](include/config.h) to see the IP of the device.

@@ -6,7 +6,7 @@ This is a browser-based UI for the Endless Orgasm Machine system for ESP32.
 
 It runs over bluetooth!  Just connect to your EOM directly by clicking the bluetooth icon.  No ip address, wifi setup, or websockets needed.  For now it is Android or PC Chrome or Edge only! Sorry Apple and Firefox enthusiasts but they have deemed web bluetooth an unacceptable risk and it will never be available.  I'm working on a native wrapper to get past this and into the app stores.
 
-It is configured as a PWA!  This means you can pull it up once from https://rubberyfun.github.io/endless-orgasm-machine/eomui/public and install it as an app.  It does not require an internet connection to work after installation...its just there in app-mode ready to go.
+It is configured as a PWA!  This means you can pull it up once from https://backroom-labs.github.io/eom/eomui/public and install it as an app.  It does not require an internet connection to work after installation...its just there in app-mode ready to go.
 
 It was meant to be stored in spiffs memory on an ESP32 but has outgrown that with the addition of buttplug.io connections to other sex toys.  A simpler version of the built output is included with the larger EOM project for monitoring websocket output. 
 
