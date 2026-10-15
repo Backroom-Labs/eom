@@ -18,22 +18,15 @@
   // Detect if running on iOS or Android via Capacitor
   const isNativeMobile = Capacitor.getPlatform() === 'ios' || Capacitor.getPlatform() === 'android';
 
+  // The UI is hosted externally, so default to the EOM's access-point address. Pages served over
+  // https can only open wss:// sockets. The last URL the user connected to is remembered.
+  const WS_URL_KEY = "eom.wsUrl";
   let isSSL = window.location.protocol === "https:";
   let wssUrl = $state(
-    window.location
-      .toString()
-      .replace("/ui","/")
-      .replace(/http(s?):\/\//, isSSL ? "wss://" : "ws://")
-      .replace(/^(wss?:\/\/)[^\/:]+(:\d+)?(\/.*)?$/, (match, protocol, port, path) => {
-        const host = match.replace(protocol, '').replace(port || '', '').replace(path || '', '');
-        const isIP = /^\d+\.\d+\.\d+\.\d+$/.test(host);
-        return protocol + (isIP ? host : "192.168.4.1");  //replace with your local ip for dev convenience
-      }), 
-      //If not in AP mode update to match your EOM's IP address...useful for local testing
+    (() => {
+      try { return localStorage.getItem(WS_URL_KEY); } catch { return null; }
+    })() ?? (isSSL ? "wss://192.168.4.1/" : "ws://192.168.4.1/")
   ) as string;
-  if ((window.location.toString().match(/\.\d+\/?$/) ?? []).length > 0) {
-    window.location.replace(window.location.toString() + "ws");
-  }
 
   type eomReading = {
     arousal: number;
@@ -905,6 +898,7 @@
     const userInput = prompt("Enter WebSocket URL:", wssUrl);
     if (userInput !== null && userInput.trim() !== '') {
       wssUrl = userInput.trim();
+      try { localStorage.setItem(WS_URL_KEY, wssUrl); } catch {}
       socket?.close();
       isWsConnected = false;
       socket = new WebSocket(wssUrl);
