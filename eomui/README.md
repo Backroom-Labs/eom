@@ -14,7 +14,7 @@ It can be run locally if you prefer.  It should be backwards compatible with the
 
 ![Screenshot](../doc/Screenshot.png)
 ## Use
-- Click the bluetooth icon to connect to the EOM (it should be visible as "Libotoy").  The UI will now respond to the pressure applied to the EOM
+- Click the bluetooth icon to connect to the EOM (it should be visible as "EOM_BT", or whatever `bt_display_name` is set to).  The UI will now respond to the pressure applied to the EOM
 - Click the duck icon to connect to a toy such as a vibrator.  The toy will now increase in intensity along with the "pleasure" meter of the app.
 - If clenches are detected by the EOM the "pleasure" meter will drop accordingly and the toy will follow.
 
