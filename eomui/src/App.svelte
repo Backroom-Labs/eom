@@ -1157,7 +1157,7 @@
               const configObj = JSON.parse(jsonString);
               for (const [key, val] of Object.entries(configObj)) {
                 if (key in settings) {
-                  settings[key as keyof typeof settings].value = val as number;
+                  settings[key as keyof typeof settings].value = Number(val);
                 }
               }
             } catch (error) {
@@ -1179,6 +1179,20 @@
 </script>
 
 {#snippet InputSlider(id: string)}
+  {#if settings[id as keyof typeof settings].type === "yes/no"}
+  <div style="width: 100%;">
+    <label for={id} title="{settings[id as keyof typeof settings].description}">
+      <input
+        {id}
+        type="checkbox"
+        checked={Number(settings[id as keyof typeof settings].value) === 1}
+        onchange={(e) =>
+          handleSettingChange(id, e.currentTarget.checked ? 1 : 0)}
+      />
+      {settings[id as keyof typeof settings].label}
+    </label>
+  </div>
+  {:else}
   <div style="width: 100%;">
     <label for={id} title="{settings[id as keyof typeof settings].description}">
       {settings[id as keyof typeof settings].label} :
@@ -1197,6 +1211,7 @@
         handleSettingChange(id, settings[id as keyof typeof settings].value)}
     />
   </div>
+  {/if}
 {/snippet}
 
 <div
