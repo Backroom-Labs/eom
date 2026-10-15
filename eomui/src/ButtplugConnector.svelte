@@ -2,9 +2,11 @@
   import { onMount } from "svelte";
   // @ts-ignore - local prebuilt module does not expose complete TS typings for this path
   import { ButtplugWasmClientConnector } from "../buttplug/wasm/buttplug-wasm.mjs";
-import { ButtplugClient, ButtplugClientDevice, DeviceOutput, OutputType, InputType, DeviceOutputCommand } from "../../../satvisor/buttplug-js/js/src/index.js";
-import {  ButtplugClientDeviceFeature } from "../../../satvisor/buttplug-js/js/src/client/ButtplugClientDeviceFeature.js";
-import type { ButtplugMessage } from "../../../satvisor/buttplug-js/js/src/core/Messages.js";
+  // @ts-ignore - local prebuilt buttplug v4 bundle does not ship matching TS typings
+  import { ButtplugClient, ButtplugClientDevice, DeviceOutput, OutputType, InputType, DeviceOutputCommand } from "../buttplug/buttplug.mjs";
+  // Type-only stand-ins: the prebuilt bundle has no typings for these
+  type ButtplugClientDeviceFeature = { [key: string]: any };
+  type ButtplugMessage = unknown;
 import { BleClient } from "@capacitor-community/bluetooth-le";
 
   const isCapacitorNative =

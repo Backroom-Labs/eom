@@ -156,9 +156,9 @@
       description: "The arousal threshold for orgasm detection. Lower values stop sooner. Everyone will have their own ideal setting here.",
     },
     mid_threshold: {
-      value: 0,
+      value: 512,
       min: 0,
-      max: lastNumericValue("threshold"),
+      max: 4096,
       label: "Arousal Mid Threshold",
       type: "%",
       description: "The start of the warning zone for approaching arousal.  Changes lights to yellow.",
@@ -775,8 +775,9 @@
       let currentMode: number = setting_name == "setMode" ? runModes.indexOf(String(value)) : lastNumericValue("runMode");
       let btData;
       if (setting_name == "setMotor") {
-        let currentPleasure: number = setting_name == "setMotor" ? Number(value) : lastNumericValue("pleasure");
-        btData = new Uint8Array([0x01,currentMode, 0, 0, Number(currentPleasure)]);
+        // setMotor always implies MANUAL (matches the websocket setMotor handler). Using the last
+        // reported runMode here would revert a just-sent setMode before the device reports back.
+        btData = new Uint8Array([0x01, runModes.indexOf("MANUAL"), 0, 0, Number(value)]);
       } else {
         //pleasure amount is optional at end of byte array
         btData = new Uint8Array([
