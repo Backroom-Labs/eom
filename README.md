@@ -54,6 +54,48 @@ If you go with an inflatable plug you're on your own...There are not yet any fil
 
 ![Screenshot](doc/Screenshot2.png)
 
+## Updating the device
+
+All updates are done over USB from PlatformIO (there is no over-the-air update yet).  The flash holds three separate things, and each is updated differently:
+
+|What|Where it lives|Updated by|
+|---|---|---|
+|Firmware (all code in ```src/```, plus a built-in copy of ```data/config.json```)|app partition|```Upload``` (```pio run -e <board> -t upload```)|
+|Filesystem: ```config.json```, ```server.crt```, ```server.key```|SPIFFS partition|```Upload Filesystem Image``` (```pio run -e <board> -t uploadfs```)|
+|Settings saved from the UI|NVS + SPIFFS|The UI, or overwritten as described below|
+
+### Small code changes: firmware upload only
+For day-to-day changes to anything in ```src/``` or a ```build_flags``` pin change in [platformio.ini](platformio.ini), you only need to reflash the firmware:
+
+- ```PlatformIO -> Project Tasks -> <your board> -> General -> Upload and Monitor```
+- or from a terminal: ```pio run -e <your board> -t upload -t monitor```
+
+PlatformIO rebuilds only what changed, so this is quick.  The filesystem (TLS certificate) and the settings saved on the device are left alone.
+
+**Changing settings in ```data/config.json```** also only needs a firmware upload.  The file is compiled into the firmware and on boot the device checks whether it has changed since it was last applied.  If it has, every key in the file overrides the value saved on the device; if it hasn't, settings you changed from the UI are kept.  An invalid JSON file is ignored (check the monitor for ```Built-in config.json is not valid JSON```).
+
+The web UI is hosted separately (see [eomui/](eomui/)), so UI changes never need a device update.
+
+### Full image: filesystem + firmware
+Do a full update (```Build Filesystem Image``` -> ```Upload Filesystem Image```, then ```Upload and Monitor```) when:
+
+- **Flashing a new board for the first time.**  Without the filesystem image there is no TLS certificate, so the device falls back to plain ```ws://``` and the hosted https UI can't connect over WiFi.
+- **The certificate was regenerated**, e.g. you deleted ```data/server.crt```/```server.key``` or are building from a different computer.  You will need to accept the new certificate at ```https://<device-ip>/``` again.
+- **A partition table changed** (```8mb_spiffs.csv```, ```min_spiffs.csv```, or ```board_build.partitions``` in [platformio.ini](platformio.ini)).  Run ```Platform -> Erase Flash``` first, because the old layout will not line up with the new one.
+- **The device is misbehaving after an update** and you want a clean slate: ```Erase Flash```, then filesystem, then firmware.
+
+From a terminal:
+```
+pio run -e <your board> -t erase      # only for a clean slate or partition changes
+pio run -e <your board> -t uploadfs
+pio run -e <your board> -t upload -t monitor
+```
+
+Be aware that ```Upload Filesystem Image``` replaces the ```config.json``` on the device, and ```Erase Flash``` wipes everything, so **any settings changed from the UI are lost**.  Put settings you want to keep into ```data/config.json``` first.
+
+### Build-system changes: clean build
+If you edit ```sdkconfig.defaults```, change the ESP-IDF/platform version, or switch boards and get odd build errors, delete the generated ```sdkconfig.<your board>``` file and run ```General -> Clean``` (```pio run -e <your board> -t clean```) before building.  ```sdkconfig.defaults``` is only read when that file doesn't exist yet, so it won't otherwise pick up your changes.  A clean build doesn't touch the device; upload the firmware as usual afterwards.
+
 ## bluetooth usage
 WiFi is NOT necessary anymore!  The UI can work through bluetooth now! No ip address, wifi setup, or anything else needed.  Just connect to your EOM directly by clicking the bluetooth icon.  Android or PC Chrome only! Sorry Apple and Firefox enthusiasts but those two have deemed web bluetooth an unacceptable risk and it will never be available.
 
@@ -61,7 +103,7 @@ So how do you get that running? It is now configured as a PWA!  This means you c
 
 
 ### bluetooth usage with Xtoys:
-Using Xtoys you can connect to the EOM and let it control your other Xtoys devices.  For Xtoys it emulates a device called [MonsterPub Mr. Devil Kegel](https://monsterpub.com/products/mp2-u-shaped-remote-egg-with-kegel).  Connect to the device called "Libotoy".  The "pressure" reading corresponds to the "pleasure" output of the EOM.  The sliders for vibrator strength will work in manual mode.
+Using Xtoys you can connect to the EOM and let it control your other Xtoys devices.  For Xtoys it emulates a device called [MonsterPub Mr. Devil Kegel](https://monsterpub.com/products/mp2-u-shaped-remote-egg-with-kegel).  Connect to the device called "EOM_BT" (or whatever you set ```bt_display_name``` to in [data/config.json](data/config.json)).  If Xtoys doesn't list it, set ```bt_display_name``` to ```"Libotoy"```, the name the real MonsterPub device uses, and upload the firmware again.  The "pressure" reading corresponds to the "pleasure" output of the EOM.  The sliders for vibrator strength will work in manual mode.
 
 <small>Why Mr Devil?  Because it's one of the few bluetooth devices in Xtoys that has 2 way communication and high resolution (16 bit).  If you wish to connect Xtoys to the EOM over wifi you can choose the Edge-o-matic 3000 and it is backwards compatible.  This is less useful because Xtoys only chose to implement "arousal" and "pressure" inputs, so all the logic that goes into calculating the amount of pleasure is ignored.  </small>
 

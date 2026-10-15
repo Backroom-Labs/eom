@@ -1,7 +1,14 @@
 ## Configuration
 
 Please see `data/config.json` file.
-If a configuration is changed using the UI it will be saved on the device itself.  There is not currently a way to get the device's config.json back to a computer but most of its contents are transmitted via websocket when the UI first connects.  This is logged by the UI in the browser console.  The file at [/data/config.json](/data/config.json) will overwrite any changes previously saved on the ESP32 when ```PlatformIO -> Project Tasks -> esp32dev -> Platform -> Upload Filesystem Image``` is run.
+If a configuration is changed using the UI it will be saved on the device itself.  There is not currently a way to get the device's config.json back to a computer but most of its contents are transmitted via websocket when the UI first connects.  This is logged by the UI in the browser console.
+
+[/data/config.json](/data/config.json) is compiled into the firmware, so to push config changes to the device edit the file and run ```PlatformIO -> Project Tasks -> <your board> -> General -> Upload``` (no filesystem upload needed).  On boot the device compares the built-in file with the one it last applied:
+- If the file changed, every key in it overrides the value saved on the device.  Keys you leave out of the file keep their saved values.
+- If the file is unchanged, settings changed from the UI are kept, even across firmware updates.
+- If the file is not valid JSON it is ignored and ```Built-in config.json is not valid JSON``` is logged to the monitor.
+
+```Upload Filesystem Image``` also writes ```data/config.json``` to the device, replacing any settings saved from the UI, and ```Erase Flash``` wipes them entirely.  See [Updating the device](../README.md#updating-the-device) in the README for when each kind of update is needed.
 
 Here is a quick summary of config variables:
 
@@ -10,7 +17,7 @@ Here is a quick summary of config variables:
 |`wifi_ssid`|String|""|Your WiFi SSID.|
 |`wifi_key`|String|""|Your WiFi Password.|
 |`wifi_on`|Boolean|false|Enable WiFi and the Websocket server. Cannot be enabled if AzureFang is on.|
-|`bt_display_name`|String|"Libotoy"|BT device name.  Currently emulates MonsterPub device for Xtoys compatibility.|
+|`bt_display_name`|String|"EOM_BT"|BT device name.  Currently emulates MonsterPub device for Xtoys compatibility.|
 |`bt_on`|Boolean|true|Enable BT connectivity.|
 |`force_bt_coex`|Boolean|false|Force BT and WiFi at the same time.|
 |`led_brightness`|Byte|128|Status LED maximum brightness.|
@@ -33,10 +40,10 @@ Here is a quick summary of config variables:
 |`sensor_sensitivity`|Byte|128|Pressure sensor prescaling.|
 |`use_average_values`|Boolean|false|Use average values when calculating arousal. This smooths noisy data.|
 |`vibration_mode`|VibrationMode|RampStop|Vibration Mode for main vibrator control.|
-|`use_post_orgasm`|Boolean|false|Use post-orgasm torture mode and functionality.|
+|`use_post_orgasm`|Boolean|true|Use post-orgasm torture mode and functionality.|
 |`clench_pressure_sensitivity`|Int|200|Minimum additional Arousal level to detect clench. See manual.|
 |`clench_time_to_orgasm_ms`|Int|1500|Threshold variable that is milliseconds count of clench to detect orgasm. See manual.|
-|`clench_detector_in_edging`|Boolean|false|Use the clench detector to adjust Arousal. See manual.|
+|`clench_detector_in_edging`|Boolean|true|Use the clench detector to adjust Arousal. See manual.|
 |`auto_edging_duration_minutes`|Int|30|How long to edge before permiting an orgasm.|
 |`post_orgasm_duration_seconds`|Int|10|How long to stimulate after orgasm detected.|
 |`edge_menu_lock`|Boolean|false|Deny access to menu starting in the edging session.|
