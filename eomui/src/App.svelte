@@ -74,6 +74,9 @@
     } as eomReading,
   ]) as eomReading[]; //initial dummy data
 
+  // Latest reading, recomputed only when readings changes (avoids deep-copying the whole array on every read)
+  let latestReading = $derived(readings[readings.length - 1]);
+
 
 
   type settingType = {
@@ -139,11 +142,8 @@
   }
 
   function lastNumericValue(lineType: string): number {
-    let r = $state.snapshot(readings);
-    if (r.length === 0) return 0;
-    const lastReading = r[r.length - 1];
-    //const val = (lastReading as any)[lineType];
-    return getNumericValue(lastReading, lineType);
+    if (!latestReading) return 0;
+    return getNumericValue(latestReading, lineType);
   }
 
   let settings = $state({
@@ -512,7 +512,7 @@
 
   function updateChart() {
     if (!ctx || !chartCanvas || displayMode != 1) return;
-    const _readings = getDownsampledReadings($state.snapshot(readings));
+    const _readings = getDownsampledReadings(readings);
     if (_readings.length === 0) return;
     const xScale = scaleLinear(
       [0, _readings.length - 1],
@@ -612,7 +612,7 @@
   }
 
   function edgeStatusText(): string {
-    let lastReading = $state.snapshot(readings)[$state.snapshot(readings).length - 1];
+    let lastReading = latestReading;
     let statusText: string = "";
     if (isOnCooldown(lastReading)) {
       statusText = isAroused(lastReading) ? `DENIED ORGASM - COOLING DOWN` : `DENIED FOR ${lastReading.cooldown} MORE SECONDS`;
@@ -712,7 +712,7 @@
     scheduleChartUpdate();
 
     setInterval(() => {
-      let lastReadingTime = $state.snapshot(readings)[$state.snapshot(readings).length - 1].localTime ?? 0;
+      let lastReadingTime = latestReading.localTime ?? 0;
       if (Date.now() - lastReadingTime > 10000) { // 10 seconds threshold
         console.log("Data is stale...dropped connection?");
         if (lastConnection == "ws") {
@@ -829,24 +829,33 @@
     console.log(`Sent ${setting_name} change:`, value);
   }
 
-  let debounceTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
-  const DEBOUNCE_DELAY = 30; //  delay in ms
+  // Throttle (leading + trailing): sends at most once every THROTTLE_DELAY ms while the
+  // slider is dragged, and always sends the final value when dragging stops.
+  const THROTTLE_DELAY = 30; // delay in ms
+  let throttleState = new Map<string, { lastSent: number; timer?: ReturnType<typeof setTimeout>; pending?: number | string }>();
 
-  // This needs work
-  function debouncedBasicChange(setting_name: string, value: number | string) {
-    // Clear existing timeout for this setting
-    const existingTimeout = debounceTimeouts.get(setting_name);
-    if (existingTimeout !== undefined) {
-      clearTimeout(existingTimeout);
+  function throttledBasicChange(setting_name: string, value: number | string) {
+    let state = throttleState.get(setting_name);
+    if (!state) {
+      state = { lastSent: 0 };
+      throttleState.set(setting_name, state);
     }
-    
-    // Set new timeout
-    const timeoutId = setTimeout(() => {
+    const s = state;
+    const wait = THROTTLE_DELAY - (Date.now() - s.lastSent);
+    if (wait <= 0 && s.timer === undefined) {
+      s.lastSent = Date.now();
       handleBasicChange(setting_name, value);
-      debounceTimeouts.delete(setting_name);
-    }, DEBOUNCE_DELAY);
-    
-    debounceTimeouts.set(setting_name, timeoutId);
+      return;
+    }
+    // Too soon: remember the latest value and send it when the window ends
+    s.pending = value;
+    if (s.timer === undefined) {
+      s.timer = setTimeout(() => {
+        s.timer = undefined;
+        s.lastSent = Date.now();
+        handleBasicChange(setting_name, s.pending!);
+      }, Math.max(wait, 0));
+    }
   }
 
   function initializeWebSocket(socket: WebSocket) {
@@ -886,8 +895,8 @@
       }
       console.log(
         "Current readings:",
-        $state.snapshot(readings).length,
-        $state.snapshot(readings)[$state.snapshot(readings).length - 1],
+        readings.length,
+        $state.snapshot(latestReading),
       );
     }, 30000); // Log every 30 seconds
   });
@@ -949,7 +958,7 @@
       handleSettingChange("edge_delay", settings.edge_delay.value > 0 ? settings.edge_delay.value - 1 : 0);
     }, 100);
     setTimeout(() => {
-      let threshold = $state.snapshot(readings)[$state.snapshot(readings).length - 1].threshold;
+      let threshold = latestReading.threshold;
       handleSettingChange("sensitivity_threshold", threshold + thresholdStep > maxY ? maxY : threshold + thresholdStep);
     }, 200);
   }
@@ -1641,7 +1650,7 @@
 
       </div>
       <div class={lastNumericValue("cooldown") > 0 ? "statusText cooldown-flash-text" : "statusText"}>
-        {$state.snapshot(readings)[$state.snapshot(readings).length - 1].runMode == "MANUAL" ? "MANUALLY CONTROLLING PLEASURE" : (edgeStatusText().length > 0 ? edgeStatusText() : "INCREASING PLEASURE")}
+        {latestReading.runMode == "MANUAL" ? "MANUALLY CONTROLLING PLEASURE" : (edgeStatusText().length > 0 ? edgeStatusText() : "INCREASING PLEASURE")}
       </div>
     </div>
 
@@ -1679,9 +1688,9 @@
               }}
               name="runmode"
               value={runMode}
-              checked={$state.snapshot(readings)[$state.snapshot(readings).length - 1].runMode == runMode}
+              checked={latestReading.runMode == runMode}
             />
-            <label for="runmode-{index}" class={$state.snapshot(readings)[$state.snapshot(readings).length - 1].runMode == runMode ? "radioChosen" : "radioChoice"}>{runMode.substring(0, 1).toUpperCase() + runMode.substring(1).toLowerCase()}</label>
+            <label for="runmode-{index}" class={latestReading.runMode == runMode ? "radioChosen" : "radioChoice"}>{runMode.substring(0, 1).toUpperCase() + runMode.substring(1).toLowerCase()}</label>
           </div>
         {/each}
       </div>
@@ -1690,7 +1699,7 @@
       >
         <div style="font-weight: bold; margin-right: 0.5em; color:#999">&nbsp;&nbsp;Mode: </div>
         {#each Object.entries(vibration_modes) as [modeId, modeName], index}
-          {#if $state.snapshot(readings)[$state.snapshot(readings).length - 1].runMode !== 'ORGASM' || modeId !== '3'}
+          {#if latestReading.runMode !== 'ORGASM' || modeId !== '3'}
           <div class="radioBoxItem">
             <input
             id="vibemode-{modeId}"
@@ -1710,7 +1719,7 @@
 
 
     <div class="settingSliders">
-      {#if $state.snapshot(readings)[$state.snapshot(readings).length - 1].runMode === 'MANUAL'}
+      {#if latestReading.runMode === 'MANUAL'}
       <label for="pleasure" style="color:orange">Pleasure: {Math.floor(
                 (lastNumericValue("pleasure") / maxY) *
                   100,
@@ -1726,7 +1735,7 @@
         oninput={() => {
             //console.log("Dragging pleasure to ", currentPleasure);
             pleasureLockedUntil = Date.now() + 500;
-            debouncedBasicChange("setMotor",currentPleasure )
+            throttledBasicChange("setMotor", currentPleasure)
             //handleBasicChange("setMotor",currentPleasure )
           }
         }
@@ -1734,7 +1743,7 @@
       {/if}
       
     
-      {#if $state.snapshot(readings)[$state.snapshot(readings).length - 1].runMode === 'ORGASM'}
+      {#if latestReading.runMode === 'ORGASM'}
         {@render InputSlider("auto_edging_duration_minutes")}
         {@render InputSlider("max_denied")}
       {/if}
@@ -1786,7 +1795,7 @@
     </button>
     <h2>Connect to bluetooth toys <span style="font-size: small;">(WIP)</span></h2>
     <hr />
-          {#if $state.snapshot(readings)[$state.snapshot(readings).length - 1].runMode === 'MANUAL'}
+          {#if latestReading.runMode === 'MANUAL'}
       <label for="pleasure" style="color:orange">Pleasure: {Math.floor(
                 (lastNumericValue("pleasure") / maxY) *
                   100,
@@ -1802,7 +1811,7 @@
         oninput={() => {
             //console.log("Dragging pleasure to ", currentPleasure);
             pleasureLockedUntil = Date.now() + 500;
-            debouncedBasicChange("setMotor",currentPleasure )
+            throttledBasicChange("setMotor", currentPleasure)
             //handleBasicChange("setMotor",currentPleasure )
           }
         }

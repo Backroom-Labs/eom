@@ -9,6 +9,7 @@
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "math.h"
+#include <sys/param.h>
 #include "eom-hal-esp32.h"
 #include "config.h"
 #include "orgasm_control.h"
@@ -242,25 +243,29 @@ static int update_main_chr_access(uint16_t conn_handle, uint16_t attr_handle, st
             ESP_LOGI(TAG, "characteristic write by nimble stack; attr_handle=%d", attr_handle);
         }
         if (attr_handle == update_main_chr_val_handle) {
-            uint8_t buf[ctxt->om->om_len];
-            ESP_LOGE(TAG, "Received data length: %d", ctxt->om->om_len);
-            rc = os_mbuf_copydata(ctxt->om, 0, ctxt->om->om_len, buf);
+            uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
+            if (len == 0 || len > BLE_ATT_ATTR_MAX_LEN) {
+                return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            }
+            uint8_t buf[len];
+            ESP_LOGE(TAG, "Received data length: %d", len);
+            rc = os_mbuf_copydata(ctxt->om, 0, len, buf);
             if (rc != 0) {
                 return rc;
             }
             
             /* Create hexadecimal string representation */
-            char hex_str[ctxt->om->om_len * 2 + 1]; // 2 chars per byte + null terminator
-            for (int i = 0; i < ctxt->om->om_len; i++) {
-                sprintf(&hex_str[i * 2], "%02x ", buf[i]);
+            char hex_str[len * 2 + 1]; // 2 chars per byte + null terminator
+            for (int i = 0; i < len; i++) {
+                sprintf(&hex_str[i * 2], "%02x", buf[i]);
             }
-            hex_str[ctxt->om->om_len * 2] = '\0'; // Null terminate
+            hex_str[len * 2] = '\0'; // Null terminate
             ESP_LOGE(TAG, "Received data (hex): %s", hex_str);
             
             // Check if buffer contains a ':' character (0x3A)
             bool has_colon = false;
             int colon_pos = -1;
-            for (int i = 0; i < ctxt->om->om_len; i++) {
+            for (int i = 0; i < len; i++) {
                 if (buf[i] == 0x3A) {  // ':' character
                     has_colon = true;
                     colon_pos = i;
@@ -268,7 +273,7 @@ static int update_main_chr_access(uint16_t conn_handle, uint16_t attr_handle, st
                 }
             }
             
-            if (buf[0] == 0x01 && ctxt->om->om_len >= 4) {
+            if (buf[0] == 0x01 && len >= 4) {
                 //mode, trigger arousal, reset denied, (optional) motor1/pleasure, (optional) motor2
                 uint8_t mode = buf[1];
                 bool trigger_arousal = buf[2] != 0;
@@ -284,23 +289,23 @@ static int update_main_chr_access(uint16_t conn_handle, uint16_t attr_handle, st
                     orgasm_control_reset_denied();
                 }
                 
-                if (ctxt->om->om_len >= 5) {
+                if (len >= 5) {
                     uint8_t pleasure_or_motor = buf[4];
                     orgasm_control_set_pleasure_ex(pleasure_or_motor,false);
                     eom_hal_set_motor1_speed(pleasure_or_motor);
                 }
-                if (ctxt->om->om_len >= 6) {
+                if (len >= 6) {
                     uint8_t motor2 = buf[5];
                     eom_hal_set_motor2_speed(motor2);
                 }
-            } else if (buf[0] == 0x02 && ctxt->om->om_len >= 2 && has_colon) {
+            } else if (buf[0] == 0x02 && len >= 2 && has_colon) {
                 char setting_name[colon_pos + 1];  
                 memcpy(setting_name, &buf[1], colon_pos - 1);  // Skip 0x02 command byte, stop at colon (no quotes)
                 setting_name[colon_pos - 1] = '\0';  // Null terminate
                 
-                char setting_value[ctxt->om->om_len - colon_pos];
-                memcpy(setting_value, &buf[colon_pos + 1], ctxt->om->om_len - colon_pos - 1);  //starting after colon
-                setting_value[ctxt->om->om_len - colon_pos - 1] = '\0';  // Null terminate
+                char setting_value[len - colon_pos];
+                memcpy(setting_value, &buf[colon_pos + 1], len - colon_pos - 1);  //starting after colon
+                setting_value[len - colon_pos - 1] = '\0';  // Null terminate
 
                 ESP_LOGE(TAG, "Setting name: %s, value: %s", setting_name, setting_value);
                 if (set_config_value(setting_name, setting_value, NULL)) {
@@ -428,29 +433,36 @@ static int input1_chr_access(uint16_t conn_handle, uint16_t attr_handle,
         /* Verify attribute handle */
         if (attr_handle == input1_chr_val_handle) {
             /* Verify access buffer length */
-            uint8_t buf[ctxt->om->om_len];
-            ESP_LOGI(TAG, "Received data length: %d", ctxt->om->om_len);
-            rc = os_mbuf_copydata(ctxt->om, 0, ctxt->om->om_len, buf);
+            uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
+            if (len == 0 || len > BLE_ATT_ATTR_MAX_LEN) {
+                return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+            }
+            uint8_t buf[len];
+            ESP_LOGI(TAG, "Received data length: %d", len);
+            rc = os_mbuf_copydata(ctxt->om, 0, len, buf);
             if (rc != 0) {
                 return rc;
             }
             
             /* Create hexadecimal string representation */
-            char hex_str[ctxt->om->om_len * 2 + 1]; // 2 chars per byte + null terminator
-            for (int i = 0; i < ctxt->om->om_len; i++) {
-                sprintf(&hex_str[i * 2], "%02x ", buf[i]);
+            char hex_str[len * 2 + 1]; // 2 chars per byte + null terminator
+            for (int i = 0; i < len; i++) {
+                sprintf(&hex_str[i * 2], "%02x", buf[i]);
             }
-            hex_str[ctxt->om->om_len * 2] = '\0'; // Null terminate
+            hex_str[len * 2] = '\0'; // Null terminate
             
             ESP_LOGE(TAG, "Received data (hex): %s", hex_str);
             
             //update motor speed here
-            uint16_t motor1_speed = floor(buf[0] * 2.55);
+            // Inputs are percentages; clamp so values above 100 don't wrap past 255.
+            uint16_t motor1_speed = floor(MIN(buf[0], 100) * 2.55);
             ESP_LOGE(TAG, "Setting motor1 speed to: %d, %02x", motor1_speed, buf[0]);
             eom_hal_set_motor1_speed((uint8_t) motor1_speed);
-            uint16_t motor2_speed = floor(buf[1] * 2.55);
-            ESP_LOGE(TAG, "Setting motor2 speed to: %d, %02x", motor2_speed, buf[1]);
-            eom_hal_set_motor2_speed((uint8_t) motor2_speed);
+            if (len >= 2) {
+                uint16_t motor2_speed = floor(MIN(buf[1], 100) * 2.55);
+                ESP_LOGE(TAG, "Setting motor2 speed to: %d, %02x", motor2_speed, buf[1]);
+                eom_hal_set_motor2_speed((uint8_t) motor2_speed);
+            }
             orgasm_control_set_pleasure_ex((uint8_t) motor1_speed, false); //update internal state without changing motor speed again
             return rc;
         }

@@ -3,13 +3,32 @@
 #include "cJSON.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "sdkconfig.h"
 #include "util/list.h"
 #include <sys/socket.h>
+#include <unistd.h>
 
 static const char* TAG = "websocket_handler";
 
 static list_t _cmd_list = LIST_DEFAULT();
 static list_t _client_list = LIST_DEFAULT();
+
+// _client_list is changed by the httpd task (open/close) and read by the broadcast task.
+static SemaphoreHandle_t _client_list_lock(void) {
+    static portMUX_TYPE init_mux = portMUX_INITIALIZER_UNLOCKED;
+    static StaticSemaphore_t buffer;
+    static SemaphoreHandle_t mutex = NULL;
+
+    taskENTER_CRITICAL(&init_mux);
+    if (mutex == NULL) mutex = xSemaphoreCreateMutexStatic(&buffer);
+    taskEXIT_CRITICAL(&init_mux);
+    return mutex;
+}
+
+#define CLIENT_LIST_LOCK() xSemaphoreTake(_client_list_lock(), portMAX_DELAY)
+#define CLIENT_LIST_UNLOCK() xSemaphoreGive(_client_list_lock())
 
 bool _is_websocket(websocket_client_t* client) {
     return httpd_ws_get_fd_info(client->server, client->fd) == HTTPD_WS_CLIENT_WEBSOCKET;
@@ -37,11 +56,21 @@ esp_err_t websocket_broadcast(cJSON* root, int broadcast_flags) {
         ESP_LOGD(TAG, "Broadcasting: %s", str);
     }
 
+    // Snapshot recipients so the lock isn't held across socket sends.
+    websocket_client_t targets[CONFIG_LWIP_MAX_SOCKETS];
+    size_t count = 0;
     websocket_client_t* client = NULL;
+
+    CLIENT_LIST_LOCK();
     list_foreach(_client_list, client) {
-        if (client->broadcast_flags & broadcast_flags) {
-            websocket_send_to_client(client, str);
+        if ((client->broadcast_flags & broadcast_flags) && count < CONFIG_LWIP_MAX_SOCKETS) {
+            targets[count++] = *client;
         }
+    }
+    CLIENT_LIST_UNLOCK();
+
+    for (size_t i = 0; i < count; i++) {
+        websocket_send_to_client(&targets[i], str);
     }
 
     cJSON_free(str);
@@ -141,24 +170,41 @@ esp_err_t websocket_open_fd(httpd_handle_t hd, int sockfd) {
 
     ESP_LOGI(TAG, "websocket_open_fd(hd: %p, sockfd: %d) => IP: %s", hd, sockfd, ipstr);
     websocket_client_t* client = malloc(sizeof(websocket_client_t));
+    if (client == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
     client->fd = sockfd;
     client->server = hd;
     client->broadcast_flags = 0;
     client->last_ping_time = esp_timer_get_time();  // Initialize with current time
-    list_add(&_client_list, client);
+
+    CLIENT_LIST_LOCK();
+    list_node_t* node = list_add(&_client_list, client);
+    CLIENT_LIST_UNLOCK();
+
+    if (node == NULL) {
+        free(client);
+        return ESP_ERR_NO_MEM;
+    }
+
+    // httpd owns the client from here: it free()s the session ctx after websocket_close_fd.
     httpd_sess_set_ctx(hd, sockfd, client, NULL);
     return ESP_OK;
 }
 
 void websocket_close_fd(httpd_handle_t hd, int sockfd) {
     ESP_LOGI(TAG, "websocket_close_fd(hd: %p, sockfd: %d)", hd, sockfd);
-    websocket_client_t* client = NULL;
-    list_foreach(_client_list, client) {
-        if (client->fd == sockfd) {
-            list_remove(&_client_list, client);
-            return;
-        }
+    websocket_client_t* client = httpd_sess_get_ctx(hd, sockfd);
+
+    if (client != NULL) {
+        CLIENT_LIST_LOCK();
+        list_remove(&_client_list, client);
+        CLIENT_LIST_UNLOCK();
     }
+
+    // With a custom close_fn, httpd does not close the socket itself.
+    close(sockfd);
 }
 
 esp_err_t websocket_handler(httpd_req_t* req) {

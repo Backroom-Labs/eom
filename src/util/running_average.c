@@ -68,3 +68,26 @@ void running_average_dispose(running_average_t* ra) {
     free(ra->buffer);
     free(ra);
 }
+
+void running_average_set_window(running_average_t* ra, size_t window_size) {
+    if (ra == NULL)
+        return;
+
+    if (window_size == 0)
+        window_size = 5;
+
+    if (window_size == ra->window)
+        return;
+
+    uint16_t* buffer = (uint16_t*)calloc(window_size, sizeof(uint16_t));
+    if (buffer == NULL)
+        return;
+
+    // Swap the buffer rather than the struct so concurrent readers of `averaged` stay valid.
+    uint16_t* old = ra->buffer;
+    ra->buffer = buffer;
+    ra->window = window_size;
+    ra->index = 0;
+    ra->sum = 0;
+    free(old);
+}

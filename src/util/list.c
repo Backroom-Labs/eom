@@ -33,22 +33,26 @@ void list_remove(list_t* list, void* data) {
     list_node_t* prev = NULL;
 
     while (ptr != NULL) {
+        list_node_t* next = ptr->next;
+
         if (ptr->data == data) {
             if (prev != NULL) {
-                prev->next = ptr->next;
+                prev->next = next;
             }
 
             if (ptr == list->_first) {
-                list->_first = ptr->next;
+                list->_first = next;
             }
 
             if (ptr == list->_last) {
                 list->_last = prev;
             }
+
+            free(ptr);
         } else {
             prev = ptr;
         }
 
-        ptr = ptr->next;
+        ptr = next;
     }
 }
