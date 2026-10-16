@@ -3,6 +3,7 @@
 #include "eom-hal-esp32.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "system/websocket_handler.h"
 #include "util/running_average.h"
 #include <math.h>
 #include <stdio.h>
@@ -218,8 +219,26 @@ static void orgasm_control_update_arousal() {
     }
 }
 
+// LED while no automatic mode is running: flashing blue until the UI connects (BLE or
+// WebSocket), then solid green. The automatic modes set their own colors.
+static void orgasm_control_update_idle_led() {
+    if (LED_TYPE != LED_TYPE_WS2812) return;
+
+    if (isConnected || websocket_client_count() > 0) {
+        eom_hal_set_led_flashing(0);
+        eom_hal_set_rgb_color(&rgb_green);
+    } else {
+        eom_hal_set_led_flash_interval(500);
+        eom_hal_set_led_flashing(1);
+        eom_hal_set_rgb_color(&rgb_blue);
+    }
+}
+
 static void orgasm_control_update_pleasure() {
-    if (!output_state.control_motor) return;
+    if (!output_state.control_motor) {
+        orgasm_control_update_idle_led();
+        return;
+    }
 
     const vibration_mode_controller_t* controller = get_vibration_mode_controller();
     controller->tick(output_state.pleasure, arousal_state.arousal);
