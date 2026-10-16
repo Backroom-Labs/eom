@@ -15,25 +15,22 @@ Work is split into phases, each one a commit (or branch). Version is `PROJECT_VE
 | 0 | Rollback, firmware signing, shared OTA module ([src/system/ota.c](src/system/ota.c)) | Done, merged to `main` (02ec11b) |
 | 1 | Firmware updates over Bluetooth ([src/system/ble_ota.c](src/system/ble_ota.c), UI `eomui/src/FirmwareUpdate.svelte`) | Done, merged to `main` (c21494d) |
 | 2 | Not found in git history. Phase 0's commit says "groundwork for OTA updates over BLE and WiFi", so this is probably **OTA over WiFi**: the device downloads `manifest.json` and its image from the GitHub release. | **Not started.** Confirm the scope with Russ before building it. |
-| 3 | Release pipeline: CI builds every env; a `v*` tag publishes a signed GitHub release + `manifest.json` | Done on branch `feature/release-pipeline` (d935bee, 8befbac). Pushed, **not merged to `main`** |
+| 3 | Release pipeline: CI builds every env; a `v*` tag publishes a signed GitHub release + `manifest.json` | Done, merged to `main` (PR #4, 123e7ba) |
 
 ## Branch state
 
-- Current branch: `feature/release-pipeline`, 2 commits ahead of `main`, in sync with origin.
-- `feature/ota` is the old phase 0/1 branch, already merged.
+- Phase 3 is merged to `main` (PR #4, 123e7ba). `feature/release-pipeline` and `feature/ota` are
+  both merged and can be deleted.
 - `gh` CLI is not installed, so CI run status and PRs can't be checked from here. Look on GitHub.
 
 ## Next steps
 
-1. Check the GitHub Actions run for `feature/release-pipeline`: all 6 envs should build
-   (esp32-s3-devkitm-1, adafruit_qtpy_esp32s3_nopsram, esp32-c6-devkitm-1,
-   waveshare_esp32_s3_amoled_1_32, waveshare_esp32_s3_zero, esp32dev).
-2. Make sure the `OTA_SIGNING_KEY` repo secret holds the contents of `keys/ota_signing_key.pem`.
+1. Make sure the `OTA_SIGNING_KEY` repo secret holds the contents of `keys/ota_signing_key.pem`.
    Without it, a tag release fails on purpose.
-3. Open a PR and merge `feature/release-pipeline` into `main`.
-4. Do a first test release: `git tag v2.0.1 && git push origin v2.0.1` (the tag must match
-   `PROJECT_VER`). Check that `releases/latest/download/manifest.json` resolves and lists every board.
-5. Phase 2 (probably WiFi OTA using the manifest), after confirming the scope.
+2. Do a first test release from `main`: `git tag v2.0.1 && git push origin v2.0.1` (the tag must
+   match `PROJECT_VER`). Check that all 6 envs build and that
+   `releases/latest/download/manifest.json` resolves and lists every board.
+3. Phase 2 (probably WiFi OTA using the manifest), after confirming the scope.
 
 ## Key facts (so the code doesn't need re-reading)
 
