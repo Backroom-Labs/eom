@@ -1,409 +1,171 @@
+/* Design tokens. The UI is dark only: it's used in dim rooms. */
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  --bg: #0b0b10;
+  --surface-1: #15151d;
+  --surface-2: #1c1c26;
+  --surface-3: #2a2a37;
+  --line: rgb(255 255 255 / 0.08);
+  --text: #f2f2f7;
+  --muted: #9a9aad;
+  --accent: #ff4f8b;
+  --pleasure: #ff9f43;
+  --arousal: #ff4d5e;
+  --denied: #c77dff;
+  --pressure: #3ddc97;
+  --warn: #ffd166;
+  --danger-tint: rgb(255 77 94 / 0.1);
+
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
+  color-scheme: dark;
+  color: var(--text);
+  background-color: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
   margin: 0;
-  padding: 0;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
   min-height: 100vh;
-  width: 100%;
-  max-width: 100vw;
+  background: var(--bg);
   overflow-x: hidden;
-  box-sizing: border-box;
+}
+
+#app {
+  width: 100%;
 }
 
 h2 {
   margin: 0;
 }
 
+a {
+  color: var(--accent);
+}
+
+/* Buttons */
 button {
-  padding: 0.5rem 1rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  background: #fff;
-  cursor: pointer;
-  font-size: 1rem;
-  color: black;
-}
-
-button:hover {
-  background: #f0f0f0;
-}
-
-#app {
-  width: 100%;
-  max-width: 100%;
-  overflow-x: hidden;
-}
-
-.radioBoxes {
-  margin-top: .25em;
-  display: flex;
-  justify-content: center;
-  gap: 1rem;
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-}
-.radioBox {
-  border: 1px solid gray;
-  padding: 0.25em;
-  margin-top: .5em;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-around;
-  flex-wrap: wrap;
-  text-wrap: nowrap;
-  width: calc(50% - 0.5rem - 2px);
-  max-width: calc(50% - 0.5rem - 2px);
-  box-sizing: border-box;
-}
-.radioBoxItem {
-  display: flex;
-  align-items: center;
-  text-wrap: nowrap;
-  color: white;
-  input {
-    margin: .25em .25em .25em.75em;
-    cursor: pointer;
-  }
-  label {
-    cursor: pointer;
-  }
-}
-
-.radioChosen {
-  font-weight: bold;
-  color: #ff4444;
-}
-
-
-.statBoxButton {
-  cursor: pointer;
-  border: 1px solid gray;
-  padding: 0.25em;
-  display: inline-block;
-  white-space: nowrap;
-  border-radius: 4px;
-
-} 
-
-.mainContainer {
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  display: flex;
   justify-content: center;
-  align-items: flex-start;
-  min-height: 100vh;
-  box-sizing: border-box;
+  gap: 0.4rem;
+  min-height: 40px;
+  padding: 0 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.05s;
+}
+button:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+button.primary {
+  background: var(--accent);
+  border-color: transparent;
+  color: #fff;
+}
+button.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 85%, #fff);
+}
+button.small {
+  min-height: 32px;
+  padding: 0 0.8rem;
+  font-size: 0.8rem;
+  border-radius: 10px;
+}
+button.iconBtn {
+  width: 40px;
   padding: 0;
-  overflow-x: hidden;
+  border-radius: 12px;
 }
 
-.gauges {
+/* Segmented control */
+.segmented {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 75vw;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--surface-3);
+}
+.segmented button {
+  flex: 1;
+  min-height: 36px;
+  padding: 0 0.6rem;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.segmented button:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.04);
+}
+.segmented button.active {
+  background: var(--surface-1);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
 }
 
-.gaugeRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  box-sizing: border-box;
-
-}
-
-.statusText {
-  margin-top: .5em;
-  font-weight: bold;
-  font-size: 1.2em;
-  text-align: center;
-      color: #ff4444;
-
-}
-
-.settingsDialog {
-  padding: 1em;
-  border: 1px solid #eee;
-  border-radius: 8px;
-  background-color: #333;
-  max-width: 1000px;
-  position: absolute; 
-  top: 15%; 
-  width: 80%; 
-  margin: auto; 
-  padding: 1em;  
-  vertical-align: top;
-}
-
-
-.statBoxes {
-  margin-top: .1em;
-  display: flex;
-  justify-content:space-evenly;
+/* Large slider; set --fill to the filled percentage */
+input[type="range"].bigSlider {
+  -webkit-appearance: none;
+  appearance: none;
   width: 100%;
-}
-
-#auto_edging_duration_minutes {
-  accent-color: red; 
-  background: linear-gradient(to right, red 0%, red 100%);
-}
-
-.settingSliders {
-  margin-top: 2em;
-  width: 100%;
-  max-width: 80vw;
-  display: flex;
-  flex-direction: column;
-  gap: .5em; 
-  justify-content: center;
-  box-sizing: border-box;
-}
-
-
-.settingSliders #max_denied {
-  accent-color: red; 
-  background: linear-gradient(to right, red 0%, red 100%);
-}
-
-.topButton {
+  height: 32px;
+  margin: 0;
+  background: transparent;
   cursor: pointer;
-  margin: .2%;
-  padding-bottom: 0;
-  border-radius: 5px;
+  --fill: 0%;
+}
+input[type="range"].bigSlider::-webkit-slider-runnable-track {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--pleasure) var(--fill), var(--surface-3) var(--fill));
+}
+input[type="range"].bigSlider::-moz-range-track {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--pleasure) var(--fill), var(--surface-3) var(--fill));
+}
+input[type="range"].bigSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -8px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 5px rgb(0 0 0 / 0.5);
+}
+input[type="range"].bigSlider::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 5px rgb(0 0 0 / 0.5);
 }
 
-.circular-progress {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  max-width: 280px;
-}
-
-.circular-progress svg {
-  width: 20vw;
-  height: 20vw;
-  max-width: 240px;
-  max-height: 240px;
-}
-
-.belowCircleButton {
-  border-radius: 8px; 
-  height: 1.75rem; 
-  line-height: .75rem;
-  color: black; 
-  cursor: pointer; 
-  margin-top: .75rem;
-  width: 10em;
-}
-
-.gaugesWrapper {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 100%;
-  flex-direction: column;
-  margin: 0 auto;
-
-}
-@media screen and (max-width: 700px) {
-  .gaugesWrapper {
-    width: 100%;
-  }
-  .belowCircleButton {
-    width: 2em;
-  }
-  .radioBox {
-    display: flex;
-    margin-bottom: .3em;
-    padding: 0;
-    max-width: 100%;
-    font-size: .8em;
-  }
-  .statBoxButton {
-    font-size: 0.5em;
-  }
-  .gauges {
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-  .gaugeRow {
-    width: 90vw;
-    max-width: 100%;
-    
-    gap: 0;
-    box-sizing: border-box;
-    justify-content: space-evenly;
-  }
-  
-  .circular-progress {
-    max-width: 40vw;
-    margin: 0 1em;
-  }
-  .circular-progress svg {  
-    width: 30vw;
-    height: 30vw;
-  }
-  .belowCircleButton {
-    width: 10em;
-  }
-}
-@media screen and (max-width: 1000px) {
-  .radioBoxes {
-    flex-direction: column;
-    align-items: center;
-    
-  }
-  .radioBox {
-    width: 75vw;
-    max-width: 75vw;
-  }
-}
-@media screen and (max-width: 1500px) {
-  .gaugeRow {
-    justify-content: space-around;
-  }
-  .gauges {
-    justify-content: center;
-  }
-}
-@media screen and (max-width: 460px) {
-  .radioBox {
-    font-size: 0.6em;
-  }
-  .circular-progress {
-    max-width: 30vw;
-  }
-}
-
-  @keyframes flashRedPink {
-    0%, 100% { stroke: red; }
-    50% { stroke: #FF6666; }
-  }
-  
-  @keyframes flashRedPinkText {
-    0%, 100% { fill: red; color: red;}
-    50% { fill: #FF6666; color: #FF6666; }
-  }
-  
-  @keyframes flashOrangeYellow {
-    0%, 100% { stroke: orange; }
-    50% { stroke: yellow; }
-  }
-  
-  @keyframes flashOrangeYellowText {
-    0%, 100% { fill: orange; }
-    50% { fill: yellow; }
-  }
-  
-  @keyframes flashPinkWhite {
-    0%, 100% { stroke: #FF7FFF; }
-    50% { stroke: #FFB3FF; }
-  }
-  
-  @keyframes flashPinkWhiteText {
-    0%, 100% { fill: #FF7FFF; }
-    50% { fill: #FFB3FF; }
-  }
-  
-  .cooldown-flash-stroke {
-    animation: flashRedPink 0.5s infinite;
-  }
-  
-  .cooldown-flash-text {
-    animation: flashRedPinkText 0.5s infinite;
-  }
-  
-  .cooldown-flash-stroke-orange {
-    animation: flashOrangeYellow 0.5s infinite;
-  }
-  
-  .cooldown-flash-text-orange {
-    animation: flashOrangeYellowText 0.5s infinite;
-  }
-  
-  .cooldown-flash-stroke-pink {
-    animation: flashPinkWhite 0.5s infinite;
-  }
-  
-  .cooldown-flash-text-pink {
-    animation: flashPinkWhiteText 0.5s infinite;
-  }
-
-
-
-
-  /* Vertical slider styling for Chrome/Safari */
-  input[type="range"][readonly] {
-    -webkit-appearance: none;
-    appearance: none;
-  }
-
-  input[type="range"][readonly]::-webkit-slider-track {
-    width: 50px;
-    height: 100%;
-    background: linear-gradient(to bottom, orange 0%, orange 100%);
-    border-radius: 25px;
-    border: 2px solid #ff8800;
-  }
-
-  input[type="range"][readonly]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 50px;
-    height: 20px;
-    background: #fff;
-    border: 3px solid orange;
-    border-radius: 10px;
-    cursor: default;
-  }
-
-  /* Firefox */
-  input[type="range"][readonly]::-moz-range-track {
-    width: 50px;
-    height: 100%;
-    background: linear-gradient(to bottom, orange 0%, orange 100%);
-    border-radius: 25px;
-    border: 2px solid #ff8800;
-  }
-
-  input[type="range"][readonly]::-moz-range-thumb {
-    width: 50px;
-    height: 20px;
-    background: #fff;
-    border: 3px solid orange;
-    border-radius: 10px;
-    cursor: default;
-  }
-
-
+/* Styles for the toy components (ButtplugConnector, OSSM, BTLED) */
 .buttplug-connector {
     display: flex;
     flex-direction: column;
