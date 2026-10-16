@@ -71,6 +71,12 @@ Done: 2, 3, 6, 7, 13 (see Done).
 
 ## 6. Small TODOs in the code (low priority)
 
+- `duration()` in `eomui/src/lib/SessionHistory.svelte` floors minutes then rounds seconds, so
+  17:59.8 shows as "17m 60s".
+- Docs behind the README: `doc/Config.json.md` and `doc/WebSocket.md` don't list the 3.x settings
+  and reading fields (the README has tables of both). `eomui/README.md` still shows the old
+  `doc/Screenshot3.png`; `doc/Screenshot2.png`/`Screenshot3.png` are now unused by the main README.
+
 - [src/wifi_manager.c:167](src/wifi_manager.c#L167): function not implemented.
 - [src/api/broadcast.c:47](src/api/broadcast.c#L47): value should come from the active connection.
 - [src/include/orgasm_control.h:73](src/include/orgasm_control.h#L73): refactor post-orgasm modes.
@@ -95,8 +101,18 @@ Done: 2, 3, 6, 7, 13 (see Done).
 | After-orgasm modes (backlog 13) + Orgasms counter | 3.3.0, 95357c2 | Yes, with simulator |
 | Pressure simulator | 3.3.0, 95357c2 | Yes |
 | Session history + auto-calibration (backlog 6, 7) | 3.4.0, 5ef8b5a | Yes |
+| README rewrite for 3.x + new screenshots (`doc/screenshots/`) | 2026-10-17 | n/a |
 
 Details of each, for reference when changing that code:
+
+### README + screenshots (2026-10-17)
+
+- README covers 3.0-3.4: what's-new table, app, modes, after-orgasm, history/calibration, safety,
+  status LED, board table, BLE OTA, simulator, new reading fields and settings, roadmap.
+- Screenshots in `doc/screenshots/` were taken with headless Chrome against `eomui/public` and a
+  mock WebSocket device (Node `ws`, simulated edging) plus seeded IndexedDB sessions, so no real
+  hardware data. The script was in the session scratchpad and not kept; to retake, use the same
+  approach (puppeteer-core + system Chrome, phone viewport 412x915 @2x, dark scheme).
 
 ### OTA (phases 0, 1, 3)
 
