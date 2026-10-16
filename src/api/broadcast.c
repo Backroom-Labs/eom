@@ -34,7 +34,7 @@ void api_broadcast_readings(void) {
     // Everything around this is deprecated and should be moved into its own broadcast.
     // cJSON_AddBoolToObject(root, "permitOrgasm", orgasm_control_is_permit_orgasm_reached());
     // cJSON_AddBoolToObject(root, "postOrgasm", orgasm_control_is_post_orgasm_reached());
-    // cJSON_AddBoolToObject(root, "lock", orgasm_control_is_menu_locked());
+    cJSON_AddBoolToObject(root, "lock", orgasm_control_is_menu_locked());
 
     websocket_broadcast(payload, WS_BROADCAST_READINGS);
     cJSON_Delete(payload);
