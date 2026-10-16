@@ -16,6 +16,7 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event);
 int gatt_svc_init(void);
 void send_output1(void);
 void ble_host_config_init(void);
+void gatt_svc_layout_hash(uint8_t out[32]);
 
 
 #endif // GATT_SVR_H

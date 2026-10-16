@@ -41,6 +41,9 @@ adc_oneshot_unit_init_cfg_t adc_init_cfg = {
 i2c_master_dev_handle_t dev_handle;
 
 uint8_t pressure_ambient = DEFAULT_AMBIENT_PRESSURE;  //is this necessary?
+// Set while eom_hal_setup_pressure_ambient() takes its samples. A sample below ambient would
+// otherwise start another setup from inside this one, recursing until the stack overflows.
+static bool setting_up_ambient = false;
 RGBColor led_color = {0, 0, 0};
 RGBColor rgb_off = {0, 0, 0};
 RGBColor rgb_white = {255, 255, 255};
@@ -153,9 +156,11 @@ uint16_t eom_hal_get_pressure_reading(void) {
 
         int adjusted = raw - pressure_ambient;
         if (adjusted < 0) {
-            ESP_LOGW(TAG, "Pressure reading below ambient, resetting ambient: %d - %d", raw, pressure_ambient);
             adjusted = 0;
-            eom_hal_setup_pressure_ambient();
+            if (!setting_up_ambient) {
+                ESP_LOGW(TAG, "Pressure reading below ambient, resetting ambient: %d - %d", raw, pressure_ambient);
+                eom_hal_setup_pressure_ambient();
+            }
         }
         
         //adjusted *= pressure_sensitivity;  //if we go the software multiplier route
@@ -177,8 +182,10 @@ uint16_t eom_hal_get_pressure_reading(void) {
         int32_t adjusted = data - pressure_ambient;
         if (adjusted < 0) {
             adjusted = 0;
-            ESP_LOGW(TAG, "Pressure reading below ambient, resetting ambient: %" PRIi32 " - %" PRIi32, data, pressure_ambient);
-            eom_hal_setup_pressure_ambient();
+            if (!setting_up_ambient) {
+                ESP_LOGW(TAG, "Pressure reading below ambient, resetting ambient: %" PRIi32 " - %" PRIi32, data, pressure_ambient);
+                eom_hal_setup_pressure_ambient();
+            }
         }
         
         //MPR range 24 bit (0xFFFFFF)...EOM logic expects 12 bit
@@ -226,12 +233,14 @@ void eom_hal_setup_pressure_ambient(void) {
     uint16_t readings[10];
     uint32_t sum = 0;
         
+    setting_up_ambient = true;
     for (int i = 0; i < 10; i++) {
         readings[i] = eom_hal_get_pressure_reading();
         sum += readings[i];
         
         //vTaskDelay(10);  // Small delay between readings?
     }
+    setting_up_ambient = false;
     pressure_ambient = sum / 10;
 }
 

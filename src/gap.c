@@ -1,6 +1,9 @@
 #include "gap.h"
 #include "gatt_svc.h"
 #include "eom-hal-esp32.h"
+#include "system/ble_ota.h"
+#include "esp_mac.h"
+#include "mbedtls/sha256.h"
 static const char* TAG = "ble_gap";
 
 
@@ -189,6 +192,8 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
         ESP_LOGI(TAG, "disconnected from peer; reason=%d",
                  event->disconnect.reason);
 
+        ble_ota_on_disconnect(event->disconnect.conn.conn_handle);
+
         /* Restart advertising */
         isConnected = false;
         eom_hal_set_rgb_color(&rgb_purple);  // Purple = Advertising started
@@ -263,6 +268,40 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 }
 
 
+/*
+ * Phones and computers cache a device's GATT table by address, and for a device that never pairs
+ * (like this one) they don't refresh it, so after a firmware update that adds characteristics they
+ * keep using the old table and can't see the new ones. Deriving a static random address from the
+ * chip's MAC and a hash of the GATT layout gives the device a new address exactly when its table
+ * changes, which makes them discover it afresh. Apps that remember the device have to find it again
+ * after such an update.
+ *
+ * (NimBLE's own GATT caching support, with its Database Hash characteristic, doesn't help: it then
+ * refuses to send notifications to clients that use their cached table without reading the hash.)
+ */
+static int set_gatt_derived_address(void) {
+    uint8_t layout_hash[32];
+    uint8_t mac[6];
+    uint8_t digest[32];
+    gatt_svc_layout_hash(layout_hash);
+    if (esp_read_mac(mac, ESP_MAC_BT) != ESP_OK) {
+        return BLE_HS_EUNKNOWN;
+    }
+
+    mbedtls_sha256_context sha;
+    mbedtls_sha256_init(&sha);
+    mbedtls_sha256_starts(&sha, 0);
+    mbedtls_sha256_update(&sha, mac, sizeof(mac));
+    mbedtls_sha256_update(&sha, layout_hash, sizeof(layout_hash));
+    mbedtls_sha256_finish(&sha, digest);
+    mbedtls_sha256_free(&sha);
+
+    uint8_t addr[6];
+    memcpy(addr, digest, sizeof(addr));
+    addr[5] |= 0xC0; /* static random address: the two most significant bits are set */
+    return ble_hs_id_set_rnd(addr);
+}
+
 /* Public functions */
 void adv_init(void) {
     /* Local variables */
@@ -276,11 +315,18 @@ void adv_init(void) {
         return;
     }
 
-    /* Figure out BT address to use while advertising (no privacy for now) */
-    rc = ble_hs_id_infer_auto(0, &own_addr_type);
-    if (rc != 0) {
-        ESP_LOGE(TAG, "failed to infer address type, error code: %d", rc);
-        return;
+    rc = set_gatt_derived_address();
+    if (rc == 0) {
+        own_addr_type = BLE_OWN_ADDR_RANDOM;
+    } else {
+        ESP_LOGW(TAG, "failed to set GATT-derived address, error code: %d", rc);
+
+        /* Figure out BT address to use while advertising (no privacy for now) */
+        rc = ble_hs_id_infer_auto(0, &own_addr_type);
+        if (rc != 0) {
+            ESP_LOGE(TAG, "failed to infer address type, error code: %d", rc);
+            return;
+        }
     }
 
     /* Printing ADDR */
@@ -290,7 +336,7 @@ void adv_init(void) {
         return;
     }
     format_addr(addr_str, addr_val);
-    ESP_LOGD(TAG, "device address: %s", addr_str);
+    ESP_LOGI(TAG, "device address: %s (type %d)", addr_str, own_addr_type);
 
     /* Start advertising. */
     start_advertising();

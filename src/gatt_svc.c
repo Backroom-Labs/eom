@@ -15,6 +15,8 @@
 #include "orgasm_control.h"
 #include <cJSON.h>
 #include "config_defs.h"
+#include "system/ble_ota.h"
+#include "mbedtls/sha256.h"
 
 static const char* TAG = "gatts";
 
@@ -50,6 +52,9 @@ static const ble_uuid16_t send_chr_uuid = BLE_UUID16_INIT(GATTS_CHAR_CONFIG_UUID
 static uint16_t send_chr_conn_handle = 0;
 static bool send_chr_conn_handle_inited = false;
 static bool send_ind_status = false;
+
+static const ble_uuid16_t ota_control_chr_uuid = BLE_UUID16_INIT(GATTS_CHAR_OTA_CONTROL_UUID); //firmware update, see system/ble_ota.h
+static const ble_uuid16_t ota_data_chr_uuid = BLE_UUID16_INIT(GATTS_CHAR_OTA_DATA_UUID);
 /* End EOM service */
 
   
@@ -149,6 +154,18 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
                 .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
                 .val_handle = &send_chr_val_handle
             },
+            {
+                .uuid = &ota_control_chr_uuid.u,
+                .access_cb = ble_ota_control_access,
+                .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY,
+                .val_handle = &ble_ota_control_val_handle
+            },
+            {
+                .uuid = &ota_data_chr_uuid.u,
+                .access_cb = ble_ota_data_access,
+                .flags = BLE_GATT_CHR_F_WRITE_NO_RSP,
+                .val_handle = &ble_ota_data_val_handle
+            },
             
              {
                  0, /* No more characteristics in this service. */
@@ -182,6 +199,40 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
         0, /* No more services. */
     },
 };
+
+/*
+ * Hash of the GATT layout defined above (the BLE address is derived from it, see gap.c). It covers
+ * these services only: bump the salt if something else changes the attribute table, such as the
+ * NimBLE options that add characteristics to the standard GAP/GATT services.
+ */
+#define GATT_LAYOUT_SALT "eom-gatt-1"
+
+static void hash_uuid(mbedtls_sha256_context *sha, const ble_uuid_t *uuid) {
+    char str[BLE_UUID_STR_LEN];
+    ble_uuid_to_str(uuid, str);
+    mbedtls_sha256_update(sha, (const uint8_t *)str, strlen(str) + 1);
+}
+
+void gatt_svc_layout_hash(uint8_t out[32]) {
+    mbedtls_sha256_context sha;
+    mbedtls_sha256_init(&sha);
+    mbedtls_sha256_starts(&sha, 0);
+    mbedtls_sha256_update(&sha, (const uint8_t *)GATT_LAYOUT_SALT, strlen(GATT_LAYOUT_SALT));
+    for (const struct ble_gatt_svc_def *svc = gatt_svr_svcs; svc->type != 0; svc++) {
+        mbedtls_sha256_update(&sha, &svc->type, 1);
+        hash_uuid(&sha, svc->uuid);
+        for (const struct ble_gatt_chr_def *chr = svc->characteristics; chr != NULL && chr->uuid != NULL; chr++) {
+            hash_uuid(&sha, chr->uuid);
+            mbedtls_sha256_update(&sha, (const uint8_t *)&chr->flags, sizeof(chr->flags));
+            for (const struct ble_gatt_dsc_def *dsc = chr->descriptors; dsc != NULL && dsc->uuid != NULL; dsc++) {
+                hash_uuid(&sha, dsc->uuid);
+                mbedtls_sha256_update(&sha, &dsc->att_flags, sizeof(dsc->att_flags));
+            }
+        }
+    }
+    mbedtls_sha256_finish(&sha, out);
+    mbedtls_sha256_free(&sha);
+}
 
 static int status_out_chr_access(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg) {
     int rc;
@@ -555,6 +606,8 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event) {
         send_chr_conn_handle = event->subscribe.conn_handle;
         send_chr_conn_handle_inited = true;
         send_ind_status = event->subscribe.cur_notify;
+    } else if (event->subscribe.attr_handle == ble_ota_control_val_handle) {
+        /* OTA events are sent to the connection that started the update */
     } else {
         ESP_LOGW(TAG, "subscribe event for unknown attribute handle: %d", event->subscribe.attr_handle);
     }
@@ -572,6 +625,7 @@ int gatt_svc_init(void) {
 
     /* 1. GATT service initialization */
     ble_svc_gatt_init();
+    ble_ota_init();
 
     /* 2. Update GATT services counter */
     rc = ble_gatts_count_cfg(gatt_svr_svcs);
