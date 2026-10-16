@@ -8,7 +8,7 @@ _Last updated: 2026-10-16_
 ## Current focus: OTA (over-the-air) firmware updates
 
 Work is split into phases, each one a commit (or branch). Version is `PROJECT_VER` in
-[CMakeLists.txt](CMakeLists.txt), currently **3.0.0**.
+[CMakeLists.txt](CMakeLists.txt), currently **3.1.0** (bumped 2026-10-16 for the status LED and `post_orgasm_menu_lock`; not tagged yet).
 
 | Phase | What | State |
 |---|---|---|
@@ -52,8 +52,12 @@ Tested in headless Chrome with a fake WebSocket device; **not yet tested on hard
   `restart` flag, `visible` rule). Add a setting there and it shows up in the drawer. Keys must match
   `CONFIG_DEFS` in `src/config.c`.
 - Newly exposed: all Wi-Fi/AP settings, hostname, `use_ssl`, `websocket_port`, `bt_on`,
-  `bt_display_name`, `force_bt_coex`, `classic_serial`, `edge_menu_lock`. Left out on purpose:
-  `post_orgasm_menu_lock` (its code is commented out), console settings, SSL paths.
+  `bt_display_name`, `force_bt_coex`, `classic_serial`, `edge_menu_lock`, `post_orgasm_menu_lock`.
+  Left out on purpose: console settings, SSL paths.
+- `post_orgasm_menu_lock` (added 2026-10-16 on `feature/status-led`): its firmware code in
+  `orgasm_control_update_edging_time()` was commented out and is back on. It locks settings when an
+  orgasm is detected in Orgasm mode; the lock clears when post-orgasm ramp-down ends. UI toggle is in
+  "Clench & post-orgasm", shown only when `use_post_orgasm` is on. Builds; not tested on the Echo.
 - App-only prefs (localStorage `eom.prefs`): WebSocket URL (the Wi-Fi connect UI was commented out
   in the old UI), start view, keep screen on (Wake Lock), "Apply pressure" step.
 - Firmware changes for it: BLE setting writes (0x02) are now saved to flash (they weren't before);
