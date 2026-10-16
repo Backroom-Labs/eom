@@ -56,7 +56,7 @@ If you go with an inflatable plug you're on your own...There are not yet any fil
 
 ## Updating the device
 
-All updates are done over USB from PlatformIO (there is no over-the-air update yet).  The flash holds three separate things, and each is updated differently:
+Updates are done over USB from PlatformIO, except that firmware can also be updated over Bluetooth (see below).  The flash holds three separate things, and each is updated differently:
 
 |What|Where it lives|Updated by|
 |---|---|---|
@@ -64,7 +64,9 @@ All updates are done over USB from PlatformIO (there is no over-the-air update y
 |Filesystem: ```config.json```, ```server.crt```, ```server.key```|SPIFFS partition|```Upload Filesystem Image``` (```pio run -e <board> -t uploadfs```)|
 |Settings saved from the UI|NVS + SPIFFS|The UI, or overwritten as described below|
 
-**Firmware signing (groundwork for OTA updates).**  Every build signs ```firmware.bin``` with an ECDSA key that is generated into ```keys/``` on your first build (requires ```openssl```; see [tools/gen_signing_keys.py](tools/gen_signing_keys.py)).  The device will only accept over-the-air updates signed with the same key as the firmware it is running, so **back up ```keys/```**: it is not committed to git, and if you lose it, devices have to be updated over USB once more.  New firmware that crashes or stops running within 30 seconds of its first boot is rolled back automatically.
+**Firmware updates over Bluetooth.**  Once a device runs firmware with Bluetooth update support (flash it over USB once), you can update the firmware from the UI: connect over Bluetooth, open Settings, and under *Firmware update* choose the ```.pio/build/<your board>/firmware.bin``` from your build.  The filesystem (```config.json```, certificates) is not touched by these updates.
+
+**Firmware signing.**  Every build signs ```firmware.bin``` with an ECDSA key that is generated into ```keys/``` on your first build (requires ```openssl```; see [tools/gen_signing_keys.py](tools/gen_signing_keys.py)).  The device will only accept over-the-air updates signed with the same key as the firmware it is running, so **back up ```keys/```**: it is not committed to git, and if you lose it, devices have to be updated over USB once more.  New firmware that crashes or stops running within 30 seconds of its first boot is rolled back automatically.
 
 ### Small code changes: firmware upload only
 For day-to-day changes to anything in ```src/``` or a ```build_flags``` pin change in [platformio.ini](platformio.ini), you only need to reflash the firmware:
@@ -197,7 +199,6 @@ This is a product of the open source community.  This will always be open source
 - chart glitch on left side at startup
 - make motor pin selection more intuitive (add motor hardware in general)
 - display individual toy battery levels
-- bluetooth OTA?
 - device disconnection (buttplug bug)
 - disable internal motor control option?
 - integrated screen support / ip display

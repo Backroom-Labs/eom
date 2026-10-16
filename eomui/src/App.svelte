@@ -7,6 +7,7 @@
   import BTLED from "./BTLED.svelte";
   import OSSM from "./OSSM.svelte";
   import DeviceList from "./ButtplugConnector.svelte";
+  import FirmwareUpdate from "./FirmwareUpdate.svelte";
 
   let btledComponent: any;
   let ossmComponent: any;
@@ -391,7 +392,7 @@
   let syncDelta = $state(0) as number;
   let lastConnection = $state("bt") as string;
 
-  let btDeviceId: string | null = null;
+  let btDeviceId = $state(null) as string | null;
   const BT_SERVICE_UUID = "00006969-0000-1000-8000-00805f9b34fb";
   const BT_READINGS_CHAR = "0000696a-0000-1000-8000-00805f9b34fb";
   const BT_CONTROL_CHAR = "0000696b-0000-1000-8000-00805f9b34fb";
@@ -1784,6 +1785,8 @@
     {#each modalSettings as settingId}
       {@render InputSlider(settingId)}
     {/each}
+    <hr />
+    <FirmwareUpdate deviceId={btDeviceId} connected={isBtConnected} />
   </div>
 </dialog>
 
