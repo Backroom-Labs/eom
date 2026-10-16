@@ -1,0 +1,8 @@
+# Extra defaults for classic ESP32 boards only (ESP-IDF loads sdkconfig.defaults.<target> after
+# sdkconfig.defaults). The ESP32 has little IRAM, and with BLE + WiFi + the WS2812 (RMT) LED driver
+# the M5Stack Atom Echo overflowed iram0 by ~1.5 KB. Nothing here uses RMT receive or SPI slave,
+# and the RMT only drives the status LED, so its handlers don't need to live in IRAM.
+# CONFIG_RMT_TX_ISR_HANDLER_IN_IRAM is not set
+# CONFIG_RMT_RX_ISR_HANDLER_IN_IRAM is not set
+# CONFIG_RMT_ENCODER_FUNC_IN_IRAM is not set
+# CONFIG_SPI_SLAVE_ISR_IN_IRAM is not set

@@ -39,6 +39,7 @@ dependencies.lock
 
 sdkconfig.*
 !sdkconfig.defaults
+!sdkconfig.defaults.esp32
 # Buttplug Build Artifacts
 eomui/buttplug/**
 !eomui/buttplug/buttplug.mjs

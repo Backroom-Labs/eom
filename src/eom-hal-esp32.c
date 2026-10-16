@@ -10,6 +10,7 @@
 #include "config.h"
 #include "esp_log.h"
 #include "led_strip.h"
+#include "soc/soc_caps.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -55,6 +56,15 @@ RGBColor rgb_yellow = {255, 230, 0}; //255,240,133
 RGBColor rgb_purple = {80, 0, 150}; // 179, 0, 255
 
 led_strip_handle_t led_strip = NULL;
+// The WS2812 is driven by one task pinned to core 0. It creates the RMT channel (so the RMT
+// interrupt lives on core 0 too) and does every refresh; eom_hal_set_rgb() only hands it the color.
+// Refreshing from a task on the other core races the RMT TX-done ISR in ESP-IDF 5.5: rmt_disable()
+// sees a transient state and fails, led_strip leaves the channel enabled, and every later refresh
+// fails with "channel not in init state".
+static TaskHandle_t led_refresh_task_handle = NULL;
+static portMUX_TYPE led_pending_lock = portMUX_INITIALIZER_UNLOCKED;
+static RGBColor led_pending = {0, 0, 0};
+static bool led_dirty = false;
 uint8_t is_flashing = 0;
 uint8_t flash_on = 0;
 unsigned long last_flash = 0;
@@ -336,33 +346,49 @@ void eom_hal_set_rgb(uint8_t r, uint8_t g, uint8_t b) {
     }
 
     if (LED_TYPE == LED_TYPE_WS2812) {
-        if (led_strip == NULL) {
+        if (led_refresh_task_handle == NULL) {
             ESP_LOGW(TAG, "LED strip not initialized");
             return;
         }
-        esp_err_t err = ESP_OK;
-
-
+        RGBColor pixel = {1, 0, 0};  //dim red rather than totally off for flash
         if (!is_flashing || flash_on) {
                 led_color.r = r;
                 led_color.g = g;
                 led_color.b = b;
-                err = led_strip_set_pixel(led_strip, 0, r, g, b);
-        } else {
-            err = led_strip_set_pixel(led_strip, 0, 1, 0, 0);  //dim red rather than totally off for flash
+                pixel = led_color;
         }
 
+        taskENTER_CRITICAL(&led_pending_lock);
+        led_pending = pixel;
+        led_dirty = true;
+        taskEXIT_CRITICAL(&led_pending_lock);
+        xTaskNotifyGive(led_refresh_task_handle);
+    }
+}
 
+static void led_refresh_task(void *pvParameter) {
+    led_strip = configure_led_2812();
+    while (1) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        taskENTER_CRITICAL(&led_pending_lock);
+        bool dirty = led_dirty;
+        RGBColor pixel = led_pending;
+        led_dirty = false;
+        taskEXIT_CRITICAL(&led_pending_lock);
+        if (!dirty) continue;
+
+        esp_err_t err = led_strip_set_pixel(led_strip, 0, pixel.r, pixel.g, pixel.b);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "led_strip_set_pixel failed: %s", esp_err_to_name(err));
-            return;
+            continue;
         }
         err = led_strip_refresh(led_strip);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "led_strip_refresh failed: %s", esp_err_to_name(err));
-            return;
+            continue;
         }
-        ESP_LOGD(TAG, "LED RGB set to R:%d G:%d B:%d", r, g, b);
+        ESP_LOGD(TAG, "LED RGB set to R:%d G:%d B:%d", pixel.r, pixel.g, pixel.b);
     }
 }
 void eom_hal_set_rgb_color(RGBColor* color) {
@@ -412,7 +438,7 @@ void eom_hal_led_init(void)
             vTaskDelay(10 / portTICK_PERIOD_MS); //give it a moment to power up
         }
         eom_hal_set_led_flashing(0);
-        led_strip = configure_led_2812();
+        xTaskCreatePinnedToCore(led_refresh_task, "LED", 1024 * 4, NULL, tskIDLE_PRIORITY + 2, &led_refresh_task_handle, 0);
         eom_hal_set_rgb_color(&rgb_blue);  // Blue = Starting up
     }
     ESP_LOGI(TAG, "Configured LED init type %d on GPIO %d", LED_TYPE, LED_GPIO);
@@ -439,7 +465,11 @@ led_strip_handle_t configure_led_2812(void)
      led_strip_rmt_config_t rmt_config = {
         .clk_src = RMT_CLK_SRC_DEFAULT,        // different clock source can lead to different power consumption
         .resolution_hz = LED_STRIP_RMT_RES_HZ, // RMT counter clock frequency
+#if SOC_RMT_SUPPORT_DMA
         .flags.with_dma = true,               // DMA feature is available on ESP target like ESP32-S3
+#else
+        .flags.with_dma = false,              // classic ESP32 and C6 have no RMT DMA (ESP_ERR_NOT_SUPPORTED)
+#endif
         .mem_block_symbols = 0,                // Use default memory block size
     };
 

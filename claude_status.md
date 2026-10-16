@@ -23,12 +23,31 @@ Work is split into phases, each one a commit (or branch). Version is `PROJECT_VE
   both merged and can be deleted.
 - `gh` CLI is not installed, so CI run status and PRs can't be checked from here. Look on GitHub.
 
+## Test hardware / active envs
+
+- Russ tests on an **M5Stack Atom Echo** (`[env:m5stack_atom_echo]`, board `m5stack-atom`, 4 MB,
+  SK6812 LED on G27, pressure on Grove G32 = `ADC_CHANNEL_4`). Added 2026-10-16; builds, not yet
+  tested on the device.
+- Classic ESP32 IRAM is tight: the Atom Echo overflowed `iram0` by ~1.5 KB. Fixed by
+  `sdkconfig.defaults.esp32` (RMT/SPI-slave handlers out of IRAM). ESP-IDF loads it automatically
+  for esp32 targets. `sdkconfig.<env>` files are git-ignored and regenerated, so put sdkconfig
+  changes in a defaults file, not there.
+- RMT DMA (`with_dma`) only exists on S3/P4. `configure_led_2812` in `src/eom-hal-esp32.c` now
+  enables it only `#if SOC_RMT_SUPPORT_DMA`; before that, any non-S3 WS2812 board boot-looped.
+- WS2812 refreshes all run in one `LED` task pinned to core 0, which also creates the RMT channel.
+  `eom_hal_set_rgb()` only queues the color and notifies it. Refreshing from the other core raced the
+  RMT TX-done ISR (ESP-IDF 5.5), `rmt_disable` failed and the channel stayed stuck
+  ("channel not in init state" forever). Fix built, not yet confirmed on the Atom Echo.
+- All envs except `esp32dev` and `m5stack_atom_echo` are commented out in `platformio.ini`, so CI
+  and releases only build those two (CI lists envs by matching uncommented `[env:...]` lines).
+  Uncomment them before a full release.
+
 ## Next steps
 
 1. Make sure the `OTA_SIGNING_KEY` repo secret holds the contents of `keys/ota_signing_key.pem`.
    Without it, a tag release fails on purpose.
 2. Do a first test release from `main`: `git tag v2.0.1 && git push origin v2.0.1` (the tag must
-   match `PROJECT_VER`). Check that all 6 envs build and that
+   match `PROJECT_VER`). Check that the active envs build and that
    `releases/latest/download/manifest.json` resolves and lists every board.
 3. Phase 2 (probably WiFi OTA using the manifest), after confirming the scope.
 
