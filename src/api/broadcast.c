@@ -3,6 +3,7 @@
 #include "config_defs.h"
 #include "esp_timer.h"
 #include "orgasm_control.h"
+#include "safety.h"
 #include "system/websocket_handler.h"
 
 void api_broadcast_config(void) {
@@ -35,6 +36,7 @@ void api_broadcast_readings(void) {
     // cJSON_AddBoolToObject(root, "permitOrgasm", orgasm_control_is_permit_orgasm_reached());
     // cJSON_AddBoolToObject(root, "postOrgasm", orgasm_control_is_post_orgasm_reached());
     cJSON_AddBoolToObject(root, "lock", orgasm_control_is_menu_locked());
+    cJSON_AddNumberToObject(root, "safety", safety_get_stop_reason());
 
     websocket_broadcast(payload, WS_BROADCAST_READINGS);
     cJSON_Delete(payload);

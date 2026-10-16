@@ -1,5 +1,6 @@
 #include "gap.h"
 #include "gatt_svc.h"
+#include "safety.h"
 #include "nimble/nimble_port.h"
 #include "nimble/ble.h"
 #include "host/ble_hs.h"
@@ -256,7 +257,7 @@ static int status_out_chr_access(uint16_t conn_handle, uint16_t attr_handle, str
             uint16_t permit_seconds = orgasm_control_get_permit_orgasm_remaining_seconds();
             uint32_t current_time = esp_timer_get_time() / 1000UL;
 
-            uint8_t chr_val[18] = {
+            uint8_t chr_val[19] = {
                 (uint8_t)(orgasm_control_get_last_pressure() >> 4), // Scale from 12-bit (0-4095) to 8-bit (0-255)
                 (uint8_t)(orgasm_control_get_arousal() >> 4),
                 (uint8_t)(orgasm_control_get_arousal_threshold() >> 4),
@@ -274,7 +275,8 @@ static int status_out_chr_access(uint16_t conn_handle, uint16_t attr_handle, str
                 (uint8_t)((current_time >> 16) & 0xFF),
                 (uint8_t)((current_time >> 8) & 0xFF),
                 (uint8_t)(current_time & 0xFF),
-                (uint8_t)orgasm_control_is_menu_locked()
+                (uint8_t)orgasm_control_is_menu_locked(),
+                (uint8_t)safety_get_stop_reason()
             };
             rc = os_mbuf_append(ctxt->om, chr_val, sizeof(chr_val));
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;

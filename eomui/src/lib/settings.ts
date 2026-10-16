@@ -201,6 +201,34 @@ export const SETTINGS: SettingDef[] = [
     kind: "range", default: 3000, min: 0, max: 60000, step: 100, format: millis,
   },
 
+  // Safety
+  {
+    key: "sensor_fault_stop",
+    label: "Stop on sensor fault",
+    description: "In Endless and Orgasm mode, stop if the pressure sensor fails to read, stays at its maximum for 10 seconds, or doesn't change at all for 30 seconds.",
+    kind: "toggle", default: true,
+  },
+  {
+    key: "disconnect_stop_s",
+    label: "Stop when disconnected",
+    description: "Stop if no app has been connected for this long. If your phone drops the connection when its screen locks, turn on Keep screen on or raise this. 0 turns it off.",
+    kind: "range", default: 10, min: 0, max: 120,
+    format: (v) => (v === 0 ? "Off" : seconds(v)),
+  },
+  {
+    key: "max_session_minutes",
+    label: "Session time limit",
+    description: "Stop any session, including Manual, after this long. 0 means no limit.",
+    kind: "range", default: 0, min: 0, max: 240,
+    format: (v) => (v === 0 ? "No limit" : minutes(v)),
+  },
+  {
+    key: "max_motor_output",
+    label: "Output limit",
+    description: "No mode or app can go above this, including Manual and direct motor control. Maximum intensity can't go above it either.",
+    kind: "range", default: 255, min: 0, max: PLEASURE_MAX, percentOf: PLEASURE_MAX,
+  },
+
   // Wi-Fi
   {
     key: "wifi_on",
@@ -344,6 +372,11 @@ export const SETTING_GROUPS: SettingGroup[] = [
       "use_post_orgasm", "post_orgasm_duration_seconds", "post_orgasm_menu_lock", "clench_detector_in_edging",
       "clench_pressure_sensitivity", "clench_time_threshold_ms", "clench_time_to_orgasm_ms", "max_clench_duration_ms",
     ],
+  },
+  {
+    id: "safety",
+    title: "Safety",
+    keys: ["sensor_fault_stop", "disconnect_stop_s", "max_session_minutes", "max_motor_output"],
   },
   {
     id: "wifi",

@@ -45,6 +45,8 @@ uint8_t pressure_ambient = DEFAULT_AMBIENT_PRESSURE;  //is this necessary?
 // Set while eom_hal_setup_pressure_ambient() takes its samples. A sample below ambient would
 // otherwise start another setup from inside this one, recursing until the stack overflows.
 static bool setting_up_ambient = false;
+// Consecutive failed sensor reads; the safety checks stop the session when it gets too high.
+static uint16_t pressure_read_failures = 0;
 RGBColor led_color = {0, 0, 0};
 RGBColor rgb_off = {0, 0, 0};
 RGBColor rgb_white = {255, 255, 255};
@@ -162,8 +164,10 @@ uint16_t eom_hal_get_pressure_reading(void) {
         if (r != ESP_OK)
         {
             ESP_LOGE(TAG, "Could not read data: %d (%s)\n", r, esp_err_to_name(r));
+            if (pressure_read_failures < UINT16_MAX) pressure_read_failures++;
             return 0;
         }
+        pressure_read_failures = 0;
 
         int adjusted = raw - pressure_ambient;
         if (adjusted < 0) {
@@ -187,8 +191,10 @@ uint16_t eom_hal_get_pressure_reading(void) {
         if (r != ESP_OK)
         {
             ESP_LOGE(TAG, "Could not read data: %d (%s)\n", r, esp_err_to_name(r));
+            if (pressure_read_failures < UINT16_MAX) pressure_read_failures++;
             return 0;
         }
+        pressure_read_failures = 0;
 
         int32_t adjusted = data - pressure_ambient;
         if (adjusted < 0) {
@@ -235,6 +241,10 @@ uint16_t eom_hal_get_pressure_reading(void) {
     return 0;
 }
 
+uint16_t eom_hal_get_pressure_read_failures(void) {
+    return pressure_read_failures;
+}
+
 uint8_t eom_hal_get_sensor_sensitivity(void) {
     return Config.sensor_sensitivity; 
 }
@@ -276,6 +286,7 @@ void eom_hal_set_sensor_sensitivity(uint8_t sensitivity) {
 
 //=== Vibration
 void eom_hal_set_motor1_speed(uint8_t speed) {
+    if (speed > Config.max_motor_output) speed = Config.max_motor_output;
 #if SOC_DAC_SUPPORTED
     dac_oneshot_output_voltage(dac1_handle, speed);
 #else
@@ -284,6 +295,7 @@ void eom_hal_set_motor1_speed(uint8_t speed) {
 }
 
 void eom_hal_set_motor2_speed(uint8_t speed) {
+    if (speed > Config.max_motor_output) speed = Config.max_motor_output;
 #if SOC_DAC_SUPPORTED
     dac_oneshot_output_voltage(dac2_handle, speed);
 #else

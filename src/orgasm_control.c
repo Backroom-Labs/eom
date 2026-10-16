@@ -3,6 +3,7 @@
 #include "eom-hal-esp32.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "safety.h"
 #include "system/websocket_handler.h"
 #include "util/running_average.h"
 #include <math.h>
@@ -101,6 +102,8 @@ uint8_t orgasm_control_get_arousal_sensitivity(void) {
  */
 void orgasm_control_set_pleasure_ex(uint8_t pleasure, bool use_motor) {
     if (pleasure > Config.max_pleasure) pleasure = Config.max_pleasure;
+    if (pleasure > Config.max_motor_output) pleasure = Config.max_motor_output;
+    if (pleasure > 0) safety_clear();
 
     if (use_motor) {
         #if MOTOR1_ENABLED
@@ -224,7 +227,12 @@ static void orgasm_control_update_arousal() {
 static void orgasm_control_update_idle_led() {
     if (LED_TYPE != LED_TYPE_WS2812) return;
 
-    if (isConnected || websocket_client_count() > 0) {
+    if (safety_get_stop_reason() == SAFETY_SENSOR_FAULT) {
+        // Fast red flash until a mode is started again.
+        eom_hal_set_led_flash_interval(150);
+        eom_hal_set_led_flashing(1);
+        eom_hal_set_rgb_color(&rgb_red);
+    } else if (isConnected || websocket_client_count() > 0) {
         eom_hal_set_led_flashing(0);
         eom_hal_set_rgb_color(&rgb_green);
     } else {
@@ -522,6 +530,7 @@ void orgasm_control_tick() {
         orgasm_control_update_arousal();
         orgasm_control_update_edging_time();
         orgasm_control_update_pleasure();
+        safety_tick(arousal_state.pressure_value);
         arousal_state.last_update_ms = millis;
 
         if (Config.classic_serial || logger_state.logfile) {
@@ -571,8 +580,9 @@ void orgasm_control_clear_update_flag(void) {
  * @return normalized pleasure byte
  */
 uint8_t orgasm_control_get_pleasure() {
-    if (output_state.pleasure > Config.max_pleasure)
-        return Config.max_pleasure;
+    uint8_t limit = Config.max_pleasure < Config.max_motor_output ? Config.max_pleasure : Config.max_motor_output;
+    if (output_state.pleasure > limit)
+        return limit;
     else
         return (uint8_t)floor(output_state.pleasure);
 }
@@ -629,6 +639,7 @@ void orgasm_control_set_output_mode(orgasm_output_mode_t mode) {
     orgasm_output_mode_t old = output_state.output_mode;
     output_state.output_mode = mode;
     output_state.control_motor = mode != OC_MANUAL;
+    if (mode != OC_MANUAL) safety_clear();
     output_state.motor_stop_time = 0;
     post_orgasm_state.auto_edging_start_millis = (esp_timer_get_time() / 1000UL);
     post_orgasm_state.post_orgasm_start_millis = 0;
