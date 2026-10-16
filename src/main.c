@@ -129,7 +129,8 @@ static void sleep_monitor_task(void* args) {
 
     // Configure GPIO as input with pull-down
     gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << SLEEP_GPIO),
+        // Clamped so boards without SLEEP_GPIO (-1) still compile; they return above.
+        .pin_bit_mask = (1ULL << (SLEEP_GPIO < 0 ? 0 : SLEEP_GPIO)),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
