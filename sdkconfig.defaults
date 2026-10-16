@@ -16,3 +16,6 @@ CONFIG_DAC_ENABLED=y
 # OTA updates (see src/system/ota.c)
 # Roll back to the previous app if a new one crashes or fails its boot health check.
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Keep NimBLE quiet: at INFO it logs every GATT notify ("GATT procedure initiated: notify").
+CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
