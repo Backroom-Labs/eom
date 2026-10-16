@@ -20,6 +20,9 @@ uint8_t eom_hal_get_sensor_sensitivity(void);
 void eom_hal_set_sensor_sensitivity(uint8_t sensitivity);
 void eom_hal_init_pressure_sensor(void);
 void eom_hal_setup_pressure_ambient(void);
+// Test builds only (-DEOM_PRESSURE_SIM): replace the sensor with this value, -1 for the real sensor.
+// Does nothing in normal builds.
+void eom_hal_set_simulated_pressure(int value);
 
 //=== Vibration
 void eom_hal_set_motor1_speed(uint8_t speed);

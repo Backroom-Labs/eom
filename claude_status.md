@@ -8,8 +8,9 @@ _Last updated: 2026-10-17_
 ## Current focus: OTA (over-the-air) firmware updates
 
 Work is split into phases, each one a commit (or branch). Version is `PROJECT_VER` in
-[CMakeLists.txt](CMakeLists.txt), currently **3.2.0** (bumped 2026-10-17 for the safety stops and the BLE settings fix; pushed to
-`main`, not tagged yet: `git tag v3.2.0 && git push origin v3.2.0` publishes the release).
+[CMakeLists.txt](CMakeLists.txt), currently **3.3.0** (bumped 2026-10-17 for after-orgasm modes, the Orgasms counter and the
+pressure simulator; committed to `main`. `v3.2.0` is tagged. Release with
+`git push origin main && git tag v3.3.0 && git push origin v3.3.0`).
 
 | Phase | What | State |
 |---|---|---|
@@ -173,6 +174,53 @@ stops, the banners, the Safety tab and the BLE settings fix work.**
   banner. Start a session, disconnect the app -> stop after 10 s, banner on reconnect. Set the time
   limit to 1 min. Set Output limit low and check Manual and Endless never exceed it.
 
+## After-orgasm modes (2026-10-17, backlog 13, committed to `main`, 3.3.0)
+
+Both envs build, `svelte-check` clean, UI rebuilt. **Tested by Russ on the Echo with the pressure simulator 2026-10-17: works.**
+
+- Setting `after_orgasm` (`after_orgasm_t` in `config.h`: 0 Ruin, 1 Post-orgasm (default, today's
+  behaviour), 2 Milking) replaces `use_post_orgasm`, which nothing read. In the UI it's in the
+  Session group and in the Orgasm-mode quick settings. New: `milking_rest_seconds` (60) and
+  `milking_max_orgasms` (3, 0 = no limit).
+- All logic is in `orgasm_control_update_edging_time()`. Ruin: `orgasm_control_ruin()` sets Manual,
+  pleasure 0. Milking, as agreed with Russ: post-orgasm max for `post_orgasm_duration_seconds`, ramp
+  down, rest at 0 (still in Orgasm mode) for `milking_rest_seconds`, then
+  `orgasm_control_start_milking_round()` restarts edging (fresh edging timer and denial count; the
+  session orgasm count and the menu lock carry over). After `milking_max_orgasms` the last one ends
+  like Post-orgasm (Manual).
+- **Behaviour change:** during post-orgasm and the rest, `orgasm_control_update_pleasure()` now
+  returns before the edging algorithm. Before, `controller->increment()` overwrote the "max then ramp
+  down" every tick, so Post-orgasm never really held max.
+- Starting any mode now resets the session orgasm count, the ruined flag, a stale `detected_orgasm`
+  and `clench_pressure_threshold` (to 4096, as at boot).
+- UI signal: WS readings `phase` (`oc_after_orgasm_phase_t`: 1 post-orgasm, 2 resting, 3 ruined),
+  `orgasms` (this session), `rest` (seconds left). BLE status is 23 bytes now: byte 19 orgasms, 20
+  phase, 21-22 rest (MSB first). The UI shows "Orgasm detected" / "Resting" / "Ruined" status and a
+  toast when the count goes up. `EVT_ORGASM_START` is still commented out (no event manager in use).
+- "Orgasms" gauge (gauge view, after Pressure) and stat (chart view), colour `--orgasm`, shown in
+  Orgasm mode or while the count is > 0. Shows "N of max" in Milking with a limit. No reset button:
+  the count resets when a mode starts. Pressure simulator test by Russ: after-orgasm modes work.
+- To test on the Echo: for a quick test set edging time to 1 min and Clench time to orgasm low, then
+  hold a clench once permitted. Ruin -> stops at once, "Ruined". Post-orgasm -> full, ramp down,
+  Stopped. Milking with rest 10 s and 2 orgasms -> rest countdown, edging again, stops after the 2nd.
+
+## Pressure simulator (2026-10-17, committed to `main`, 3.3.0)
+
+For testing without a sensor (Russ doesn't have one yet). Builds with and without the flag; not
+tested on the Echo yet.
+
+- Firmware: only with `-DEOM_PRESSURE_SIM`, never in a normal or CI build. Flash with
+  `PLATFORMIO_BUILD_FLAGS=-DEOM_PRESSURE_SIM pio run -e m5stack_atom_echo -t upload`. Normal
+  `pio run -e m5stack_atom_echo -t upload` puts the real sensor back. Changing the flag makes
+  PlatformIO wipe `.pio/build` and rebuild everything.
+- `eom_hal_set_simulated_pressure(value)` (no-op in normal builds): in a sim build
+  `eom_hal_get_pressure_reading()` returns that value ±8 noise (so the 30 s stuck-sensor check
+  doesn't fire). Starts at 0; -1 = real sensor. Set by WS `{"simPressure": n}` or BLE control
+  `0x05 MSB LSB` (0xFFFF = real sensor).
+- UI: Settings > This app > "Pressure simulator" (app pref `pressureSim`) shows a slider and a
+  "Hold to clench" button (+1000 while held) in the Controls card. It can't tell whether the
+  firmware is a sim build; other firmware ignores the command.
+
 ## Feature backlog (agreed with Russ 2026-10-16)
 
 Numbering matches the original list. 2 and 3 are done on `feature/safety` (see above).
@@ -194,13 +242,12 @@ Numbering matches the original list. 2 and 3 are done on `feature/safety` (see a
 11. **MQTT / Home Assistant** state + commands.
 12. **Housekeeping:** host unit tests for `orgasm_control` edge detection, post-orgasm refactor
     TODO, deps step B (ESP-IDF 6).
-13. **After-orgasm modes** (asked 2026-10-17), chosen per session, replacing the unused
+13. **After-orgasm modes** — built 2026-10-17, see "After-orgasm modes" above. Was (asked 2026-10-17), chosen per session, replacing the unused
     `use_post_orgasm` toggle (defined and in the UI, but the firmware never reads it):
     - **Ruin:** turn everything off as soon as an orgasm is detected.
     - **Post-orgasm:** today's behaviour (max for `post_orgasm_duration_seconds`, ramp down, Manual).
     - **Milking:** keep going after an orgasm and run the cycle again to try for another one.
-      Russ said "starts manual, endless and orgasm modes again"; confirm exactly what sequence
-      that means before building it.
+      Confirmed 2026-10-17: post-orgasm, rest, then Orgasm mode again, with a max-orgasms limit.
     Detection is `orgasm_control_clench_detect()` (clench held `clench_time_to_orgasm_ms`, only
     counts once orgasm is permitted in Orgasm mode); the reaction is in
     `orgasm_control_update_edging_time()`. Related: send an "orgasm detected" signal to the UI (the

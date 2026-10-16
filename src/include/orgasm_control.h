@@ -79,6 +79,21 @@ void orgasm_control_permit_orgasm(int seconds);
 void orgasm_control_lock_menu(oc_bool_t value);
 long orgasm_control_clench_detect(long p_check);
 
+// Where the session is after an orgasm (Config.after_orgasm). Sent to the UI (WS readings.phase,
+// BLE status byte 20), so keep the values stable.
+typedef enum oc_after_orgasm_phase {
+    OC_PHASE_NONE = 0,
+    OC_PHASE_POST_ORGASM = 1, // full intensity, then ramping down
+    OC_PHASE_RESTING = 2,     // Milking: off until the next round of edging
+    OC_PHASE_RUINED = 3,      // Ruin: stopped; cleared when a mode starts or pleasure is set
+} oc_after_orgasm_phase_t;
+
+oc_after_orgasm_phase_t orgasm_control_get_after_orgasm_phase(void);
+// Orgasms detected since the session started.
+uint8_t orgasm_control_get_session_orgasms(void);
+// Seconds left of a Milking rest, 0 otherwise.
+uint16_t orgasm_control_get_rest_remaining_seconds(void);
+
 #ifdef __cplusplus
 }
 #endif

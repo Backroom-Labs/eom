@@ -1,5 +1,6 @@
 #include "api/index.h"
 //#include "eom-hal.h"
+#include "eom-hal-esp32.h"
 #include "esp_log.h"
 #include "orgasm_control.h"
 #include "system/websocket_handler.h"
@@ -68,7 +69,19 @@ static const websocket_command_t cmd_edging_trigger_arousal_s = {
     .func = &cmd_edging_trigger_arousal,
 };
 
+// Test builds only (-DEOM_PRESSURE_SIM), ignored otherwise: value replaces the sensor, -1 for the real one.
+static command_err_t cmd_edging_sim_pressure(cJSON* command, cJSON* response, websocket_client_t* client) {
+    eom_hal_set_simulated_pressure(command->valueint);
+    return CMD_OK;
+}
+
+static const websocket_command_t cmd_edging_sim_pressure_s = {
+    .command = "simPressure",
+    .func = &cmd_edging_sim_pressure,
+};
+
 void api_register_edging(void) {
+    websocket_register_command(&cmd_edging_sim_pressure_s);
     websocket_register_command(&cmd_edging_set_mode_s);
     websocket_register_command(&cmd_edging_set_motor_s);
     websocket_register_command(&cmd_edging_reset_denied_s);

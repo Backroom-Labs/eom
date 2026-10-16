@@ -32,6 +32,11 @@ export type SettingGroup = {
   keys: string[];
 };
 
+// Matches after_orgasm_t in src/include/config.h.
+export const AFTER_ORGASM_RUIN = 0;
+export const AFTER_ORGASM_POST = 1;
+export const AFTER_ORGASM_MILKING = 2;
+
 const ADC_MAX = 4096; // arousal and pressure are 12 bit
 const PLEASURE_MAX = 255;
 
@@ -52,6 +57,33 @@ export const SETTINGS: SettingDef[] = [
       { value: 2, label: "Depletion" },
       { value: 3, label: "Enhancement" },
     ],
+  },
+  {
+    key: "after_orgasm",
+    label: "After an orgasm",
+    description: "What Orgasm mode does once an orgasm is detected. Ruin stops at once; Post-orgasm keeps going at full intensity, then stops; Milking rests and starts edging again.",
+    kind: "select",
+    default: AFTER_ORGASM_POST,
+    options: [
+      { value: AFTER_ORGASM_RUIN, label: "Ruin" },
+      { value: AFTER_ORGASM_POST, label: "Post-orgasm" },
+      { value: AFTER_ORGASM_MILKING, label: "Milking" },
+    ],
+  },
+  {
+    key: "milking_rest_seconds",
+    label: "Rest between orgasms",
+    description: "Milking: how long to stay off after the post-orgasm ramp-down before edging starts again.",
+    kind: "range", default: 60, min: 0, max: 600, step: 5, format: seconds,
+    visible: (c) => Number(c.after_orgasm) === AFTER_ORGASM_MILKING,
+  },
+  {
+    key: "milking_max_orgasms",
+    label: "Orgasms per session",
+    description: "Milking: stop after this many orgasms. 0 keeps going until you stop it.",
+    kind: "range", default: 3, min: 0, max: 20,
+    format: (v) => (v === 0 ? "No limit" : String(v)),
+    visible: (c) => Number(c.after_orgasm) === AFTER_ORGASM_MILKING,
   },
   {
     key: "auto_edging_duration_minutes",
@@ -151,24 +183,18 @@ export const SETTINGS: SettingDef[] = [
 
   // Clench & post-orgasm
   {
-    key: "use_post_orgasm",
-    label: "Post-orgasm stimulation",
-    description: "Keep stimulating at full intensity after an orgasm is detected in Orgasm mode.",
-    kind: "toggle", default: true,
-  },
-  {
     key: "post_orgasm_duration_seconds",
     label: "Post-orgasm duration",
-    description: "How long to keep stimulating after an orgasm is detected.",
+    description: "How long to keep stimulating at full intensity after an orgasm is detected, before ramping down.",
     kind: "range", default: 10, min: 0, max: 300, format: seconds,
-    visible: (c) => Boolean(c.use_post_orgasm),
+    visible: (c) => Number(c.after_orgasm) !== AFTER_ORGASM_RUIN,
   },
   {
     key: "post_orgasm_menu_lock",
     label: "Lock settings after orgasm",
-    description: "Once an orgasm is detected in Orgasm mode, settings can't be changed until post-orgasm stimulation ends.",
+    description: "Once an orgasm is detected in Orgasm mode, settings can't be changed until the session ends.",
     kind: "toggle", default: false,
-    visible: (c) => Boolean(c.use_post_orgasm),
+    visible: (c) => Number(c.after_orgasm) !== AFTER_ORGASM_RUIN,
   },
   {
     key: "clench_detector_in_edging",
@@ -353,7 +379,10 @@ export const SETTING_GROUPS: SettingGroup[] = [
   {
     id: "session",
     title: "Session",
-    keys: ["vibration_mode", "auto_edging_duration_minutes", "max_denied", "edge_menu_lock"],
+    keys: [
+      "vibration_mode", "auto_edging_duration_minutes", "max_denied", "after_orgasm", "milking_rest_seconds",
+      "milking_max_orgasms", "edge_menu_lock",
+    ],
   },
   {
     id: "stimulation",
@@ -369,7 +398,7 @@ export const SETTING_GROUPS: SettingGroup[] = [
     id: "clench",
     title: "Clench & post-orgasm",
     keys: [
-      "use_post_orgasm", "post_orgasm_duration_seconds", "post_orgasm_menu_lock", "clench_detector_in_edging",
+      "post_orgasm_duration_seconds", "post_orgasm_menu_lock", "clench_detector_in_edging",
       "clench_pressure_sensitivity", "clench_time_threshold_ms", "clench_time_to_orgasm_ms", "max_clench_duration_ms",
     ],
   },

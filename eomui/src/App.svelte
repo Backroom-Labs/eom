@@ -12,6 +12,7 @@
     QUICK_SETTINGS,
     SETTING_GROUPS,
     SETTINGS_BY_KEY,
+    AFTER_ORGASM_MILKING,
     coerce,
     defaultConfig,
     formatSetting,
@@ -36,6 +37,9 @@
     threshold: number;
     lock?: boolean; // settings locked by edge_menu_lock
     safety?: number; // why the safety checks last stopped the session, see SAFETY_MESSAGES
+    phase?: number; // after-orgasm phase, see PHASE_*
+    orgasms?: number; // orgasms detected this session
+    rest?: number; // seconds left of a Milking rest
   };
 
   type RunMode = "MANUAL" | "ENDLESS" | "ORGASM";
@@ -51,6 +55,11 @@
     3: "Stopped: the session reached its time limit.",
   };
 
+  // Matches oc_after_orgasm_phase_t in src/include/orgasm_control.h.
+  const PHASE_POST_ORGASM = 1;
+  const PHASE_RESTING = 2;
+  const PHASE_RUINED = 3;
+
   const MAX_Y = 4096; // arousal, pressure and threshold are 12 bit
   const PLEASURE_MAX = 255;
 
@@ -62,6 +71,7 @@
   const BT_CMD_SET_CONFIG = 0x02;
   const BT_CMD_GET_CONFIG = 0x03;
   const BT_CMD_RESTART = 0x04;
+  const BT_CMD_SIM_PRESSURE = 0x05;
 
   const isNativeMobile = Capacitor.getPlatform() === "ios" || Capacitor.getPlatform() === "android";
 
@@ -73,6 +83,7 @@
     pressureStep: number; // raw threshold units added by "Apply pressure"
     defaultView: "gauges" | "chart";
     keepAwake: boolean;
+    pressureSim: boolean; // show the pressure simulator (needs a -DEOM_PRESSURE_SIM firmware build)
   };
   const PREFS_KEY = "eom.prefs";
   const LEGACY_WS_URL_KEY = "eom.wsUrl";
@@ -85,6 +96,7 @@
       pressureStep: 100,
       defaultView: "gauges",
       keepAwake: true,
+      pressureSim: false,
     };
     try {
       const legacy = localStorage.getItem(LEGACY_WS_URL_KEY);
@@ -158,7 +170,35 @@
   let onCooldown = $derived((latest.cooldown ?? 0) > 0 && latest.motor === 0);
   let aroused = $derived(latest.arousal >= latest.threshold);
 
+  let isMilking = $derived(Number(config.after_orgasm) === AFTER_ORGASM_MILKING);
+  let orgasmsText = $derived.by(() => {
+    const count = latest.orgasms ?? 0;
+    const max = Number(config.milking_max_orgasms);
+    return isMilking && max > 0 ? `${count} of ${max}` : String(count);
+  });
+
+  // Orgasms detected this session; Milking keeps counting across rounds.
+  let showOrgasms = $derived(runMode === "ORGASM" || (latest.orgasms ?? 0) > 0);
+  // Enhancement counts orgasms as denials; once the real count shows, keep calling them denials.
+  let deniedLabel = $derived(isEnhancement && !showOrgasms ? "Orgasms" : "Denied");
+  let orgasmScale = $derived(
+    isMilking && Number(config.milking_max_orgasms) > 0 ? Number(config.milking_max_orgasms) : Math.max(5, latest.orgasms ?? 0),
+  );
+
   let status = $derived.by(() => {
+    if (latest.phase === PHASE_RUINED && runMode === "MANUAL" && latest.motor === 0) {
+      return { title: "Ruined", detail: "Stopped as soon as the orgasm was detected.", tone: "danger" };
+    }
+    if (latest.phase === PHASE_RESTING) {
+      return { title: "Resting", detail: `Orgasms: ${orgasmsText}. Edging starts again in ${latest.rest ?? 0}s.`, tone: "neutral" };
+    }
+    if (latest.phase === PHASE_POST_ORGASM) {
+      return {
+        title: "Orgasm detected",
+        detail: isMilking ? `Orgasms: ${orgasmsText}. Keep going…` : "Post-orgasm stimulation, then ramping down.",
+        tone: "success",
+      };
+    }
     if (runMode === "MANUAL") {
       return latest.motor === 0
         ? { title: "Stopped", detail: "Pick Endless or Orgasm to start, or set an intensity.", tone: "neutral" }
@@ -200,6 +240,9 @@
   }
 
   function pushReading(r: Reading) {
+    // Only against a recent reading, so (re)connecting mid-session doesn't toast.
+    const recent = r.localTime - latest.localTime < 5000;
+    if (recent && (r.orgasms ?? 0) > (latest.orgasms ?? 0)) showToast("Orgasm detected");
     history.push(r);
     const windowMs = Math.max(1, Number(config.chart_window_s)) * 1000;
     let drop = 0;
@@ -271,6 +314,25 @@
     // Not connected: preview the change locally so the UI can be explored.
     if (command === "setMotor") pushReading({ ...latest, motor: Number(value), runMode: "MANUAL", localTime: Date.now() });
     if (command === "setMode") pushReading({ ...latest, runMode: String(value), localTime: Date.now() });
+  }
+
+  // Pressure simulator, for testing without a sensor. Only firmware built with -DEOM_PRESSURE_SIM
+  // acts on it; other firmware ignores the command. -1 goes back to the real sensor.
+  const SIM_CLENCH = 1000; // added while "Hold to clench" is pressed
+  let simPressure = $state(0);
+  let simClenching = $state(false);
+  function sendSimPressure(value: number) {
+    if (isWsConnected && socket) {
+      socket.send(JSON.stringify({ simPressure: value }));
+    } else if (isBtConnected) {
+      const wire = value < 0 ? 0xffff : Math.min(MAX_Y - 1, value);
+      btWrite(new Uint8Array([BT_CMD_SIM_PRESSURE, wire >> 8, wire & 0xff])).catch((err) => console.error(err));
+    }
+  }
+  function setSimClench(on: boolean) {
+    if (simClenching === on) return;
+    simClenching = on;
+    sendSimPressure(simPressure + (on ? SIM_CLENCH : 0));
   }
 
   // Throttle (leading + trailing): sends at most once every THROTTLE_DELAY ms while the slider is
@@ -404,6 +466,9 @@
       threshold: r.threshold,
       lock: r.lock,
       safety: r.safety,
+      phase: r.phase,
+      orgasms: r.orgasms,
+      rest: r.rest,
       localTime: Date.now(),
     });
   }
@@ -438,6 +503,10 @@
       millis: ((data[13] << 24) | (data[14] << 16) | (data[15] << 8) | data[16]) >>> 0,
       lock: data.length > 17 ? data[17] !== 0 : false, // added after 2.0.2
       safety: data.length > 18 ? data[18] : 0, // added after 3.1.0
+      // added after 3.2.0
+      orgasms: data.length > 22 ? data[19] : 0,
+      phase: data.length > 22 ? data[20] : 0,
+      rest: data.length > 22 ? (data[21] << 8) | data[22] : 0,
       localTime: Date.now(),
     };
     if (!syncDelta) syncDelta = r.localTime - r.millis;
@@ -696,7 +765,7 @@
   ];
 
   let quickKeys = $derived(
-    runMode === "ORGASM" ? ["auto_edging_duration_minutes", "max_denied", ...QUICK_SETTINGS] : QUICK_SETTINGS,
+    runMode === "ORGASM" ? ["auto_edging_duration_minutes", "max_denied", "after_orgasm", ...QUICK_SETTINGS] : QUICK_SETTINGS,
   );
 </script>
 
@@ -836,7 +905,7 @@
             {/snippet}
           </Gauge>
           <Gauge
-            label={isEnhancement ? "Orgasms" : "Denied"}
+            label={deniedLabel}
             color="var(--denied)"
             fraction={(latest.denied ?? 0) / maxDenied}
             text={String(latest.denied ?? 0)}
@@ -856,20 +925,32 @@
               <button class="small" onclick={applyPressure} title="Shorter ramp and cooldown, higher threshold">Apply pressure</button>
             {/snippet}
           </Gauge>
+          {#if showOrgasms}
+            <Gauge
+              label="Orgasms"
+              color="var(--orgasm)"
+              fraction={(latest.orgasms ?? 0) / orgasmScale}
+              text={orgasmsText}
+              pulse={latest.phase === PHASE_POST_ORGASM}
+            />
+          {/if}
         </div>
       {:else}
         <div class="chartWrap">
           <canvas bind:this={chartCanvas} class="chart" aria-label="Live readings chart"></canvas>
           <ul class="legend">
             {#each CHART_LINES as line}
-              <li><span class="swatch" class:dashed={line.dash} style="--c: var({line.color})"></span>{line.key === "denied" && isEnhancement ? "Orgasms" : line.label}</li>
+              <li><span class="swatch" class:dashed={line.dash} style="--c: var({line.color})"></span>{line.key === "denied" && deniedLabel === "Orgasms" ? "Orgasms" : line.label}</li>
             {/each}
           </ul>
           <div class="chartStats">
             <button class="stat" style="--c: var(--pleasure)" onclick={fullStop}>Pleasure <b>{pct(latest.motor, PLEASURE_MAX)}%</b></button>
             <button class="stat" style="--c: var(--arousal)" onclick={() => sendCommand("triggerArousal")}>Arousal <b>{pct(latest.arousal, MAX_Y)}%</b></button>
-            <button class="stat" style="--c: var(--denied)" onclick={() => sendCommand("resetDenied")}>{isEnhancement ? "Orgasms" : "Denied"} <b>{latest.denied ?? 0}</b></button>
+            <button class="stat" style="--c: var(--denied)" onclick={() => sendCommand("resetDenied")}>{deniedLabel} <b>{latest.denied ?? 0}</b></button>
             <button class="stat" style="--c: var(--pressure)" onclick={applyPressure}>Pressure <b>{pct(latest.pressure, MAX_Y)}%</b></button>
+            {#if showOrgasms}
+              <span class="stat" style="--c: var(--orgasm)">Orgasms <b>{orgasmsText}</b></span>
+            {/if}
           </div>
         </div>
       {/if}
@@ -925,6 +1006,33 @@
               {/if}
             {/each}
           </div>
+        </div>
+      {/if}
+
+      {#if prefs.pressureSim}
+        <div class="field">
+          <div class="fieldHead">
+            <label class="fieldLabel" for="simPressure">Simulated pressure</label>
+            <span class="pill">{pct(simPressure, MAX_Y)}%</span>
+          </div>
+          <input
+            id="simPressure"
+            class="bigSlider"
+            type="range"
+            min="0"
+            max={MAX_Y - 1}
+            step="16"
+            bind:value={simPressure}
+            style="--fill: {(simPressure / MAX_Y) * 100}%"
+            onchange={() => sendSimPressure(simPressure)}
+          />
+          <button
+            class:active={simClenching}
+            onpointerdown={() => setSimClench(true)}
+            onpointerup={() => setSimClench(false)}
+            onpointerleave={() => setSimClench(false)}
+            onpointercancel={() => setSimClench(false)}>Hold to clench</button
+          >
         </div>
       {/if}
 
@@ -1043,6 +1151,15 @@
             <label class="prefRow">
               <span><b>Keep screen on</b><small>While connected, so the screen doesn't lock mid-session.</small></span>
               <input type="checkbox" class="check" bind:checked={prefs.keepAwake} />
+            </label>
+            <label class="prefRow">
+              <span><b>Pressure simulator</b><small>Test without a sensor. Needs firmware built with EOM_PRESSURE_SIM.</small></span>
+              <input
+                type="checkbox"
+                class="check"
+                bind:checked={prefs.pressureSim}
+                onchange={() => sendSimPressure(prefs.pressureSim ? simPressure : -1)}
+              />
             </label>
             <div class="prefRow column">
               <span><b>Apply pressure step</b><small>How much "Apply pressure" raises the edge threshold.</small></span>
@@ -1292,6 +1409,20 @@
     .gauges {
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }
+    .gauges:has(> :nth-child(5)) {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+  }
+  /* In two columns, an odd one out (the Orgasms gauge or stat) gets the whole last row. */
+  @media (max-width: 639px), (min-width: 900px) {
+    .gauges > :last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+    }
+  }
+  @media (max-width: 639px) {
+    .chartStats > :last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+    }
   }
 
   .chartWrap {
@@ -1336,6 +1467,9 @@
   @media (min-width: 640px) {
     .chartStats {
       grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    .chartStats:has(> :nth-child(5)) {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
     }
   }
   .stat {

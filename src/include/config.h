@@ -139,6 +139,12 @@ enum vibration_mode { RampStop = 1, Depletion = 2, Enhancement = 3, Pattern = 4,
 
 typedef enum vibration_mode vibration_mode_t;
 
+// What happens once an orgasm is detected in Orgasm mode. Sent to the UI as a number, so keep the
+// values stable.
+enum after_orgasm { AfterOrgasmRuin = 0, AfterOrgasmPost = 1, AfterOrgasmMilking = 2 };
+
+typedef enum after_orgasm after_orgasm_t;
+
 /**
  * Main Configuration Struct!
  *
@@ -258,8 +264,12 @@ struct config {
 
     //= Post orgasm torure stuff
 
-    // Use post-orgasm torture mode and functionality.
-    bool use_post_orgasm;
+    // What to do once an orgasm is detected in Orgasm mode, see after_orgasm_t.
+    int after_orgasm;
+    // Milking: how long to rest at 0 between an orgasm and the next round of edging.
+    int milking_rest_seconds;
+    // Milking: stop after this many orgasms (the last one gets normal post-orgasm). 0 for no limit.
+    int milking_max_orgasms;
     // Threshold over arousal to detect a clench : Lower values increase sensitivity
     int clench_pressure_sensitivity;
     // Duration the clench detector can raise arousal if clench detector turned on in edging session

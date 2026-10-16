@@ -63,6 +63,11 @@ static struct {
     oc_bool_t menu_is_locked;
     oc_bool_t detected_orgasm;
     int post_orgasm_duration_seconds;
+
+    // After-orgasm modes (Config.after_orgasm)
+    uint8_t session_orgasms;
+    unsigned long rest_start_millis; // Milking rest between rounds, 0 when not resting
+    oc_bool_t ruined;
 } post_orgasm_state;
 
 volatile static struct {
@@ -103,7 +108,10 @@ uint8_t orgasm_control_get_arousal_sensitivity(void) {
 void orgasm_control_set_pleasure_ex(uint8_t pleasure, bool use_motor) {
     if (pleasure > Config.max_pleasure) pleasure = Config.max_pleasure;
     if (pleasure > Config.max_motor_output) pleasure = Config.max_motor_output;
-    if (pleasure > 0) safety_clear();
+    if (pleasure > 0) {
+        safety_clear();
+        post_orgasm_state.ruined = ocFALSE;
+    }
 
     if (use_motor) {
         #if MOTOR1_ENABLED
@@ -248,6 +256,11 @@ static void orgasm_control_update_pleasure() {
         return;
     }
 
+    // After an orgasm, orgasm_control_update_edging_time() owns the output.
+    if (orgasm_control_is_post_orgasm_reached() || post_orgasm_state.rest_start_millis > 0) {
+        return;
+    }
+
     const vibration_mode_controller_t* controller = get_vibration_mode_controller();
     controller->tick(output_state.pleasure, arousal_state.arousal);
 
@@ -336,6 +349,33 @@ static void orgasm_control_update_pleasure() {
     // }
 }
 
+// Ruin: stop everything as soon as the orgasm is detected.
+static void orgasm_control_ruin() {
+    ESP_LOGI(TAG, "Orgasm ruined");
+    post_orgasm_state.menu_is_locked = ocFALSE;
+    output_state.pleasure = 0;
+    arousal_state.cooldown = 0;
+    orgasm_control_set_output_mode(OC_MANUAL);
+    orgasm_control_set_pleasure(0);
+    post_orgasm_state.ruined = ocTRUE;
+}
+
+// Milking: start the next round of edging after a rest. Unlike orgasm_control_set_output_mode()
+// this keeps the session's orgasm count and the menu lock.
+static void orgasm_control_start_milking_round() {
+    ESP_LOGI(TAG, "Milking: starting round %d", post_orgasm_state.session_orgasms + 1);
+    post_orgasm_state.rest_start_millis = 0;
+    post_orgasm_state.post_orgasm_start_millis = 0;
+    post_orgasm_state.detected_orgasm = ocFALSE;
+    post_orgasm_state.auto_edging_start_millis = (esp_timer_get_time() / 1000UL);
+    orgasm_state.orgasm_count = 0;
+    output_state.pleasure = 0;
+    output_state.motor_start_time = 0;
+    output_state.motor_stop_time = 0;
+    arousal_state.cooldown = 0;
+    arousal_state.update_flag = ocTRUE;
+}
+
 static void orgasm_control_update_edging_time() { // Edging+Orgasm timer
     const vibration_mode_controller_t* controller = get_vibration_mode_controller();
     // Make sure menu_is_locked is turned off in Manual mode
@@ -361,6 +401,16 @@ static void orgasm_control_update_edging_time() { // Edging+Orgasm timer
         }
     }
 
+    // Milking: resting between rounds. Stay off, then start the next round of edging.
+    if (post_orgasm_state.rest_start_millis > 0) {
+        output_state.pleasure = 0;
+        if ((esp_timer_get_time() / 1000UL) >=
+            post_orgasm_state.rest_start_millis + (Config.milking_rest_seconds * 1000UL)) {
+            orgasm_control_start_milking_round();
+        }
+        return;
+    }
+
     // Pre-Orgasm loop -- Orgasm is permited
     if (orgasm_control_is_permit_orgasm_reached() && !orgasm_control_is_post_orgasm_reached()) {
         if (output_state.control_motor) {
@@ -369,6 +419,16 @@ static void orgasm_control_update_edging_time() { // Edging+Orgasm timer
 
         // now detect the orgasm to start post orgasm torture timer
         if (post_orgasm_state.detected_orgasm) {
+            post_orgasm_state.detected_orgasm = ocFALSE;
+            if (post_orgasm_state.session_orgasms < UINT8_MAX) post_orgasm_state.session_orgasms++;
+            arousal_state.update_flag = ocTRUE;
+            ESP_LOGI(TAG, "Orgasm detected: %d this session", post_orgasm_state.session_orgasms);
+
+            if (Config.after_orgasm == AfterOrgasmRuin) {
+                orgasm_control_ruin();
+                return;
+            }
+
             post_orgasm_state.post_orgasm_start_millis =
                 (esp_timer_get_time() / 1000UL); // Start Post orgasm torture timer
             // Lock menu if turned on
@@ -403,6 +463,18 @@ static void orgasm_control_update_edging_time() { // Edging+Orgasm timer
         } else {                                // Post_orgasm timer reached
             if (output_state.pleasure > 0) { // Ramp down pleasure to 0
                 output_state.pleasure = output_state.pleasure - 1;  // why 1?
+            } else if (Config.after_orgasm == AfterOrgasmMilking &&
+                       (Config.milking_max_orgasms <= 0 ||
+                        post_orgasm_state.session_orgasms < Config.milking_max_orgasms)) {
+                // Milking: rest, then go again.
+                ESP_LOGI(TAG, "Milking: resting for %ds", Config.milking_rest_seconds);
+                post_orgasm_state.detected_orgasm = ocFALSE;
+                post_orgasm_state.post_orgasm_start_millis = 0;
+                unsigned long now = esp_timer_get_time() / 1000UL;
+                post_orgasm_state.rest_start_millis = now > 0 ? now : 1;
+                output_state.pleasure = 0;
+                arousal_state.cooldown = 0;
+                arousal_state.update_flag = ocTRUE;
             } else {
                 post_orgasm_state.menu_is_locked = ocFALSE;
                 post_orgasm_state.detected_orgasm = ocFALSE;
@@ -643,6 +715,14 @@ void orgasm_control_set_output_mode(orgasm_output_mode_t mode) {
     output_state.motor_stop_time = 0;
     post_orgasm_state.auto_edging_start_millis = (esp_timer_get_time() / 1000UL);
     post_orgasm_state.post_orgasm_start_millis = 0;
+    post_orgasm_state.rest_start_millis = 0;
+    if (mode != OC_MANUAL) {
+        // A new session: forget the last one's orgasms and clench baseline.
+        post_orgasm_state.session_orgasms = 0;
+        post_orgasm_state.ruined = ocFALSE;
+        post_orgasm_state.detected_orgasm = ocFALSE;
+        post_orgasm_state.clench_pressure_threshold = 4096;
+    }
     if (mode == OC_ORGASM) {
         orgasm_state.orgasm_count = 0;
     }
@@ -705,6 +785,26 @@ oc_bool_t orgasm_control_is_post_orgasm_reached() {
     } else {
         return ocFALSE;
     }
+}
+
+oc_after_orgasm_phase_t orgasm_control_get_after_orgasm_phase(void) {
+    if (post_orgasm_state.ruined) return OC_PHASE_RUINED;
+    if (post_orgasm_state.rest_start_millis > 0) return OC_PHASE_RESTING;
+    if (output_state.output_mode == OC_ORGASM && orgasm_control_is_post_orgasm_reached()) {
+        return OC_PHASE_POST_ORGASM;
+    }
+    return OC_PHASE_NONE;
+}
+
+uint8_t orgasm_control_get_session_orgasms(void) {
+    return post_orgasm_state.session_orgasms;
+}
+
+uint16_t orgasm_control_get_rest_remaining_seconds(void) {
+    if (post_orgasm_state.rest_start_millis == 0) return 0;
+    unsigned long end = post_orgasm_state.rest_start_millis + (Config.milking_rest_seconds * 1000UL);
+    unsigned long now = esp_timer_get_time() / 1000UL;
+    return now >= end ? 0 : (uint16_t)((end - now + 999) / 1000);
 }
 
 oc_bool_t orgasm_control_is_menu_locked() {

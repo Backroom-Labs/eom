@@ -37,6 +37,9 @@ void api_broadcast_readings(void) {
     // cJSON_AddBoolToObject(root, "postOrgasm", orgasm_control_is_post_orgasm_reached());
     cJSON_AddBoolToObject(root, "lock", orgasm_control_is_menu_locked());
     cJSON_AddNumberToObject(root, "safety", safety_get_stop_reason());
+    cJSON_AddNumberToObject(root, "phase", orgasm_control_get_after_orgasm_phase());
+    cJSON_AddNumberToObject(root, "orgasms", orgasm_control_get_session_orgasms());
+    cJSON_AddNumberToObject(root, "rest", orgasm_control_get_rest_remaining_seconds());
 
     websocket_broadcast(payload, WS_BROADCAST_READINGS);
     cJSON_Delete(payload);

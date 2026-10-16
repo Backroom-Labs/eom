@@ -60,7 +60,9 @@ CONFIG_DEFS {
     CFG_ENUM(vibration_mode, vibration_mode_t, Depletion);
 
     // Post-Orgasm Torture
-    CFG_BOOL(use_post_orgasm, true);
+    CFG_ENUM(after_orgasm, after_orgasm_t, AfterOrgasmPost);
+    CFG_NUMBER(milking_rest_seconds, 60);
+    CFG_NUMBER(milking_max_orgasms, 3);
     CFG_NUMBER(clench_pressure_sensitivity, 300);
     CFG_NUMBER(clench_time_to_orgasm_ms, 1500);
     CFG_NUMBER(clench_time_threshold_ms, 900);

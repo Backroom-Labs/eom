@@ -12,6 +12,7 @@
 #include "led_strip.h"
 #include "soc/soc_caps.h"
 #include "esp_timer.h"
+#include "esp_random.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #if PRESSURE_SENSOR == PRESSURE_SENSOR_I2C
@@ -47,6 +48,10 @@ uint8_t pressure_ambient = DEFAULT_AMBIENT_PRESSURE;  //is this necessary?
 static bool setting_up_ambient = false;
 // Consecutive failed sensor reads; the safety checks stop the session when it gets too high.
 static uint16_t pressure_read_failures = 0;
+#ifdef EOM_PRESSURE_SIM
+// Simulated pressure for testing without a sensor, -1 for the real sensor.
+static volatile int sim_pressure = 0;
+#endif
 RGBColor led_color = {0, 0, 0};
 RGBColor rgb_off = {0, 0, 0};
 RGBColor rgb_white = {255, 255, 255};
@@ -154,8 +159,25 @@ void eom_hal_init_pressure_sensor(void) {
 }
 
 
+void eom_hal_set_simulated_pressure(int value) {
+#ifdef EOM_PRESSURE_SIM
+    sim_pressure = value < 0 ? -1 : value > EOM_HAL_PRESSURE_MAX ? EOM_HAL_PRESSURE_MAX : value;
+    ESP_LOGI(TAG, "Simulated pressure: %d", sim_pressure);
+#endif
+}
+
 uint16_t eom_hal_get_pressure_reading(void) {
     esp_err_t r = 0;
+#ifdef EOM_PRESSURE_SIM
+    if (sim_pressure >= 0) {
+        // A little noise, or the safety checks see a stuck sensor after 30 s.
+        int value = sim_pressure + (int)(esp_random() % 17) - 8;
+        if (value < 0) value = 0;
+        if (value > EOM_HAL_PRESSURE_MAX) value = EOM_HAL_PRESSURE_MAX;
+        pressure_read_failures = 0;
+        return (uint16_t)value;
+    }
+#endif
     if (PRESSURE_SENSOR == PRESSURE_SENSOR_ANALOG) {
 
         int raw = 0;
