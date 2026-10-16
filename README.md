@@ -68,6 +68,8 @@ Updates are done over USB from PlatformIO, except that firmware can also be upda
 
 **Firmware signing.**  Every build signs ```firmware.bin``` with an ECDSA key that is generated into ```keys/``` on your first build (requires ```openssl```; see [tools/gen_signing_keys.py](tools/gen_signing_keys.py)).  The device will only accept over-the-air updates signed with the same key as the firmware it is running, so **back up ```keys/```**: it is not committed to git, and if you lose it, devices have to be updated over USB once more.  New firmware that crashes or stops running within 30 seconds of its first boot is rolled back automatically.
 
+**Releases.**  GitHub Actions ([.github/workflows/release.yml](.github/workflows/release.yml)) builds every board in ```platformio.ini``` on each push and pull request.  Pushing a tag that matches ```PROJECT_VER``` in ```CMakeLists.txt``` (e.g. ```git tag v2.0.1 && git push origin v2.0.1```) also publishes a GitHub release containing ```firmware-<board>.bin``` for each board and a ```manifest.json``` listing each image's board, version, download URL, SHA-256 and size (see [tools/make_manifest.py](tools/make_manifest.py)).  The latest release's manifest is always at ```https://github.com/backroom-labs/EOM/releases/latest/download/manifest.json```.  Releases are signed with the ```OTA_SIGNING_KEY``` repository secret, which must hold the contents of your ```keys/ota_signing_key.pem``` so devices accept them; the release fails if the secret is missing.
+
 ### Small code changes: firmware upload only
 For day-to-day changes to anything in ```src/``` or a ```build_flags``` pin change in [platformio.ini](platformio.ini), you only need to reflash the firmware:
 
