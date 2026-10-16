@@ -364,9 +364,10 @@ static void orgasm_control_update_edging_time() { // Edging+Orgasm timer
             post_orgasm_state.post_orgasm_start_millis =
                 (esp_timer_get_time() / 1000UL); // Start Post orgasm torture timer
             // Lock menu if turned on
-            // if (Config.post_orgasm_menu_lock && !post_orgasm_state.menu_is_locked) {
-            //     post_orgasm_state.menu_is_locked = ocTRUE;
-            // }
+            if (Config.post_orgasm_menu_lock && !post_orgasm_state.menu_is_locked) {
+                post_orgasm_state.menu_is_locked = ocTRUE;
+                arousal_state.update_flag = ocTRUE;
+            }
 
            // eom_hal_set_encoder_rgb(255, 0, 0);
         } else {

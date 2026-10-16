@@ -164,6 +164,13 @@ export const SETTINGS: SettingDef[] = [
     visible: (c) => Boolean(c.use_post_orgasm),
   },
   {
+    key: "post_orgasm_menu_lock",
+    label: "Lock settings after orgasm",
+    description: "Once an orgasm is detected in Orgasm mode, settings can't be changed until post-orgasm stimulation ends.",
+    kind: "toggle", default: false,
+    visible: (c) => Boolean(c.use_post_orgasm),
+  },
+  {
     key: "clench_detector_in_edging",
     label: "Clench detection while edging",
     description: "Sustained clenches raise arousal during Endless and Orgasm mode.",
@@ -334,7 +341,7 @@ export const SETTING_GROUPS: SettingGroup[] = [
     id: "clench",
     title: "Clench & post-orgasm",
     keys: [
-      "use_post_orgasm", "post_orgasm_duration_seconds", "clench_detector_in_edging",
+      "use_post_orgasm", "post_orgasm_duration_seconds", "post_orgasm_menu_lock", "clench_detector_in_edging",
       "clench_pressure_sensitivity", "clench_time_threshold_ms", "clench_time_to_orgasm_ms", "max_clench_duration_ms",
     ],
   },
