@@ -69,6 +69,7 @@ uint8_t is_flashing = 0;
 uint8_t flash_on = 0;
 unsigned long last_flash = 0;
 uint16_t flash_interval = 250;
+static void led_show_current(void);
 
 #define MOTOR1_PIN DAC_CHANNEL_0  //revisit when converting to pwm
 #define MOTOR2_PIN DAC_CHANNEL_1
@@ -330,39 +331,40 @@ void eom_hal_led_tick(void) {
              if (LED_TYPE == LED_TYPE_MONO) {
                 eom_hal_set_led_mono(flash_on);
             } else {
-                // eom_hal_set_rgb(flash_on ? led_color.r : 0, flash_on ? led_color.g : 0, flash_on ? led_color.b : 0);
-                eom_hal_set_rgb(led_color.r,led_color.g,led_color.b);
+                led_show_current();
             }
         }
     }
 }
 
+// Hands the LED task what the pixel should show now: the color, or off during the off half of a
+// flash. Skips the refresh when the pixel wouldn't change.
+static void led_show_current(void) {
+    if (led_refresh_task_handle == NULL) {
+        ESP_LOGW(TAG, "LED strip not initialized");
+        return;
+    }
+    RGBColor pixel = (!is_flashing || flash_on) ? led_color : rgb_off;
+
+    taskENTER_CRITICAL(&led_pending_lock);
+    bool same = led_pending.r == pixel.r && led_pending.g == pixel.g && led_pending.b == pixel.b;
+    led_pending = pixel;
+    led_dirty = led_dirty || !same;
+    bool notify = led_dirty;
+    taskEXIT_CRITICAL(&led_pending_lock);
+    if (notify) xTaskNotifyGive(led_refresh_task_handle);
+}
+
 void eom_hal_set_rgb(uint8_t r, uint8_t g, uint8_t b) {
     if (LED_GPIO < 0) return; //no LED configured
-    
-    // Skip update only if color unchanged
-    if (!is_flashing &&  (led_color.r == r && led_color.g == g && led_color.b == b)) {
-        return; //no change
-    }
 
     if (LED_TYPE == LED_TYPE_WS2812) {
-        if (led_refresh_task_handle == NULL) {
-            ESP_LOGW(TAG, "LED strip not initialized");
-            return;
-        }
-        RGBColor pixel = {1, 0, 0};  //dim red rather than totally off for flash
-        if (!is_flashing || flash_on) {
-                led_color.r = r;
-                led_color.g = g;
-                led_color.b = b;
-                pixel = led_color;
-        }
-
-        taskENTER_CRITICAL(&led_pending_lock);
-        led_pending = pixel;
-        led_dirty = true;
-        taskEXIT_CRITICAL(&led_pending_lock);
-        xTaskNotifyGive(led_refresh_task_handle);
+        // Always keep the latest color, even during the off half of a flash, so it shows on the
+        // next on half. (Dropping it left the LED stuck on whatever color it had before.)
+        led_color.r = r;
+        led_color.g = g;
+        led_color.b = b;
+        led_show_current();
     }
 }
 
@@ -396,7 +398,10 @@ void eom_hal_set_rgb_color(RGBColor* color) {
 }
 
 void eom_hal_set_led_flashing(uint8_t flashing) {
+    if (is_flashing == flashing) return;
     is_flashing = flashing;
+    // Stopping mid-flash could leave the LED dark: show the current color again.
+    if (!flashing && LED_TYPE == LED_TYPE_WS2812) led_show_current();
 }
 
 void eom_hal_set_led_flash_interval(uint16_t interval_ms) {
@@ -451,7 +456,7 @@ led_strip_handle_t configure_led_2812(void)
         .strip_gpio_num = LED_GPIO,   // The GPIO that connected to the LED strip's data line
         .max_leds = LED_NUM,        // The number of LEDs in the strip,
         .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT, // Color format of your LED strip
-        .led_model = LED_MODEL_WS2811,            // LED strip model
+        .led_model = LED_STRIP_MODEL,             // LED strip model (sets the bit timing)
         .flags.invert_out = false,                // whether to invert the output signal
     };
 

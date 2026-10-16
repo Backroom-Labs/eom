@@ -70,6 +70,12 @@ typedef enum pressure_sensor_hardware pressure_sensor_hardware_t;
     #define LED_STRIP_COLOR_COMPONENT_FMT LED_STRIP_COLOR_COMPONENT_FMT_GRB // Default
 #endif
 
+// led_strip chip model; it sets the bit timing. Boards with an SK6812/WS2812 need their model:
+// WS2811 timing is too slow for them and they ignore the data.
+#ifndef LED_STRIP_MODEL
+    #define LED_STRIP_MODEL LED_MODEL_WS2811
+#endif
+
 #define MINIMUM_BLINK_L 40
 
 #ifndef PRESSURE_SENSOR

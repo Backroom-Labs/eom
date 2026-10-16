@@ -41,6 +41,8 @@ enum {
 esp_err_t websocket_handler(httpd_req_t* req);
 esp_err_t websocket_open_fd(httpd_handle_t hd, int sockfd);
 void websocket_close_fd(httpd_handle_t hd, int sockfd);
+// Open WebSocket clients (plain HTTP page loads don't count).
+size_t websocket_client_count(void);
 void websocket_start_ping_timer(void);
 void websocket_stop_ping_timer(void);
 

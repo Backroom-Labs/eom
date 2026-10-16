@@ -193,6 +193,18 @@ esp_err_t websocket_open_fd(httpd_handle_t hd, int sockfd) {
     return ESP_OK;
 }
 
+size_t websocket_client_count(void) {
+    size_t count = 0;
+    websocket_client_t* client = NULL;
+
+    CLIENT_LIST_LOCK();
+    list_foreach(_client_list, client) {
+        if (_is_websocket(client)) count++;
+    }
+    CLIENT_LIST_UNLOCK();
+    return count;
+}
+
 void websocket_close_fd(httpd_handle_t hd, int sockfd) {
     ESP_LOGI(TAG, "websocket_close_fd(hd: %p, sockfd: %d)", hd, sockfd);
     websocket_client_t* client = httpd_sess_get_ctx(hd, sockfd);
