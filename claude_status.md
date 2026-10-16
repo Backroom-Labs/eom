@@ -26,10 +26,7 @@ _Last updated: 2026-10-17_
 
 | What | How to test |
 |---|---|
-| **Session history + auto-calibration** (3.4.0) — not tested on the Echo or in a browser | Sim build is fine. Run Endless 1+ min, stop, wait 30 s -> "Session saved to History" toast; graph and CSV look right. In Orgasm mode get an orgasm detected -> threshold suggestion appears. Drift test: in Orgasm mode raise sim pressure slowly (a few % per 10 s) and check no orgasm is detected while Settings > Clench > "Follow resting pressure" (`auto_baseline`) is on. |
-| **Modern UI** (3.0.0) — only partly exercised via the safety/after-orgasm tests | Power-cycle and check nothing runs until a mode is picked. Over BLE change a slider, reboot, check it stuck. Toggle `edge_menu_lock`, run Orgasm mode > 2 min, see the lock. Change `bt_display_name` + Restart. |
 | **`post_orgasm_menu_lock`** | Turn it on, get an orgasm detected in Orgasm mode -> settings lock; lock clears when ramp-down ends. |
-| **Settings saved before the BLE config fix** | Earlier BLE writes may have saved defaults over real values. Recheck settings on the Echo. |
 
 ## 2. Release / infrastructure checks
 
@@ -42,9 +39,6 @@ _Last updated: 2026-10-17_
 
 - **Phase 2 scope** (feature 1 below): probably OTA over Wi-Fi from `manifest.json`. Confirm before
   building.
-- **`pressure_ambient` is a `uint8_t`** in `eom-hal-esp32.c`, so an ambient above 255 is truncated
-  (and the MPR 24-bit ambient is meaningless). Fixing it changes readings, so thresholds people have
-  tuned would shift. Fix or leave?
 
 ## 4. Features (agreed with Russ 2026-10-16, original numbering)
 
@@ -92,7 +86,7 @@ Done: 2, 3, 6, 7, 13 (see Done).
 | OTA phase 1: firmware updates over BLE | c21494d | Yes |
 | OTA phase 3: release pipeline (CI + signed GitHub release + manifest) | PR #4, 123e7ba | Yes |
 | `OTA_SIGNING_KEY` repo secret set, signed releases working | — | Yes |
-| Modern UI | 3.0.0, PR #7 | Partly (see Backlog 1) |
+| Modern UI | 3.0.0, PR #7 | Yes |
 | Device boots stopped instead of Endless | 4687b18 | Yes |
 | Status LED (blue flash until connected, then green) | 3.1.0, PR #8 | Yes |
 | `post_orgasm_menu_lock` | 3.1.0, c1416e5 | No |
@@ -100,7 +94,7 @@ Done: 2, 3, 6, 7, 13 (see Done).
 | Safety stops (backlog 2, 3) + BLE settings fix | 3.2.0, d56e37c | Yes, all stops |
 | After-orgasm modes (backlog 13) + Orgasms counter | 3.3.0, 95357c2 | Yes, with simulator |
 | Pressure simulator | 3.3.0, 95357c2 | Yes |
-| Session history + auto-calibration (backlog 6, 7) | 3.4.0, 5ef8b5a | No |
+| Session history + auto-calibration (backlog 6, 7) | 3.4.0, 5ef8b5a | Yes |
 
 Details of each, for reference when changing that code:
 
@@ -237,6 +231,24 @@ files (the toy components and node_modules still have many old type errors).
 - WS2812 refreshes all run in one `LED` task pinned to core 0, which also creates the RMT channel.
   `eom_hal_set_rgb()` only queues the colour. Refreshing from the other core raced the RMT TX-done
   ISR and left the channel stuck.
+
+## Pressure sensor ambient (parked)
+
+- **`pressure_ambient` is a `uint8_t`** in `eom-hal-esp32.c`. Russ decided 2026-10-17 to **leave it
+  alone**. Fix MPR only when an MPR board is built:
+  - Today the boot ambient is the mean raw ADC value mod 256 (e.g. 1800 -> 8), so analog readings are
+    effectively raw ADC. Everything downstream is relative (arousal is peak-to-peak, the clench
+    threshold adapts, `auto_baseline` follows resting pressure), so `sensitivity_threshold` etc. don't
+    depend on it.
+  - Changing only the type would break things: `eom_hal_setup_pressure_ambient()` averages
+    `eom_hal_get_pressure_reading()`, which already subtracts the ambient, and any reading below
+    ambient re-runs setup. Resting readings would sit around 0, half the samples would trigger setup,
+    and the ambient would oscillate.
+  - Even done properly, resting pressure clamped at 0 trips the safety "same value for 30 s" check, and
+    readings can no longer reach `EOM_HAL_PRESSURE_MAX`, so the "pinned at max" check stops working.
+  - MPR: no env builds it (`PRESSURE_SENSOR` defaults to analog). Its ambient is effectively 0, so it
+    reports absolute pressure and probably sits at the max. It needs an `int32_t` ambient taken from
+    raw 24-bit data. Needs a real sensor to test; the simulator skips this code.
 
 ## Protocol
 
