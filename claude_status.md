@@ -8,7 +8,7 @@ _Last updated: 2026-10-16_
 ## Current focus: OTA (over-the-air) firmware updates
 
 Work is split into phases, each one a commit (or branch). Version is `PROJECT_VER` in
-[CMakeLists.txt](CMakeLists.txt), currently **2.0.1**.
+[CMakeLists.txt](CMakeLists.txt), currently **3.0.0**.
 
 | Phase | What | State |
 |---|---|---|
@@ -42,7 +42,7 @@ Work is split into phases, each one a commit (or branch). Version is `PROJECT_VE
   and releases only build those two (CI lists envs by matching uncommented `[env:...]` lines).
   Uncomment them before a full release.
 
-## Modern UI (started 2026-10-16, branch `feature/modern-ui`, not committed yet)
+## Modern UI (2026-10-16, branch `feature/modern-ui`, PR #7, tagged `v3.0.0`)
 
 Rewrite of `eomui/src/App.svelte` with every device setting in the UI. Builds, `svelte-check` is
 clean for the new files (the toy components and node_modules still have many old type errors).
@@ -102,8 +102,8 @@ Versions checked 2026-10-16.
 
 ## Next steps
 
-0. Test the modern UI on the Atom Echo (see "Modern UI" above), then commit and PR
-   `feature/modern-ui`. Consider bumping `eomui/package.json` version (1.5.5).
+0. Test the modern UI on the Atom Echo (see "Modern UI" above), then merge PR #7. Check the
+   `v3.0.0` release run on GitHub (tag pushed from the branch before merge).
 1. Make sure the `OTA_SIGNING_KEY` repo secret holds the contents of `keys/ota_signing_key.pem`.
    Without it, a tag release fails on purpose.
 2. Do a first test release from `main`: `git tag v2.0.1 && git push origin v2.0.1` (the tag must
