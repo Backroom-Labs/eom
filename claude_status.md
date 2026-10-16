@@ -42,6 +42,30 @@ Work is split into phases, each one a commit (or branch). Version is `PROJECT_VE
   and releases only build those two (CI lists envs by matching uncommented `[env:...]` lines).
   Uncomment them before a full release.
 
+## Modern UI (started 2026-10-16, branch `feature/modern-ui`, not committed yet)
+
+Rewrite of `eomui/src/App.svelte` with every device setting in the UI. Builds, `svelte-check` is
+clean for the new files (the toy components and node_modules still have many old type errors).
+Tested in headless Chrome with a fake WebSocket device; **not yet tested on hardware or over BLE.**
+
+- `eomui/src/lib/settings.ts` is the single list of device settings (label, range, format, group,
+  `restart` flag, `visible` rule). Add a setting there and it shows up in the drawer. Keys must match
+  `CONFIG_DEFS` in `src/config.c`.
+- Newly exposed: all Wi-Fi/AP settings, hostname, `use_ssl`, `websocket_port`, `bt_on`,
+  `bt_display_name`, `force_bt_coex`, `classic_serial`, `edge_menu_lock`. Left out on purpose:
+  `post_orgasm_menu_lock` (its code is commented out), console settings, SSL paths.
+- App-only prefs (localStorage `eom.prefs`): WebSocket URL (the Wi-Fi connect UI was commented out
+  in the old UI), start view, keep screen on (Wake Lock), "Apply pressure" step.
+- Firmware changes for it: BLE setting writes (0x02) are now saved to flash (they weren't before);
+  BLE `0x04` = save and restart; status byte 17 and WS `readings.lock` = settings lock. Old firmware
+  ignores 0x04, so restart there only works over Wi-Fi.
+- Fixed in passing: BLE `permit` decoded as `*255` (now `<<8`); WS readings were never trimmed
+  (memory grew forever); the stale-data timer was re-created on every WS connect.
+- The device now boots stopped (Manual, pleasure 0) instead of Endless: `orgasm_control_init()` and
+  `main_task()` in `src/main.c`. The UI shows "Stopped" for Manual at 0%.
+- To test on the Echo: power-cycle and check nothing runs until a mode is picked; connect over BLE, change a slider, reboot, and check it stuck; toggle
+  `edge_menu_lock` and run Orgasm mode >2 min to see the lock; change `bt_display_name` + Restart.
+
 ## Dependency update (started 2026-10-16, branch `feature/deps-update`)
 
 Goal: latest versions that still build and run on the Atom Echo (classic ESP32, 4 MB, tight IRAM).
@@ -78,6 +102,8 @@ Versions checked 2026-10-16.
 
 ## Next steps
 
+0. Test the modern UI on the Atom Echo (see "Modern UI" above), then commit and PR
+   `feature/modern-ui`. Consider bumping `eomui/package.json` version (1.5.5).
 1. Make sure the `OTA_SIGNING_KEY` repo secret holds the contents of `keys/ota_signing_key.pem`.
    Without it, a tag release fails on purpose.
 2. Do a first test release from `main`: `git tag v2.0.1 && git push origin v2.0.1` (the tag must
