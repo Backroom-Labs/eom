@@ -125,7 +125,7 @@ Versions checked 2026-10-16.
 
 ## Next steps
 
-0. PRs #7 and #8 and the 3.1.0 bump are merged to `main` (fd57fb3). To release, tag from `main`:
+0. PRs #7 and #8 and the 3.1.0 bump are merged to `main` (fd57fb3); `v3.1.0` tag pushed 2026-10-16 (check the release run on GitHub). Was:
    `git tag v3.1.0 && git push origin v3.1.0`. Still to test on the Echo: the modern UI (see
    "Modern UI" above) and `post_orgasm_menu_lock`.
 1. Make sure the `OTA_SIGNING_KEY` repo secret holds the contents of `keys/ota_signing_key.pem`.
