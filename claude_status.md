@@ -136,7 +136,7 @@ Versions checked 2026-10-16.
    `releases/latest/download/manifest.json` resolves and lists every board.
 3. Phase 2 (probably WiFi OTA using the manifest), after confirming the scope.
 
-## Safety stops (2026-10-16, branch `feature/safety`, committed, not merged)
+## Safety stops (2026-10-16, merged to `main` locally 2026-10-17, d56e37c)
 
 Backlog items 2 and 3. Both envs build, `svelte-check` clean. **Tested on the Echo 2026-10-17: all
 stops, the banners, the Safety tab and the BLE settings fix work.**
