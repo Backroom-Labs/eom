@@ -258,8 +258,9 @@ static int status_out_chr_access(uint16_t conn_handle, uint16_t attr_handle, str
             uint32_t current_time = esp_timer_get_time() / 1000UL;
 
             uint16_t rest_seconds = orgasm_control_get_rest_remaining_seconds();
+            uint16_t baseline = orgasm_control_get_baseline();
 
-            uint8_t chr_val[23] = {
+            uint8_t chr_val[25] = {
                 (uint8_t)(orgasm_control_get_last_pressure() >> 4), // Scale from 12-bit (0-4095) to 8-bit (0-255)
                 (uint8_t)(orgasm_control_get_arousal() >> 4),
                 (uint8_t)(orgasm_control_get_arousal_threshold() >> 4),
@@ -282,7 +283,9 @@ static int status_out_chr_access(uint16_t conn_handle, uint16_t attr_handle, str
                 orgasm_control_get_session_orgasms(),
                 (uint8_t)orgasm_control_get_after_orgasm_phase(),
                 (uint8_t)((rest_seconds >> 8) & 0xFF),  // MSB
-                (uint8_t)(rest_seconds & 0xFF)          // LSB
+                (uint8_t)(rest_seconds & 0xFF),         // LSB
+                (uint8_t)((baseline >> 8) & 0xFF),      // MSB, full 12-bit resolution
+                (uint8_t)(baseline & 0xFF)              // LSB
             };
             rc = os_mbuf_append(ctxt->om, chr_val, sizeof(chr_val));
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;

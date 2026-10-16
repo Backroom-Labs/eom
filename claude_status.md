@@ -8,9 +8,9 @@ _Last updated: 2026-10-17_
 ## Current focus: OTA (over-the-air) firmware updates
 
 Work is split into phases, each one a commit (or branch). Version is `PROJECT_VER` in
-[CMakeLists.txt](CMakeLists.txt), currently **3.3.0** (bumped 2026-10-17 for after-orgasm modes, the Orgasms counter and the
-pressure simulator; committed to `main`. `v3.2.0` is tagged. Release with
-`git push origin main && git tag v3.3.0 && git push origin v3.3.0`).
+[CMakeLists.txt](CMakeLists.txt), currently **3.4.0** (bumped 2026-10-17 for session history and auto-calibration; committed to
+`main`, not pushed. 3.3.0 added after-orgasm modes, the Orgasms counter and the pressure simulator.
+`v3.2.0` is tagged. Release with `git push origin main && git tag v3.4.0 && git push origin v3.4.0`).
 
 | Phase | What | State |
 |---|---|---|
@@ -221,6 +221,43 @@ tested on the Echo yet.
   "Hold to clench" button (+1000 while held) in the Controls card. It can't tell whether the
   firmware is a sim build; other firmware ignores the command.
 
+## Session history + auto-calibration (2026-10-17, backlog 6 and 7, committed to `main`, 3.4.0)
+
+Both envs build, `svelte-check` clean, UI rebuilt. Recorder logic tested in Node with a fake
+IndexedDB. **Not tested on the Echo or in a browser yet.**
+
+- **History is recorded by the app, not the device** (the "stream" option): the readings the UI
+  already gets over BLE/WS go into IndexedDB (`eom-history`) in that browser. No flash wear, no
+  partition change, works on the 4 MB Echo. Downside: only recorded while the app is open and
+  connected. SPIFFS logging on the device was not done.
+- `eomui/src/lib/history.ts`: `Recorder` (5 Hz samples; arousal is the peak per 200 ms bucket), a
+  session starts when a mode runs or pleasure > 0 and ends 30 s after it stops or 60 s without
+  readings; < 15 s is dropped; saved in 10 s chunks; keeps the last 200 sessions. Also CSV export
+  and `suggestThreshold()`.
+- Stats per session: duration, edges (arousal crossing the threshold while stimulated), denials
+  (rises of `denied`), orgasms, ruined, safety stop, peak arousal, average pleasure, threshold,
+  resting-pressure drift, and the arousal peak in the minute before each orgasm.
+- UI: History button in the top bar (red dot while recording) opens `lib/SessionHistory.svelte`:
+  list, full-session graph with denial/orgasm markers, stats, Export CSV (share sheet in the native
+  app), delete. App pref "Record sessions" (default on) in Settings > App.
+- **Auto-calibration, firmware:** `orgasm_control_update_baseline()` follows resting pressure (falls
+  fast, tau 2 s; within half the clench sensitivity, tau 20 s; above that it barely moves, tau 300 s,
+  unless it stays up longer than `max_clench_duration_ms`, then tau 5 s = drift). New setting
+  `auto_baseline` (default **on**, "Follow resting pressure" in the Clench group) keeps the clench
+  threshold at least baseline + `clench_pressure_sensitivity`/2. Before, a slow upward drift of half
+  the clench sensitivity read as a never-ending clench and could trigger a false orgasm.
+  Arousal itself is peak-to-peak, so drift never affected it.
+- Baseline is reported as WS readings `baseline` and BLE status bytes 23-24 (MSB first, full 12-bit);
+  BLE status is 25 bytes now.
+- **Threshold suggestion** (Settings > Detection > Calibration, with Apply): from the last 10
+  sessions with > 1 min in Endless/Orgasm. With orgasms on record: 80% of the median arousal peak
+  before them. Otherwise from the latest session: > 2 edges a minute -> +15%; no edges in 10+ min
+  -> -15%. The same section shows resting pressure and its drift this session.
+- To test on the Echo (sim build is fine): run Endless 1+ min, stop, wait 30 s -> "Session saved to
+  History" toast, graph and CSV look right. In Orgasm mode get an orgasm detected -> suggestion
+  appears. With the simulator, raise pressure slowly (a few % per 10 s) and check no orgasm is
+  detected with `auto_baseline` on.
+
 ## Feature backlog (agreed with Russ 2026-10-16)
 
 Numbering matches the original list. 2 and 3 are done on `feature/safety` (see above).
@@ -232,9 +269,9 @@ Numbering matches the original list. 2 and 3 are done on `feature/safety` (see a
    maximum session length; hard motor output cap separate from mode settings.
 4. **Atom Echo button (G39):** short = stop/start, long = cycle modes, double = unlock settings.
 5. **Atom Echo speaker (I2S):** sounds for edge, denial, orgasm allowed, connected.
-6. **Session history:** log pressure/arousal/motor (SPIFFS or stream), UI graph, stats (edges,
+6. **Session history** — built 2026-10-17, see above. Was: log pressure/arousal/motor (SPIFFS or stream), UI graph, stats (edges,
    duration, denials), CSV export.
-7. **Auto-calibration:** follow the resting pressure baseline and its drift; suggest a sensitivity threshold from history.
+7. **Auto-calibration** — built 2026-10-17, see above. Was: follow the resting pressure baseline and its drift; suggest a sensitivity threshold from history.
 8. **Presets:** save/load the current settings under a name (JSON of the `settings.ts` keys).
 9. **Timed programs:** e.g. 20 min edging then random orgasm chance, N edges before release, denial lottery.
 10. **Keyholder / partner mode:** PIN for settings/mode changes (extends `edge_menu_lock`),

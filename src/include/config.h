@@ -288,6 +288,9 @@ struct config {
     bool edge_menu_lock;
     // Deny access to menu starting after orgasm detected
     bool post_orgasm_menu_lock;
+    // Follow the resting pressure baseline and keep the clench threshold above it, so slow drift
+    // (warming air, a shifted plug) isn't taken for a clench.
+    bool auto_baseline;
 
     //= Safety
 

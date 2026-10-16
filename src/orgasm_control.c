@@ -70,6 +70,12 @@ static struct {
     oc_bool_t ruined;
 } post_orgasm_state;
 
+// Resting pressure, followed slowly so drift can be told apart from clenches.
+static struct {
+    float baseline; // < 0 until the first reading
+    unsigned long elevated_since_ms; // when pressure rose above the resting band, 0 if not above
+} baseline_state = { .baseline = -1 };
+
 volatile static struct {
     uint8_t orgasm_count;
     //event_handler_node_t* _h_orgasm;
@@ -169,6 +175,35 @@ static const vibration_mode_controller_t* get_vibration_mode_controller() {
 }
 
 /**
+ * Follow the resting pressure. Falls are followed quickly, small changes slowly (drift). Pressure
+ * above the resting band is a clench or a peak and barely moves the baseline, unless it stays up
+ * longer than any clench (max_clench_duration_ms): then it's drift too.
+ */
+static void orgasm_control_update_baseline(long p) {
+    unsigned long now = esp_timer_get_time() / 1000UL;
+    float hz = Config.update_frequency_hz > 0 ? Config.update_frequency_hz : 50;
+    float b = baseline_state.baseline;
+    if (b < 0) {
+        baseline_state.baseline = p;
+        return;
+    }
+
+    float tau_s;
+    if (p < b) {
+        tau_s = 2;
+        baseline_state.elevated_since_ms = 0;
+    } else if (p <= b + Config.clench_pressure_sensitivity / 2) {
+        tau_s = 20;
+        baseline_state.elevated_since_ms = 0;
+    } else {
+        if (baseline_state.elevated_since_ms == 0) baseline_state.elevated_since_ms = now;
+        tau_s = now - baseline_state.elevated_since_ms > (unsigned long)Config.max_clench_duration_ms ? 5 : 300;
+    }
+    b += (p - b) / (tau_s * hz);
+    baseline_state.baseline = b < 0 ? 0 : b;
+}
+
+/**
  * Main orgasm detection / edging algorithm happens here.
  * This happens with a default update frequency of 50Hz.
  */
@@ -204,6 +239,8 @@ static void orgasm_control_update_arousal() {
     }
 
     arousal_state.last_value = p_check;
+
+    orgasm_control_update_baseline(p_check);
 
     long clench_duration;
     clench_duration = orgasm_control_clench_detect(p_check);
@@ -503,6 +540,13 @@ long orgasm_control_clench_detect(long p_check){
     static bool orgasm_detect = false;
     // raise clench threshold to pressure - 1/2 sensitivity
     long current_time = (esp_timer_get_time() / 1000UL);
+    if (Config.auto_baseline) {
+        // Never below resting pressure + 1/2 sensitivity, so drift doesn't count as a clench.
+        long floor = (long)baseline_state.baseline + Config.clench_pressure_sensitivity / 2;
+        if (post_orgasm_state.clench_pressure_threshold < floor) {
+            post_orgasm_state.clench_pressure_threshold = floor;
+        }
+    }
     if (p_check >=
         (post_orgasm_state.clench_pressure_threshold + Config.clench_pressure_sensitivity)) {
         post_orgasm_state.clench_pressure_threshold =
@@ -794,6 +838,10 @@ oc_after_orgasm_phase_t orgasm_control_get_after_orgasm_phase(void) {
         return OC_PHASE_POST_ORGASM;
     }
     return OC_PHASE_NONE;
+}
+
+uint16_t orgasm_control_get_baseline(void) {
+    return baseline_state.baseline < 0 ? 0 : (uint16_t)baseline_state.baseline;
 }
 
 uint8_t orgasm_control_get_session_orgasms(void) {

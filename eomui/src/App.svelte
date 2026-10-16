@@ -8,6 +8,8 @@
   import FirmwareUpdate from "./FirmwareUpdate.svelte";
   import Gauge from "./lib/Gauge.svelte";
   import SettingControl from "./lib/SettingControl.svelte";
+  import SessionHistory from "./lib/SessionHistory.svelte";
+  import { Recorder, listSessions, suggestThreshold, type SessionSummary } from "./lib/history";
   import {
     QUICK_SETTINGS,
     SETTING_GROUPS,
@@ -40,6 +42,7 @@
     phase?: number; // after-orgasm phase, see PHASE_*
     orgasms?: number; // orgasms detected this session
     rest?: number; // seconds left of a Milking rest
+    baseline?: number; // resting pressure followed by the firmware (after 3.3.0)
   };
 
   type RunMode = "MANUAL" | "ENDLESS" | "ORGASM";
@@ -84,6 +87,7 @@
     defaultView: "gauges" | "chart";
     keepAwake: boolean;
     pressureSim: boolean; // show the pressure simulator (needs a -DEOM_PRESSURE_SIM firmware build)
+    recordSessions: boolean; // keep session history in this browser
   };
   const PREFS_KEY = "eom.prefs";
   const LEGACY_WS_URL_KEY = "eom.wsUrl";
@@ -97,6 +101,7 @@
       defaultView: "gauges",
       keepAwake: true,
       pressureSim: false,
+      recordSessions: true,
     };
     try {
       const legacy = localStorage.getItem(LEGACY_WS_URL_KEY);
@@ -146,6 +151,7 @@
   let view = $state<"gauges" | "chart">(prefs.defaultView);
   let settingsDialog = $state<HTMLDialogElement>();
   let toysDialog = $state<HTMLDialogElement>();
+  let historyDialog = $state<HTMLDialogElement>();
   let connectDialog = $state<HTMLDialogElement>();
   let settingsTab = $state("session");
   let wsUrlDraft = $state(prefs.wsUrl);
@@ -158,6 +164,25 @@
   let deviceList = $state([]);
   let BTLEDconnected = $state(false);
 
+  // Session history and calibration
+  const recorder = new Recorder();
+  let sessions = $state.raw<SessionSummary[]>([]);
+  let recording = $state(false);
+  let sessionBaseline = $state<number | null>(null);
+  function refreshSessions() {
+    listSessions()
+      .then((list) => (sessions = list))
+      .catch((err) => console.error("Couldn't read session history:", err));
+  }
+  recorder.onSessionEnd = (summary) => {
+    if (summary) showToast("Session saved to History");
+    refreshSessions();
+  };
+  $effect(() => {
+    recorder.enabled = prefs.recordSessions;
+    if (!prefs.recordSessions) recorder.end();
+  });
+
   // ---------------------------------------------------------------------------------------------
   // Derived values
 
@@ -169,6 +194,9 @@
   let isEnhancement = $derived(Number(config.vibration_mode) === ENHANCEMENT);
   let onCooldown = $derived((latest.cooldown ?? 0) > 0 && latest.motor === 0);
   let aroused = $derived(latest.arousal >= latest.threshold);
+  let suggestion = $derived(suggestThreshold(sessions, latest.threshold));
+  let hasBaseline = $derived(latest.baseline !== undefined);
+  let drift = $derived(sessionBaseline !== null && latest.baseline !== undefined ? latest.baseline - sessionBaseline : null);
 
   let isMilking = $derived(Number(config.after_orgasm) === AFTER_ORGASM_MILKING);
   let orgasmsText = $derived.by(() => {
@@ -252,6 +280,11 @@
     if (Date.now() > pleasureLockedUntil) currentPleasure = r.motor;
     updateDevices(r);
     scheduleChartUpdate();
+    if (connected) {
+      recorder.push(r);
+      recording = recorder.recording;
+      sessionBaseline = recorder.sessionBaseline;
+    }
   }
 
   function applyConfig(values: Record<string, unknown>) {
@@ -469,6 +502,7 @@
       phase: r.phase,
       orgasms: r.orgasms,
       rest: r.rest,
+      baseline: r.baseline,
       localTime: Date.now(),
     });
   }
@@ -507,6 +541,7 @@
       orgasms: data.length > 22 ? data[19] : 0,
       phase: data.length > 22 ? data[20] : 0,
       rest: data.length > 22 ? (data[21] << 8) | data[22] : 0,
+      baseline: data.length > 24 ? (data[23] << 8) | data[24] : undefined, // added after 3.3.0
       localTime: Date.now(),
     };
     if (!syncDelta) syncDelta = r.localTime - r.millis;
@@ -736,7 +771,10 @@
     document.addEventListener("visibilitychange", updateWakeLock);
 
     // Reconnect when the data goes stale.
+    refreshSessions();
     const staleTimer = setInterval(() => {
+      recorder.tick();
+      recording = recorder.recording;
       if (!connected || Date.now() - latest.localTime < 10000) return;
       console.log("Data is stale…dropped connection?");
       if (lastConnection === "ws" && isWsConnected) {
@@ -796,6 +834,8 @@
       <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none" />
     {:else if name === "close"}
       <path d="M18 6 6 18M6 6l12 12" />
+    {:else if name === "history"}
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 2" />
     {:else if name === "lock"}
       <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
     {/if}
@@ -826,6 +866,9 @@
       </button>
     </div>
     <nav class="actions">
+      <button class="iconBtn" class:rec={recording} onclick={() => { refreshSessions(); historyDialog?.showModal(); }} aria-label="History" title={recording ? "History (recording)" : "History"}>
+        {@render icon("history")}
+      </button>
       <button class="iconBtn" onclick={() => toysDialog?.showModal()} aria-label="Toys" title="Toys">
         {@render icon("toys")}
       </button>
@@ -1131,6 +1174,27 @@
           {/if}
         {/each}
 
+        {#if tab.id === "detection"}
+          <section class="group">
+            <h3>Calibration</h3>
+            <dl class="facts">
+              <dt>Resting pressure</dt>
+              <dd>
+                {hasBaseline ? `${pct(latest.baseline ?? 0, MAX_Y)}%` : "Needs newer firmware"}
+                {#if drift !== null}<span class="muted"> ({drift >= 0 ? "+" : "−"}{pct(Math.abs(drift), MAX_Y)}% this session)</span>{/if}
+              </dd>
+              <dt>Edge threshold</dt><dd>{pct(latest.threshold, MAX_Y)}%</dd>
+            </dl>
+            <p class="muted">{suggestion.reason}</p>
+            {#if suggestion.threshold !== null}
+              <div class="prefRow">
+                <span><b>Suggested threshold: {pct(suggestion.threshold, MAX_Y)}%</b><small>From {suggestion.sessions} recorded session{suggestion.sessions === 1 ? "" : "s"}.</small></span>
+                <button class="small" disabled={locked} onclick={() => changeSetting("sensitivity_threshold", suggestion.threshold!)}>Apply</button>
+              </div>
+            {/if}
+          </section>
+        {/if}
+
         {#if tab.id === "network"}
           <section class="group">
             <button onclick={restartDevice} disabled={!connected}>Restart device</button>
@@ -1151,6 +1215,10 @@
             <label class="prefRow">
               <span><b>Keep screen on</b><small>While connected, so the screen doesn't lock mid-session.</small></span>
               <input type="checkbox" class="check" bind:checked={prefs.keepAwake} />
+            </label>
+            <label class="prefRow">
+              <span><b>Record sessions</b><small>Keep a history of sessions in this browser, for the History view and threshold suggestions.</small></span>
+              <input type="checkbox" class="check" bind:checked={prefs.recordSessions} />
             </label>
             <label class="prefRow">
               <span><b>Pressure simulator</b><small>Test without a sensor. Needs firmware built with EOM_PRESSURE_SIM.</small></span>
@@ -1195,6 +1263,17 @@
         {/if}
       </div>
     {/each}
+  </div>
+</dialog>
+
+<!-- History drawer -->
+<dialog class="sheet" bind:this={historyDialog} onclick={(e) => e.target === historyDialog && historyDialog?.close()}>
+  <div class="sheetHead">
+    <h2>History</h2>
+    <button class="iconBtn" onclick={() => historyDialog?.close()} aria-label="Close">{@render icon("close")}</button>
+  </div>
+  <div class="sheetBody">
+    <SessionHistory {sessions} {recording} onchange={refreshSessions} />
   </div>
 </dialog>
 
@@ -1535,6 +1614,19 @@
 
   .quick {
     padding-bottom: 6px;
+  }
+  .iconBtn.rec {
+    position: relative;
+  }
+  .iconBtn.rec::after {
+    content: "";
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--arousal);
   }
   .link {
     background: none;

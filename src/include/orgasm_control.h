@@ -93,6 +93,8 @@ oc_after_orgasm_phase_t orgasm_control_get_after_orgasm_phase(void);
 uint8_t orgasm_control_get_session_orgasms(void);
 // Seconds left of a Milking rest, 0 otherwise.
 uint16_t orgasm_control_get_rest_remaining_seconds(void);
+// Resting pressure (same scale as the pressure reading), followed over time.
+uint16_t orgasm_control_get_baseline(void);
 
 #ifdef __cplusplus
 }

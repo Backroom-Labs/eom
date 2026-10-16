@@ -40,6 +40,7 @@ void api_broadcast_readings(void) {
     cJSON_AddNumberToObject(root, "phase", orgasm_control_get_after_orgasm_phase());
     cJSON_AddNumberToObject(root, "orgasms", orgasm_control_get_session_orgasms());
     cJSON_AddNumberToObject(root, "rest", orgasm_control_get_rest_remaining_seconds());
+    cJSON_AddNumberToObject(root, "baseline", orgasm_control_get_baseline());
 
     websocket_broadcast(payload, WS_BROADCAST_READINGS);
     cJSON_Delete(payload);

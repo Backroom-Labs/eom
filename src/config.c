@@ -71,6 +71,7 @@ CONFIG_DEFS {
     CFG_NUMBER(post_orgasm_duration_seconds, 10);
     CFG_BOOL(post_orgasm_menu_lock, false);
     CFG_BOOL(edge_menu_lock, false);
+    CFG_BOOL(auto_baseline, true);
     CFG_NUMBER(max_clench_duration_ms, 3000);
 
     // Safety

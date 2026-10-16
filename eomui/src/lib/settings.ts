@@ -227,6 +227,13 @@ export const SETTINGS: SettingDef[] = [
     kind: "range", default: 3000, min: 0, max: 60000, step: 100, format: millis,
   },
 
+  {
+    key: "auto_baseline",
+    label: "Follow resting pressure",
+    description: "Track the resting pressure as it drifts (warming air, a shifted plug) and keep the clench threshold above it, so drift isn't taken for a clench.",
+    kind: "toggle", default: true,
+  },
+
   // Safety
   {
     key: "sensor_fault_stop",
@@ -400,6 +407,7 @@ export const SETTING_GROUPS: SettingGroup[] = [
     keys: [
       "post_orgasm_duration_seconds", "post_orgasm_menu_lock", "clench_detector_in_edging",
       "clench_pressure_sensitivity", "clench_time_threshold_ms", "clench_time_to_orgasm_ms", "max_clench_duration_ms",
+      "auto_baseline",
     ],
   },
   {
