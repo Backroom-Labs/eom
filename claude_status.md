@@ -42,6 +42,40 @@ Work is split into phases, each one a commit (or branch). Version is `PROJECT_VE
   and releases only build those two (CI lists envs by matching uncommented `[env:...]` lines).
   Uncomment them before a full release.
 
+## Dependency update (started 2026-10-16, branch `feature/deps-update`)
+
+Goal: latest versions that still build and run on the Atom Echo (classic ESP32, 4 MB, tight IRAM).
+Versions checked 2026-10-16.
+
+- **Firmware, step A: done, BLE OTA tested on the Echo.** `espressif32@6.13.0` +
+  `framework-espidf@3.50502` (ESP-IDF 5.5.0 -> **5.5.2**). `mdns` 1.14.0 and `led_strip` 3.1.0~1 were
+  already the newest. Both active envs build and sign.
+  - **ESP-IDF 5.5.3 breaks BLE OTA on classic ESP32:** the link drops (reason 520 = HCI 0x08
+    Connection Timeout) on the first flash writes while OTA data arrives. Not caused by config:
+    bisected on the Echo (OTA conn params, data length, the new NimBLE memory options and the IRAM
+    settings were each ruled out; 5.5.0 and 5.5.2 work with the same settings). Recheck on a later
+    5.5.x before moving past 5.5.2.
+  - 5.5.2 overflows the Echo's iram0 by ~100 B. Fixed with `CONFIG_RINGBUF_PLACE_FUNCTIONS_INTO_FLASH`
+    in `sdkconfig.defaults.esp32` (~690 B free now). Moving the GPTimer/MCPWM/I2C ISRs saves nothing
+    (those drivers aren't linked).
+  - **Don't turn off `CONFIG_ESP_WIFI_RX_IRAM_OPT`** to save IRAM: with BT coexistence that breaks
+    BLE OTA the same way (tested on 5.5.0).
+  - ESP-IDF 5.5.5 (`framework-espidf@4.50505`) needs platform 7.x; on 6.13.0 the builder fails
+    ("No closing quotation") even with its toolchain pinned. 5.5.2 needs 6.13.0's toolchain (6.12.0
+    fails the tool version check).
+  - BLE OTA test: when testing, look for `ble_ota: Stalled at ... bytes` followed by `reason=520`.
+- **Firmware, step B (separate branch, optional):** platform `7.1.3` / ESP-IDF 6.1. Needs the
+  `espressif/cjson` component (IDF 6 drops cJSON), a check of `ota.c` signature verify against
+  mbedTLS 4 / PSA (`mbedtls/pk.h`), GCC 15 warnings, and IRAM again. Only if step A is done.
+- **UI (`eomui`):** in-range updates first (Capacitor 8.5.3, svelte 5.57, vite 7.3, etc.), then the
+  majors one by one: vite 8 + vite-plugin-svelte 7 + vite-plugin-pwa 2 together, TypeScript 7,
+  `@types/node` 26. Leave `buttplug` at 0.13.2 (patched with patch-package; 5.x is a rewrite).
+- **CI:** bump GitHub actions to current majors and Python 3.11 -> 3.13.
+- Build quirks: the first build with a new ESP-IDF version can fail creating its Python venv
+  (`~/.platformio/penv/.espidf-<ver>`). Rerun, or delete that folder if PlatformIO says it can't.
+  After deleting `dependencies.lock`, build envs one at a time (`pio run -e X` twice); building two in
+  one run failed the second.
+
 ## Next steps
 
 1. Make sure the `OTA_SIGNING_KEY` repo secret holds the contents of `keys/ota_signing_key.pem`.
@@ -67,7 +101,7 @@ Work is split into phases, each one a commit (or branch). Version is `PROJECT_VE
   the table when it changes.
 - **Manifest:** `tools/make_manifest.py` writes `{env, version, url, sha256, size}` per board and
   refuses unsigned images, the wrong board, or a version mismatch.
-- **Build pins:** espressif32@6.12.0 / ESP-IDF 5.5, because ESP-IDF 6 drops cJSON.
+- **Build pins:** espressif32@6.13.0 / ESP-IDF 5.5.2. Not 5.5.3 (breaks BLE OTA on classic ESP32) and not 6.x (drops cJSON).
 - **Partitions:** `8mb_spiffs.csv` app slots are 3.9 MB each. 8 MB boards needed an erase after
   phase 0.
 

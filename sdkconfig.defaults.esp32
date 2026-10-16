@@ -6,3 +6,9 @@
 # CONFIG_RMT_RX_ISR_HANDLER_IN_IRAM is not set
 # CONFIG_RMT_ENCODER_FUNC_IN_IRAM is not set
 # CONFIG_SPI_SLAVE_ISR_IN_IRAM is not set
+# ESP-IDF 5.5.2 needs a little more IRAM than 5.5.0 (~100 bytes over with the above). This only moves
+# the ringbuffer functions that ISRs never call; BLE OTA tested fine with it.
+# Don't turn off CONFIG_ESP_WIFI_RX_IRAM_OPT to save IRAM: with BT coexistence the BT controller calls
+# into that code while the flash is busy, so BLE OTA dropped the link (HCI 0x08) as soon as it erased
+# or wrote flash.
+CONFIG_RINGBUF_PLACE_FUNCTIONS_INTO_FLASH=y
