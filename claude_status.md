@@ -70,7 +70,7 @@ Tested in headless Chrome with a fake WebSocket device; **not yet tested on hard
 - To test on the Echo: power-cycle and check nothing runs until a mode is picked; connect over BLE, change a slider, reboot, and check it stuck; toggle
   `edge_menu_lock` and run Orgasm mode >2 min to see the lock; change `bt_display_name` + Restart.
 
-## Status LED (2026-10-16, branch `feature/status-led`)
+## Status LED (2026-10-16, branch `feature/status-led`, merged to `main` via PR #8)
 
 The LED stayed one colour on the Echo. Two causes: nothing set a colour while the device sits
 stopped in Manual (the colour code only runs in automatic modes), and `eom_hal_set_rgb()` dropped
@@ -125,8 +125,9 @@ Versions checked 2026-10-16.
 
 ## Next steps
 
-0. Test the modern UI on the Atom Echo (see "Modern UI" above), then merge PR #7. Check the
-   `v3.0.0` release run on GitHub (tag pushed from the branch before merge).
+0. PRs #7 and #8 and the 3.1.0 bump are merged to `main` (fd57fb3). To release, tag from `main`:
+   `git tag v3.1.0 && git push origin v3.1.0`. Still to test on the Echo: the modern UI (see
+   "Modern UI" above) and `post_orgasm_menu_lock`.
 1. Make sure the `OTA_SIGNING_KEY` repo secret holds the contents of `keys/ota_signing_key.pem`.
    Without it, a tag release fails on purpose.
 2. Do a first test release from `main`: `git tag v2.0.1 && git push origin v2.0.1` (the tag must
