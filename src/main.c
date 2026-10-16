@@ -108,7 +108,9 @@ static void loop_task(void* args) {
 
 
 static void main_task(void* args) {
-    orgasm_control_set_output_mode(OC_AUTOMATIC);
+    // Boot stopped (manual, pleasure 0): nothing runs until a mode is picked in the UI.
+    orgasm_control_set_output_mode(OC_MANUAL);
+    orgasm_control_set_pleasure(0);
 
     for (;;) {
         orgasm_control_tick();

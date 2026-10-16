@@ -128,7 +128,7 @@ void orgasm_control_set_pleasure(uint8_t pleasure) {
 void orgasm_control_init(void) {
     eom_hal_init_pressure_sensor();
     ESP_LOGI(TAG, "Pressure sensor initialized.");
-    output_state.output_mode = OC_AUTOMATIC;
+    output_state.output_mode = OC_MANUAL;
     output_state.vibration_mode = Config.vibration_mode;
     output_state.edge_time_out = 10000;
     post_orgasm_state.clench_pressure_threshold = 4096;    

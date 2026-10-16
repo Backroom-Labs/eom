@@ -233,6 +233,7 @@ and is used for providing real-time updates to your application.
 |motor|Numeric|Current vibrator speed|
 |arousal|Numeric|Current arousal value|
 |millis|Numeric|Millisecond timestamp|
+|lock|Boolean|Settings are locked (`edge_menu_lock` is on and an Orgasm mode session is running)|
 
 **Example:**
 ```json

@@ -16,6 +16,7 @@
 #include <cJSON.h>
 #include "config_defs.h"
 #include "system/ble_ota.h"
+#include "esp_system.h"
 #include "mbedtls/sha256.h"
 
 static const char* TAG = "gatts";
@@ -122,6 +123,13 @@ void send_config() {
             vTaskDelay(300 / portTICK_PERIOD_MS); // Small delay to allow notifications to be sent
         }
     }
+}
+
+// Saves the config and restarts, after a delay so the write response reaches the client first.
+static void deferred_restart_task(void *param) {
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+    config_enqueue_save(0);
+    esp_restart();
 }
 
 static void deferred_send_config_task(void *param) {
@@ -248,7 +256,7 @@ static int status_out_chr_access(uint16_t conn_handle, uint16_t attr_handle, str
             uint16_t permit_seconds = orgasm_control_get_permit_orgasm_remaining_seconds();
             uint32_t current_time = esp_timer_get_time() / 1000UL;
 
-            uint8_t chr_val[17] = {
+            uint8_t chr_val[18] = {
                 (uint8_t)(orgasm_control_get_last_pressure() >> 4), // Scale from 12-bit (0-4095) to 8-bit (0-255)
                 (uint8_t)(orgasm_control_get_arousal() >> 4),
                 (uint8_t)(orgasm_control_get_arousal_threshold() >> 4),
@@ -265,7 +273,8 @@ static int status_out_chr_access(uint16_t conn_handle, uint16_t attr_handle, str
                 (uint8_t)((current_time >> 24) & 0xFF),
                 (uint8_t)((current_time >> 16) & 0xFF),
                 (uint8_t)((current_time >> 8) & 0xFF),
-                (uint8_t)(current_time & 0xFF)
+                (uint8_t)(current_time & 0xFF),
+                (uint8_t)orgasm_control_is_menu_locked()
             };
             rc = os_mbuf_append(ctxt->om, chr_val, sizeof(chr_val));
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
@@ -361,12 +370,16 @@ static int update_main_chr_access(uint16_t conn_handle, uint16_t attr_handle, st
                 ESP_LOGE(TAG, "Setting name: %s, value: %s", setting_name, setting_value);
                 if (set_config_value(setting_name, setting_value, NULL)) {
                     ESP_LOGD(TAG, "Set config value successfully");
+                    config_enqueue_save(1);
                 } else {
                     ESP_LOGD(TAG, "Failed to set config value");
                 }
             } else if (buf[0] == 0x03) {
                 ESP_LOGE(TAG, "Received config dump request");
                 xTaskCreate(deferred_send_config_task, "SendConfig", 6*1024, NULL, 5, NULL);
+            } else if (buf[0] == 0x04) {
+                ESP_LOGI(TAG, "Received restart request");
+                xTaskCreate(deferred_restart_task, "Restart", 6*1024, NULL, 5, NULL);
             }
             return rc;
         }
