@@ -66,6 +66,25 @@ Tested in headless Chrome with a fake WebSocket device; **not yet tested on hard
 - To test on the Echo: power-cycle and check nothing runs until a mode is picked; connect over BLE, change a slider, reboot, and check it stuck; toggle
   `edge_menu_lock` and run Orgasm mode >2 min to see the lock; change `bt_display_name` + Restart.
 
+## Status LED (2026-10-16, branch `feature/status-led`)
+
+The LED stayed one colour on the Echo. Two causes: nothing set a colour while the device sits
+stopped in Manual (the colour code only runs in automatic modes), and `eom_hal_set_rgb()` dropped
+any colour set during the off half of a flash. Tested and working on the Echo.
+
+- `orgasm_control_update_idle_led()` in `src/orgasm_control.c` (WS2812 only), runs while no
+  automatic mode is active: flashing blue (500 ms) until a BLE client (`isConnected`) or a WebSocket
+  client (`websocket_client_count()`, new in `websocket_handler.c`) connects, then solid green.
+  Automatic modes keep their existing colours.
+- `eom-hal-esp32.c`: `led_show_current()` pushes colour-or-off to the LED task and skips unchanged
+  refreshes. The off half of a flash is now fully off (it was dim red).
+- **Real cause on the Echo:** the strip was created as `LED_MODEL_WS2811` (slow timing), which the
+  Echo's SK6812 ignores. Serial log showed the firmware sending blue/off every 500 ms with no
+  errors. Now `LED_STRIP_MODEL` (config.h, default `LED_MODEL_WS2811` so other boards are
+  unchanged) and the Echo env sets `LED_MODEL_SK6812`. Confirmed on the Echo.
+- The Echo is on `/dev/cu.usbserial-*`; boot logs can be read with pyserial from
+  `~/.platformio/penv/bin/python` (toggle RTS to reset).
+
 ## Dependency update (started 2026-10-16, branch `feature/deps-update`)
 
 Goal: latest versions that still build and run on the Atom Echo (classic ESP32, 4 MB, tight IRAM).
