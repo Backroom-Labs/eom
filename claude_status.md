@@ -26,7 +26,7 @@ _Last updated: 2026-10-17_
 
 | What | How to test |
 |---|---|
-| **Session history + auto-calibration** (3.4.0) — not tested on the Echo or in a browser | Sim build is fine. Run Endless 1+ min, stop, wait 30 s -> "Session saved to History" toast; graph and CSV look right. In Orgasm mode get an orgasm detected -> threshold suggestion appears. Raise sim pressure slowly (a few % per 10 s) and check no orgasm is detected with `auto_baseline` on. |
+| **Session history + auto-calibration** (3.4.0) — not tested on the Echo or in a browser | Sim build is fine. Run Endless 1+ min, stop, wait 30 s -> "Session saved to History" toast; graph and CSV look right. In Orgasm mode get an orgasm detected -> threshold suggestion appears. Drift test: in Orgasm mode raise sim pressure slowly (a few % per 10 s) and check no orgasm is detected while Settings > Clench > "Follow resting pressure" (`auto_baseline`) is on. |
 | **Modern UI** (3.0.0) — only partly exercised via the safety/after-orgasm tests | Power-cycle and check nothing runs until a mode is picked. Over BLE change a slider, reboot, check it stuck. Toggle `edge_menu_lock`, run Orgasm mode > 2 min, see the lock. Change `bt_display_name` + Restart. |
 | **`post_orgasm_menu_lock`** | Turn it on, get an orgasm detected in Orgasm mode -> settings lock; lock clears when ramp-down ends. |
 | **Settings saved before the BLE config fix** | Earlier BLE writes may have saved defaults over real values. Recheck settings on the Echo. |
