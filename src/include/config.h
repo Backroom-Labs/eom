@@ -279,6 +279,17 @@ struct config {
     // Deny access to menu starting after orgasm detected
     bool post_orgasm_menu_lock;
 
+    //= Safety
+
+    // Stop an automatic session when the pressure sensor stops giving a usable signal.
+    bool sensor_fault_stop;
+    // Stop when no BLE or WebSocket client has been connected for this many seconds. 0 to disable.
+    uint8_t disconnect_stop_s;
+    // Stop any session (including Manual) after this many minutes. 0 to disable.
+    uint16_t max_session_minutes;
+    // Hard cap on motor output and reported pleasure in every mode, including direct motor control.
+    uint8_t max_motor_output;
+
     //= Internal System Configuration (Update only if you know what you're doing)
 
     // Remote update server URL. You may change this to OTA update other versions.

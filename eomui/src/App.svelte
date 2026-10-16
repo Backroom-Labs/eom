@@ -35,6 +35,7 @@
     permit?: number; // seconds until an orgasm is permitted
     threshold: number;
     lock?: boolean; // settings locked by edge_menu_lock
+    safety?: number; // why the safety checks last stopped the session, see SAFETY_MESSAGES
   };
 
   type RunMode = "MANUAL" | "ENDLESS" | "ORGASM";
@@ -42,6 +43,13 @@
   const RUN_MODE_LABELS: Record<RunMode, string> = { MANUAL: "Manual", ENDLESS: "Endless", ORGASM: "Orgasm" };
   const ENHANCEMENT = 3;
   const DEPLETION = 2;
+
+  // Matches safety_stop_t in src/include/safety.h.
+  const SAFETY_MESSAGES: Record<number, string> = {
+    1: "Stopped: the pressure sensor isn't giving a usable signal. Check the sensor and its tube, then start again.",
+    2: "Stopped because nothing was connected to the EOM. Start again when you're ready.",
+    3: "Stopped: the session reached its time limit.",
+  };
 
   const MAX_Y = 4096; // arousal, pressure and threshold are 12 bit
   const PLEASURE_MAX = 255;
@@ -144,6 +152,7 @@
   let connected = $derived(isWsConnected || isBtConnected);
   let runMode = $derived((RUN_MODES.includes(latest.runMode as RunMode) ? latest.runMode : "ENDLESS") as RunMode);
   let locked = $derived(Boolean(latest.lock));
+  let safetyMessage = $derived(SAFETY_MESSAGES[latest.safety ?? 0]);
   let maxDenied = $derived(Number(config.max_denied) > 0 && Number(config.max_denied) < 100 ? Number(config.max_denied) : 20);
   let isEnhancement = $derived(Number(config.vibration_mode) === ENHANCEMENT);
   let onCooldown = $derived((latest.cooldown ?? 0) > 0 && latest.motor === 0);
@@ -394,6 +403,7 @@
       permit: r.permit,
       threshold: r.threshold,
       lock: r.lock,
+      safety: r.safety,
       localTime: Date.now(),
     });
   }
@@ -427,6 +437,7 @@
       color: `${data[10]},${data[11]},${data[12]}`,
       millis: ((data[13] << 24) | (data[14] << 16) | (data[15] << 8) | data[16]) >>> 0,
       lock: data.length > 17 ? data[17] !== 0 : false, // added after 2.0.2
+      safety: data.length > 18 ? data[18] : 0, // added after 3.1.0
       localTime: Date.now(),
     };
     if (!syncDelta) syncDelta = r.localTime - r.millis;
@@ -678,6 +689,7 @@
     { id: "stimulation", label: "Stimulation", groups: ["stimulation"] },
     { id: "detection", label: "Detection", groups: ["detection"] },
     { id: "clench", label: "Clench", groups: ["clench"] },
+    { id: "safety", label: "Safety", groups: ["safety"] },
     { id: "network", label: "Connectivity", groups: ["wifi", "bluetooth"] },
     { id: "app", label: "App", groups: [] },
     { id: "device", label: "Device", groups: [] },
@@ -769,6 +781,9 @@
 
   {#if locked}
     <div class="banner warn">{@render icon("lock")} Settings are locked until this Orgasm session ends.</div>
+  {/if}
+  {#if safetyMessage && connected}
+    <div class="banner warn">{safetyMessage}</div>
   {/if}
   {#if restartNeeded && connected}
     <div class="banner">

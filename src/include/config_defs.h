@@ -82,7 +82,8 @@ typedef enum migration_result {
                 if (in_val != NULL) strlcpy(cfg->name, in_val, sizeof(cfg->name));                 \
                 return true;                                                                       \
             }                                                                                      \
-        } else {                                                                                   \
+        } else if (key == NULL) {                                                                  \
+            /* Full load with defaults only; a single-key set must leave other entries alone. */   \
             if (operation == CFG_SET) {                                                            \
                 strlcpy(cfg->name, default, sizeof(cfg->name));                                    \
             }                                                                                      \
@@ -117,7 +118,8 @@ typedef enum migration_result {
                 }                                                                                  \
                 return true;                                                                       \
             }                                                                                      \
-        } else {                                                                                   \
+        } else if (key == NULL) {                                                                  \
+            /* Full load with defaults only; a single-key set must leave other entries alone. */   \
             if (operation == CFG_SET) {                                                            \
                 if (cfg->name != default) free(cfg->name);                                         \
                 cfg->name = default;                                                               \
@@ -144,7 +146,8 @@ typedef enum migration_result {
                 if (in_val != NULL) cfg->name = atoi(in_val);                                      \
                 return true;                                                                       \
             }                                                                                      \
-        } else {                                                                                   \
+        } else if (key == NULL) {                                                                  \
+            /* Full load with defaults only; a single-key set must leave other entries alone. */   \
             if (operation == CFG_SET) {                                                            \
                 cfg->name = default;                                                               \
             }                                                                                      \
@@ -169,7 +172,8 @@ typedef enum migration_result {
                 if (in_val != NULL) cfg->name = (type)atoi(in_val);                                \
                 return true;                                                                       \
             }                                                                                      \
-        } else {                                                                                   \
+        } else if (key == NULL) {                                                                  \
+            /* Full load with defaults only; a single-key set must leave other entries alone. */   \
             if (operation == CFG_SET) {                                                            \
                 cfg->name = default;                                                               \
             }                                                                                      \
@@ -194,7 +198,8 @@ typedef enum migration_result {
                 if (in_val != NULL) cfg->name = atob(in_val);                                      \
                 return true;                                                                       \
             }                                                                                      \
-        } else {                                                                                   \
+        } else if (key == NULL) {                                                                  \
+            /* Full load with defaults only; a single-key set must leave other entries alone. */   \
             if (operation == CFG_SET) {                                                            \
                 cfg->name = default;                                                               \
             }                                                                                      \

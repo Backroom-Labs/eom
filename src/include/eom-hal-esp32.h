@@ -15,6 +15,7 @@ extern "C" {
 
 //=== Pressure
 uint16_t eom_hal_get_pressure_reading(void);
+uint16_t eom_hal_get_pressure_read_failures(void);
 uint8_t eom_hal_get_sensor_sensitivity(void);
 void eom_hal_set_sensor_sensitivity(uint8_t sensitivity);
 void eom_hal_init_pressure_sensor(void);

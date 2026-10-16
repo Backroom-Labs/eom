@@ -3,7 +3,7 @@
 Read this at the start of a new session to pick up where work stopped. Update it whenever a task
 finishes or the plan changes.
 
-_Last updated: 2026-10-16_
+_Last updated: 2026-10-17_
 
 ## Current focus: OTA (over-the-air) firmware updates
 
@@ -49,7 +49,8 @@ clean for the new files (the toy components and node_modules still have many old
 Tested in headless Chrome with a fake WebSocket device; **not yet tested on hardware or over BLE.**
 
 - `eomui/src/lib/settings.ts` is the single list of device settings (label, range, format, group,
-  `restart` flag, `visible` rule). Add a setting there and it shows up in the drawer. Keys must match
+  `restart` flag, `visible` rule). Add a setting there and it shows up in the drawer. A new *group*
+  also needs an entry in `SETTINGS_TABS` in `App.svelte`, or it never shows. Keys must match
   `CONFIG_DEFS` in `src/config.c`.
 - Newly exposed: all Wi-Fi/AP settings, hostname, `use_ssl`, `websocket_port`, `bt_on`,
   `bt_display_name`, `force_bt_coex`, `classic_serial`, `edge_menu_lock`, `post_orgasm_menu_lock`.
@@ -134,6 +135,75 @@ Versions checked 2026-10-16.
    match `PROJECT_VER`). Check that the active envs build and that
    `releases/latest/download/manifest.json` resolves and lists every board.
 3. Phase 2 (probably WiFi OTA using the manifest), after confirming the scope.
+
+## Safety stops (2026-10-16, branch `feature/safety`, committed, not merged)
+
+Backlog items 2 and 3. Both envs build, `svelte-check` clean. **Tested on the Echo 2026-10-17: all
+stops, the banners, the Safety tab and the BLE settings fix work.**
+
+- `src/safety.c` / `src/include/safety.h`: `safety_tick(pressure)` runs from `orgasm_control_tick()`.
+  A stop = `orgasm_control_set_output_mode(OC_MANUAL)` + `orgasm_control_set_pleasure(0)`. In
+  automatic modes the firmware doesn't drive the DAC (clients follow the reported pleasure), so
+  zeroing pleasure is what stops every output.
+- Sensor fault (automatic modes only, `sensor_fault_stop`, default on): 25 failed reads in a row
+  (`eom_hal_get_pressure_read_failures()`), pinned at `EOM_HAL_PRESSURE_MAX` for 10 s, or the exact
+  same value for 30 s. LED flashes red fast until a mode is started again.
+- `disconnect_stop_s` (default 10, 0 = off): stop when no BLE (`isConnected`) and no WS client for
+  that long. A BLE toy reading output1 counts as a client too.
+- `max_session_minutes` (default 0 = off): any session, Manual with pleasure > 0 included.
+- `max_motor_output` (default 255): clamps the HAL motor writes, `set_pleasure_ex` and
+  `get_pleasure`, so it also covers BLE direct motor writes, which skip `max_pleasure`.
+- Stop reason (`safety_stop_t`): WS `readings.safety`, BLE status byte 18 (status is 19 bytes now).
+  Cleared when a mode starts or pleasure > 0 is set. UI shows a banner; new "Safety" settings group.
+- Spotted, not fixed: `pressure_ambient` in `eom-hal-esp32.c` is a `uint8_t`, so an ambient above
+  255 is truncated (and the MPR 24-bit ambient is meaningless). Fixing it changes readings, so
+  thresholds people have tuned would shift. Ask Russ.
+- Echo test 2026-10-16: sensor-fault stop + red flash work. No banner showed because the UI used was
+  an old build; `eomui/public/index.html` was rebuilt (`npm run build`) and now has the banner
+  and Safety settings. Banners confirmed working. The Safety tab was missing
+  (`SETTINGS_TABS` in `App.svelte`), added and rebuilt. Other stops still to retest.
+- **Config bug fixed (pre-existing):** `CFG_*` macros in `config_defs.h` reset every setting declared
+  *before* the key on a single-key `set_config_value()` (BLE `0x02` writes; WS uses merge and was
+  fine). So each BLE setting change reset earlier settings to defaults, and they were then saved.
+  That's why turning off sensor fault stop and the time limit "didn't work". The reset branch now
+  only runs when `key == NULL`. Builds; retest on the Echo, and recheck settings, since earlier BLE
+  writes may already have saved defaults. **Rebuild the UI after UI changes.**
+- To test on the Echo: start Endless and unplug the sensor/tube -> stop within ~30 s, red flash, UI
+  banner. Start a session, disconnect the app -> stop after 10 s, banner on reconnect. Set the time
+  limit to 1 min. Set Output limit low and check Manual and Endless never exceed it.
+
+## Feature backlog (agreed with Russ 2026-10-16)
+
+Numbering matches the original list. 2 and 3 are done on `feature/safety` (see above).
+
+1. **Wi-Fi OTA (Phase 2)** + "Check for updates" in the UI (compare `manifest.json` version for
+   this board; offer the update over BLE or Wi-Fi).
+2. **Sensor fault detection** — in progress. Pressure stuck at a rail or not changing at all -> stop the motor, red LED.
+3. **Disconnect stop + session limits** — in progress. Ramp down when the last BLE/WS client drops (setting);
+   maximum session length; hard motor output cap separate from mode settings.
+4. **Atom Echo button (G39):** short = stop/start, long = cycle modes, double = unlock settings.
+5. **Atom Echo speaker (I2S):** sounds for edge, denial, orgasm allowed, connected.
+6. **Session history:** log pressure/arousal/motor (SPIFFS or stream), UI graph, stats (edges,
+   duration, denials), CSV export.
+7. **Auto-calibration:** follow the resting pressure baseline and its drift; suggest a sensitivity threshold from history.
+8. **Presets:** save/load the current settings under a name (JSON of the `settings.ts` keys).
+9. **Timed programs:** e.g. 20 min edging then random orgasm chance, N edges before release, denial lottery.
+10. **Keyholder / partner mode:** PIN for settings/mode changes (extends `edge_menu_lock`),
+    view-only second WS client.
+11. **MQTT / Home Assistant** state + commands.
+12. **Housekeeping:** host unit tests for `orgasm_control` edge detection, post-orgasm refactor
+    TODO, deps step B (ESP-IDF 6).
+13. **After-orgasm modes** (asked 2026-10-17), chosen per session, replacing the unused
+    `use_post_orgasm` toggle (defined and in the UI, but the firmware never reads it):
+    - **Ruin:** turn everything off as soon as an orgasm is detected.
+    - **Post-orgasm:** today's behaviour (max for `post_orgasm_duration_seconds`, ramp down, Manual).
+    - **Milking:** keep going after an orgasm and run the cycle again to try for another one.
+      Russ said "starts manual, endless and orgasm modes again"; confirm exactly what sequence
+      that means before building it.
+    Detection is `orgasm_control_clench_detect()` (clench held `clench_time_to_orgasm_ms`, only
+    counts once orgasm is permitted in Orgasm mode); the reaction is in
+    `orgasm_control_update_edging_time()`. Related: send an "orgasm detected" signal to the UI (the
+    `EVT_ORGASM_START` dispatch is commented out), and reset `clench_pressure_threshold` per session.
 
 ## Key facts (so the code doesn't need re-reading)
 

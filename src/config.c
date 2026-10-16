@@ -71,6 +71,12 @@ CONFIG_DEFS {
     CFG_BOOL(edge_menu_lock, false);
     CFG_NUMBER(max_clench_duration_ms, 3000);
 
+    // Safety
+    CFG_BOOL(sensor_fault_stop, true);
+    CFG_NUMBER(disconnect_stop_s, 10);
+    CFG_NUMBER(max_session_minutes, 0);
+    CFG_NUMBER(max_motor_output, 255);
+
     // Internal system things, only edit if you know what you're doing.
     //CFG_STRING_PTR(remote_update_url, REMOTE_UPDATE_URL)
 
