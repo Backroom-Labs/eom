@@ -302,6 +302,25 @@ struct config {
     uint16_t max_session_minutes;
     // Hard cap on motor output and reported pleasure in every mode, including direct motor control.
     uint8_t max_motor_output;
+    // Stop any session when the heart rate stays above this for 10 s. 0 to disable.
+    uint8_t hr_max_bpm;
+
+    //= Heart rate (from an O2Ring connected to the app). Every option is 0 = off, and all of them
+    //= are ignored while no heart rate is coming in.
+
+    // End the cooldown after an edge only once the heart rate has dropped this far below its peak
+    // since the edge (and edge_delay has passed).
+    uint8_t hr_recovery_bpm;
+    // Never wait for the heart rate longer than this after an edge, in seconds.
+    uint8_t hr_recovery_max_s;
+    // At or above this heart rate, lower the edge threshold by hr_edge_sensitivity percent.
+    uint8_t hr_edge_bpm;
+    uint8_t hr_edge_sensitivity;
+    // Orgasm mode: a clench only counts as an orgasm with the heart rate at least this high.
+    uint8_t hr_orgasm_min_bpm;
+    // Orgasm mode, once permitted: also count an orgasm when the heart rate falls this far within
+    // HR_ORGASM_DROP_WINDOW_MS of its peak, without a clench.
+    uint8_t hr_orgasm_drop_bpm;
 
     //= Internal System Configuration (Update only if you know what you're doing)
 

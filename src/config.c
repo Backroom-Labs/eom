@@ -79,6 +79,15 @@ CONFIG_DEFS {
     CFG_NUMBER(disconnect_stop_s, 10);
     CFG_NUMBER(max_session_minutes, 0);
     CFG_NUMBER(max_motor_output, 255);
+    CFG_NUMBER(hr_max_bpm, 0);
+
+    // Heart rate
+    CFG_NUMBER(hr_recovery_bpm, 0);
+    CFG_NUMBER(hr_recovery_max_s, 90);
+    CFG_NUMBER(hr_edge_bpm, 0);
+    CFG_NUMBER(hr_edge_sensitivity, 20);
+    CFG_NUMBER(hr_orgasm_min_bpm, 0);
+    CFG_NUMBER(hr_orgasm_drop_bpm, 0);
 
     // Internal system things, only edit if you know what you're doing.
     //CFG_STRING_PTR(remote_update_url, REMOTE_UPDATE_URL)

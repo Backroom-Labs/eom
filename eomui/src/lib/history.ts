@@ -14,6 +14,7 @@ export type LiveReading = {
   safety?: number;
   runMode: string;
   localTime: number;
+  hr?: number; // bpm from a heart-rate sensor, if one is connected
 };
 
 // One row per SAMPLE_MS. Arousal is the peak inside the bucket so edges aren't smoothed away; the
@@ -29,6 +30,7 @@ export type Sample = [
   baseline: number,
   mode: number, // index into MODES
   phase: number,
+  hr?: number, // bpm, 0 = no reading; missing in sessions recorded before heart rate
 ];
 export const MODES = ["MANUAL", "ENDLESS", "ORGASM"];
 
@@ -49,6 +51,12 @@ export type SessionSummary = {
   baselineStart: number;
   baselineEnd: number;
   orgasmPeaks: number[]; // peak arousal in the minute before each orgasm
+  peakHr?: number; // bpm; only with a heart-rate sensor
+  avgHr?: number;
+  edgeHrs?: number[]; // heart rate at each denial
+  edgeHrDrops?: number[]; // how far the heart rate fell in the minute after each denial (peak to low)
+  orgasmHrPeaks?: number[]; // peak heart rate in the minute before each orgasm
+  orgasmHrDrops?: number[]; // how far it fell in the minute after each orgasm
 };
 
 const SAMPLE_MS = 200;
@@ -58,6 +66,7 @@ const MIN_SESSION_MS = 15_000; // shorter sessions aren't kept
 const FLUSH_MS = 10_000;
 const PRE_ORGASM_WINDOW_MS = 60_000;
 const KEEP_SESSIONS = 200;
+const HR_DROP_WINDOW_MS = 60_000;
 
 // -----------------------------------------------------------------------------------------------
 // Storage
@@ -159,8 +168,17 @@ type Current = {
   lastFlush: number;
   pleasureSum: number;
   pleasureN: number;
+  hrSum: number;
+  hrN: number;
+  // Denials and orgasms in the last minute, for how far the heart rate falls afterwards.
+  hrWatch: { t: number; orgasm: boolean; peak: number; low: number }[];
   aboveThreshold: boolean;
 };
+
+function closeHrWatch(s: SessionSummary, w: Current["hrWatch"][number]) {
+  if (w.orgasm) (s.orgasmHrDrops ??= []).push(w.peak - w.low);
+  else (s.edgeHrDrops ??= []).push(w.peak - w.low);
+}
 
 export class Recorder {
   private current: Current | null = null;
@@ -188,7 +206,7 @@ export class Recorder {
           baselineStart: r.baseline ?? 0, baselineEnd: r.baseline ?? 0, orgasmPeaks: [],
         },
         chunkNo: 0, stored: 0, pending: [], recent: [], bucketStart: now, bucketPeak: r.arousal, last: r,
-        lastActive: now, lastFlush: now, pleasureSum: 0, pleasureN: 0, aboveThreshold: false,
+        lastActive: now, lastFlush: now, pleasureSum: 0, pleasureN: 0, hrSum: 0, hrN: 0, hrWatch: [], aboveThreshold: false,
       };
     }
     const c = this.current;
@@ -197,14 +215,26 @@ export class Recorder {
 
     if (r.runMode !== "MANUAL") s.automaticMs += Math.max(0, Math.min(1000, now - prev.localTime));
     if (isActive(r)) c.lastActive = now;
-    s.denials += Math.max(0, (r.denied ?? 0) - (prev.denied ?? 0));
+    const denied = Math.max(0, (r.denied ?? 0) - (prev.denied ?? 0));
+    s.denials += denied;
+    if (denied && r.hr) {
+      (s.edgeHrs ??= []).push(r.hr);
+      c.hrWatch.push({ t: now, orgasm: false, peak: r.hr, low: r.hr });
+    }
     if (r.phase === 3) s.ruined = true;
     if (r.safety) s.safetyStop = r.safety;
     if ((r.orgasms ?? 0) > (prev.orgasms ?? 0)) {
       s.orgasms += (r.orgasms ?? 0) - (prev.orgasms ?? 0);
       const peak = Math.max(r.arousal, c.bucketPeak, ...c.recent.filter((x) => now - s.start - x[0] < PRE_ORGASM_WINDOW_MS).map((x) => x[2]));
       s.orgasmPeaks.push(peak);
+      const hrs = [r.hr ?? 0, ...c.recent.filter((x) => now - s.start - x[0] < PRE_ORGASM_WINDOW_MS).map((x) => x[10] ?? 0)];
+      const hrPeak = Math.max(...hrs);
+      if (hrPeak > 0) {
+        (s.orgasmHrPeaks ??= []).push(hrPeak);
+        c.hrWatch.push({ t: now, orgasm: true, peak: r.hr || hrPeak, low: r.hr || hrPeak });
+      }
     }
+    if (r.hr) this.watchHr(r.hr, now);
     const above = r.arousal > r.threshold && r.motor > 0;
     if (above && !c.aboveThreshold) s.edges++;
     c.aboveThreshold = r.arousal > r.threshold;
@@ -215,6 +245,17 @@ export class Recorder {
 
     if (now - c.lastActive > END_AFTER_IDLE_MS) this.end();
     else if (now - c.lastFlush > FLUSH_MS) this.flush();
+  }
+
+  // After a denial or orgasm the heart rate usually climbs a little more, then falls: keep the peak
+  // and the lowest point after it for a minute.
+  private watchHr(hr: number, now: number) {
+    const c = this.current!;
+    for (const w of c.hrWatch) {
+      if (hr > w.peak) w.peak = w.low = hr;
+      else w.low = Math.min(w.low, hr);
+    }
+    while (c.hrWatch.length && now - c.hrWatch[0].t > HR_DROP_WINDOW_MS) closeHrWatch(c.summary, c.hrWatch.shift()!);
   }
 
   // Call every few seconds: ends a session whose readings stopped (disconnected).
@@ -228,7 +269,7 @@ export class Recorder {
     const s = c.summary;
     const sample: Sample = [
       now - s.start, r.pressure, c.bucketPeak, r.motor, r.threshold, r.denied ?? 0, r.orgasms ?? 0,
-      r.baseline ?? 0, Math.max(0, MODES.indexOf(r.runMode)), r.phase ?? 0,
+      r.baseline ?? 0, Math.max(0, MODES.indexOf(r.runMode)), r.phase ?? 0, r.hr ?? 0,
     ];
     c.pending.push(sample);
     c.recent.push(sample);
@@ -239,6 +280,12 @@ export class Recorder {
     if (r.baseline !== undefined) {
       if (!s.baselineStart) s.baselineStart = r.baseline;
       s.baselineEnd = r.baseline;
+    }
+    if (r.hr) {
+      c.hrSum += r.hr;
+      c.hrN++;
+      s.avgHr = Math.round(c.hrSum / c.hrN);
+      s.peakHr = Math.max(s.peakHr ?? 0, r.hr);
     }
     if (r.motor > 0) {
       c.pleasureSum += r.motor;
@@ -267,6 +314,7 @@ export class Recorder {
     const c = this.current;
     if (!c) return;
     this.current = null;
+    for (const w of c.hrWatch) closeHrWatch(c.summary, w);
     // Trim the idle tail so the duration is the time something was running.
     const activeEnd = c.lastActive - c.summary.start;
     c.pending = c.pending.filter((x) => x[0] <= activeEnd + SAMPLE_MS);
@@ -291,9 +339,9 @@ export class Recorder {
 
 export function toCsv(summary: SessionSummary, samples: Sample[]): string {
   const rows = [
-    "time_s,mode,pressure,arousal_peak,pleasure,edge_threshold,denials,orgasms,baseline,phase",
+    "time_s,mode,pressure,arousal_peak,pleasure,edge_threshold,denials,orgasms,baseline,phase,heart_rate",
     ...samples.map((x) =>
-      [(x[0] / 1000).toFixed(1), MODES[x[8]] ?? "", x[1], x[2], x[3], x[4], x[5], x[6], x[7], x[9]].join(","),
+      [(x[0] / 1000).toFixed(1), MODES[x[8]] ?? "", x[1], x[2], x[3], x[4], x[5], x[6], x[7], x[9], x[10] || ""].join(","),
     ),
   ];
   return `# EOM session ${new Date(summary.start).toISOString()}\n${rows.join("\n")}\n`;
@@ -364,4 +412,59 @@ export function suggestThreshold(sessions: SessionSummary[], current: number): S
     reason: "Your edge rate looks reasonable. An orgasm detected in Orgasm mode gives a better suggestion.",
     sessions: recent.length,
   };
+}
+
+// -----------------------------------------------------------------------------------------------
+// Heart-rate suggestions, for the Heart rate settings (firmware Config.hr_*)
+
+export type HrSuggestion = {
+  key: string; // setting key
+  value: number;
+  reason: string;
+};
+
+// From the last 10 sessions with a heart rate recorded. Each value only appears once there's
+// enough data for it.
+export function suggestHeartRate(sessions: SessionSummary[]): { suggestions: HrSuggestion[]; sessions: number } {
+  const recent = sessions.filter((s) => s.peakHr).slice(0, 10);
+  const all = (pick: (s: SessionSummary) => number[] | undefined) => recent.flatMap((s) => pick(s) ?? []);
+  const out: HrSuggestion[] = [];
+
+  const edges = all((s) => s.edgeHrs);
+  if (edges.length >= 3) {
+    const m = Math.round(median(edges));
+    out.push({
+      key: "hr_edge_bpm",
+      value: Math.max(60, m - 5),
+      reason: `Your heart rate was around ${m} bpm at your last ${edges.length} edges; the edge zone starts a little below that.`,
+    });
+  }
+  const edgeDrops = all((s) => s.edgeHrDrops).filter((d) => d > 0);
+  if (edgeDrops.length >= 3) {
+    const m = Math.round(median(edgeDrops));
+    out.push({
+      key: "hr_recovery_bpm",
+      value: Math.max(3, Math.round(m * 0.6)),
+      reason: `After an edge your heart rate typically fell ${m} bpm within a minute; resuming at about 60% of that fall.`,
+    });
+  }
+  const orgasmPeaks = all((s) => s.orgasmHrPeaks);
+  if (orgasmPeaks.length >= 1) {
+    const m = Math.round(median(orgasmPeaks));
+    out.push({
+      key: "hr_orgasm_min_bpm",
+      value: Math.round(m * 0.9),
+      reason: `Your heart rate peaked around ${m} bpm before ${orgasmPeaks.length === 1 ? "your orgasm" : `${orgasmPeaks.length} orgasms`}; clenches below 90% of that are ignored.`,
+    });
+  }
+  const orgasmDrops = all((s) => s.orgasmHrDrops).filter((d) => d > 0);
+  if (orgasmDrops.length >= 2) {
+    const m = Math.round(median(orgasmDrops));
+    out.push({
+      key: "hr_orgasm_drop_bpm",
+      value: Math.max(5, Math.round(m * 0.6)),
+      reason: `After an orgasm your heart rate typically fell ${m} bpm within a minute.`,
+    });
+  }
+  return { suggestions: out, sessions: recent.length };
 }

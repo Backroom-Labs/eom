@@ -32,6 +32,7 @@ You could use the app by itself to control multiple sex toys at once without an 
 - [The app](#the-app)
 - [Modes](#modes)
 - [Session history and auto-calibration](#session-history-and-auto-calibration)
+- [Heart rate](#heart-rate)
 - [Safety](#safety)
 - [Status LED](#status-led)
 - [Hardware](#hardware)
@@ -47,6 +48,7 @@ You could use the app by itself to control multiple sex toys at once without an 
 
 |Version|What changed|
 |---|---|
+|**3.5.0**|[Heart rate](#heart-rate) from a Wellue/Viatom O2Ring (including the SleepHQ O2 Ring Pro): shown live, recorded in history, and optionally used for cooldowns, edge detection, orgasm detection and a safety stop. A time axis on the live chart.|
 |**3.4.0**|[Session history](#session-history-and-auto-calibration) with charts, stats and CSV export. Automatic calibration that follows your resting pressure, and a suggested edge threshold based on your past sessions.|
 |**3.3.0**|[After-orgasm modes](#after-an-orgasm): Ruin, Post-orgasm or Milking. An Orgasms counter. A [pressure simulator](#testing-without-a-pressure-sensor) build for testing without a sensor.|
 |**3.2.0**|[Safety stops](#safety): sensor fault, lost connection, session time limit and an output limit. Fixed Bluetooth setting changes resetting other settings.|
@@ -173,6 +175,21 @@ A session starts when a mode runs or the intensity goes above 0, and ends 30 sec
 
 Tap **Apply** to use the suggestion.
 
+## Heart rate
+
+The app can connect to a **Wellue/Viatom O2Ring** pulse oximeter ring, including rebadged ones such as the **SleepHQ O2 Ring Pro**, alongside the EOM.  Close the ring's own app first (the ring takes one connection at a time), then use **Connection > Heart rate > Connect O2Ring** and pick the ring from the list.  Both the older O2Ring protocol and the newer one (O2Ring S, O2 Ring Pro) are supported.
+
+While it's connected, the app shows a **Heart rate** gauge and chart line, records heart rate with each session (graph line, stats and a `heart_rate` CSV column), and forwards it to the EOM once a second.  The EOM can use it in these ways, all in **Settings > Heart rate** and all off by default:
+
+|Setting|What it does|
+|---|---|
+|**Wait for heart rate to settle**|After an edge, the cooldown continues until your heart rate has dropped this many bpm from its peak, after **Edge delay** and for at most **Longest wait for heart rate**.  The app shows "Waiting for your heart rate to settle".|
+|**Edge zone heart rate**|At or above this heart rate the edge threshold is lowered by **Edge zone threshold drop**, so edges are caught earlier when you're close.  The arousal gauge shows the lowered threshold.|
+|**Orgasm heart rate**|In Orgasm mode, a clench only counts as an orgasm if your heart rate is at least this high.|
+|**Detect orgasm from heart rate drop**|Experimental.  Once an orgasm is permitted, also count one when your heart rate falls this far within 30 seconds of its peak, without a clench.|
+
+Once a few sessions have been recorded with the ring on, the Heart rate settings tab suggests values for these from your history (heart rate at your edges and orgasms, and how far it falls afterwards).  If the heart rate stops coming in for 5 seconds (ring off, app closed), everything goes back to pressure only.
+
 ## Safety
 
 The device stops everything (Manual mode, 0%) if something goes wrong.  The app shows a banner saying why, and starting a mode again clears it.  All of these are in **Settings > Safety**:
@@ -183,6 +200,7 @@ The device stops everything (Manual mode, 0%) if something goes wrong.  The app 
 |**Stop when disconnected**|10 s|Stop if no app (Bluetooth or Wi-Fi) has been connected for this long.  A Bluetooth toy reading the EOM counts as connected.  0 turns it off.  If your phone drops the connection when its screen locks, turn on **Keep screen on** in Settings > App or raise this.|
 |**Session time limit**|Off|Stop any session, Manual included, after this many minutes.|
 |**Output limit**|100%|No mode or app can go above this, including Manual and direct motor control from other apps.|
+|**Heart rate limit**|Off|Stop if your heart rate stays above this for 10 seconds.  Needs an O2Ring connected to the app (see [Heart rate](#heart-rate)).|
 
 ## Status LED
 
@@ -307,7 +325,7 @@ Using Xtoys you can connect to the EOM and let it control your other Xtoys devic
 
 WebSockets are supported for backwards compatibility with nogasm and edge-o-matic devices, but not necessary for Bluetooth.  Documentation for the WebSocket API is in [doc/WebSocket.md](doc/WebSocket.md) and the config keys are in [doc/Config.json.md](doc/Config.json.md).
 
-Newer firmware adds these to the readings, over both WebSocket (`readings`) and Bluetooth (status characteristic, now 25 bytes, multi-byte values MSB first):
+Newer firmware adds these to the readings, over both WebSocket (`readings`) and Bluetooth (status characteristic, now 27 bytes, multi-byte values MSB first):
 
 |Field|WebSocket|Bluetooth byte|Since|Meaning|
 |---|---|---|---|---|
@@ -317,8 +335,10 @@ Newer firmware adds these to the readings, over both WebSocket (`readings`) and 
 |Phase|`phase`|20|3.3.0|1 post-orgasm, 2 resting, 3 ruined|
 |Rest|`rest`|21-22|3.3.0|Seconds left resting (Milking)|
 |Resting pressure|`baseline`|23-24|3.4.0|Tracked resting pressure|
+|Heart rate|`hr`|25|3.5.0|Heart rate the EOM is using, in bpm (0 = none)|
+|Heart-rate state|`hrWait`, `hrZone`|26 (bit 0, bit 1)|3.5.0|Cooldown waiting for the heart rate to settle; heart rate in the edge zone|
 
-Bluetooth control commands: `0x02` change a setting (saved), `0x04` save and restart, `0x05` set the simulated pressure (simulator builds only).
+Bluetooth control commands: `0x02` change a setting (saved), `0x04` save and restart, `0x05` set the simulated pressure (simulator builds only), `0x06 <bpm>` heart rate from an external sensor.  Over WebSocket the heart rate is `{"heartRate": <bpm>}`.
 
 New settings since 3.0.0:
 
@@ -333,6 +353,13 @@ New settings since 3.0.0:
 |`disconnect_stop_s`|10|Stop when disconnected (0 = off)|
 |`max_session_minutes`|0|Session time limit (0 = off)|
 |`max_motor_output`|255|Output limit|
+|`hr_max_bpm`|0|Heart rate limit (0 = off)|
+|`hr_recovery_bpm`|0|Wait for heart rate to settle (0 = off)|
+|`hr_recovery_max_s`|90|Longest wait for heart rate|
+|`hr_edge_bpm`|0|Edge zone heart rate (0 = off)|
+|`hr_edge_sensitivity`|20|Edge zone threshold drop (%)|
+|`hr_orgasm_min_bpm`|0|Orgasm heart rate (0 = off)|
+|`hr_orgasm_drop_bpm`|0|Detect orgasm from heart rate drop (0 = off)|
 
 ## Building tips
 
@@ -410,7 +437,6 @@ Older ideas:
 - integrate smoothing filters into pressure readings
 - bug: arousal overflows on hardware side
 - battery monitoring characteristic
-- add X axis on the live chart (seconds)
 - make motor pin selection more intuitive (add motor hardware in general)
 - display individual toy battery levels
 - device disconnection (buttplug bug)

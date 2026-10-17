@@ -40,6 +40,7 @@ export const AFTER_ORGASM_MILKING = 2;
 const ADC_MAX = 4096; // arousal and pressure are 12 bit
 const PLEASURE_MAX = 255;
 
+const bpmOff = (v: number) => (v === 0 ? "Off" : `${v} bpm`);
 const seconds = (v: number) => (v >= 60 ? `${Math.floor(v / 60)}m ${v % 60 ? `${v % 60}s` : ""}`.trim() : `${v}s`);
 const millis = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(v % 1000 ? 1 : 0)}s` : `${v}ms`);
 const minutes = (v: number) => (v >= 60 ? `${Math.floor(v / 60)}h ${v % 60 ? `${v % 60}m` : ""}`.trim() : `${v} min`);
@@ -261,6 +262,52 @@ export const SETTINGS: SettingDef[] = [
     description: "No mode or app can go above this, including Manual and direct motor control. Maximum intensity can't go above it either.",
     kind: "range", default: 255, min: 0, max: PLEASURE_MAX, percentOf: PLEASURE_MAX,
   },
+  {
+    key: "hr_max_bpm",
+    label: "Heart rate limit",
+    description: "Stop any session if your heart rate stays above this for 10 seconds. Needs an O2Ring connected to the app. 0 turns it off.",
+    kind: "range", default: 0, min: 0, max: 220, step: 5, format: bpmOff,
+  },
+
+  // Heart rate
+  {
+    key: "hr_recovery_bpm",
+    label: "Wait for heart rate to settle",
+    description: "After an edge, keep the cooldown going until your heart rate has dropped this far from its peak (Edge delay still applies first). 0 uses Edge delay alone.",
+    kind: "range", default: 0, min: 0, max: 40, format: bpmOff,
+  },
+  {
+    key: "hr_recovery_max_s",
+    label: "Longest wait for heart rate",
+    description: "Resume this long after an edge even if your heart rate hasn't settled.",
+    kind: "range", default: 90, min: 10, max: 255, step: 5, format: seconds,
+    visible: (c) => Number(c.hr_recovery_bpm) > 0,
+  },
+  {
+    key: "hr_edge_bpm",
+    label: "Edge zone heart rate",
+    description: "At or above this heart rate you're close to the edge, so the edge threshold is lowered and edges are caught earlier. 0 turns it off.",
+    kind: "range", default: 0, min: 0, max: 200, format: bpmOff,
+  },
+  {
+    key: "hr_edge_sensitivity",
+    label: "Edge zone threshold drop",
+    description: "How much lower the edge threshold is in the edge zone.",
+    kind: "range", default: 20, min: 0, max: 80, step: 5, format: (v) => `${v}%`,
+    visible: (c) => Number(c.hr_edge_bpm) > 0,
+  },
+  {
+    key: "hr_orgasm_min_bpm",
+    label: "Orgasm heart rate",
+    description: "Orgasm mode: a clench only counts as an orgasm if your heart rate is at least this high, which filters out stray clenches. 0 turns it off.",
+    kind: "range", default: 0, min: 0, max: 200, format: bpmOff,
+  },
+  {
+    key: "hr_orgasm_drop_bpm",
+    label: "Detect orgasm from heart rate drop",
+    description: "Orgasm mode, once an orgasm is permitted: also count an orgasm when your heart rate falls this far within 30 seconds of its peak, even without a clench. Experimental. 0 turns it off.",
+    kind: "range", default: 0, min: 0, max: 40, format: bpmOff,
+  },
 
   // Wi-Fi
   {
@@ -413,7 +460,13 @@ export const SETTING_GROUPS: SettingGroup[] = [
   {
     id: "safety",
     title: "Safety",
-    keys: ["sensor_fault_stop", "disconnect_stop_s", "max_session_minutes", "max_motor_output"],
+    keys: ["sensor_fault_stop", "disconnect_stop_s", "max_session_minutes", "max_motor_output", "hr_max_bpm"],
+  },
+  {
+    id: "heartrate",
+    title: "Heart rate",
+    description: "Uses the heart rate from an O2Ring connected to this app (Connection > Heart rate). Each option is off at 0, and the EOM works as before whenever no heart rate is coming in.",
+    keys: ["hr_recovery_bpm", "hr_recovery_max_s", "hr_edge_bpm", "hr_edge_sensitivity", "hr_orgasm_min_bpm", "hr_orgasm_drop_bpm"],
   },
   {
     id: "wifi",

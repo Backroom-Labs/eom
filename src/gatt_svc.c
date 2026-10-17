@@ -1,5 +1,6 @@
 #include "gap.h"
 #include "gatt_svc.h"
+#include "heart_rate.h"
 #include "safety.h"
 #include "nimble/nimble_port.h"
 #include "nimble/ble.h"
@@ -260,7 +261,9 @@ static int status_out_chr_access(uint16_t conn_handle, uint16_t attr_handle, str
             uint16_t rest_seconds = orgasm_control_get_rest_remaining_seconds();
             uint16_t baseline = orgasm_control_get_baseline();
 
-            uint8_t chr_val[25] = {
+            uint8_t chr_flags = (orgasm_control_is_hr_waiting() ? 0x01 : 0) | (orgasm_control_is_hr_edge_zone() ? 0x02 : 0);
+
+            uint8_t chr_val[27] = {
                 (uint8_t)(orgasm_control_get_last_pressure() >> 4), // Scale from 12-bit (0-4095) to 8-bit (0-255)
                 (uint8_t)(orgasm_control_get_arousal() >> 4),
                 (uint8_t)(orgasm_control_get_arousal_threshold() >> 4),
@@ -285,7 +288,9 @@ static int status_out_chr_access(uint16_t conn_handle, uint16_t attr_handle, str
                 (uint8_t)((rest_seconds >> 8) & 0xFF),  // MSB
                 (uint8_t)(rest_seconds & 0xFF),         // LSB
                 (uint8_t)((baseline >> 8) & 0xFF),      // MSB, full 12-bit resolution
-                (uint8_t)(baseline & 0xFF)              // LSB
+                (uint8_t)(baseline & 0xFF),             // LSB
+                heart_rate_get(),                       // bpm the EOM is using, 0 = none
+                chr_flags                               // bit 0 waiting for heart rate, bit 1 heart-rate edge zone
             };
             rc = os_mbuf_append(ctxt->om, chr_val, sizeof(chr_val));
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
@@ -395,6 +400,9 @@ static int update_main_chr_access(uint16_t conn_handle, uint16_t attr_handle, st
                 // Simulated pressure (test builds only): 2 bytes MSB first, 0xFFFF for the real sensor.
                 uint16_t value = (buf[1] << 8) | buf[2];
                 eom_hal_set_simulated_pressure(value == 0xFFFF ? -1 : value);
+            } else if (buf[0] == 0x06 && len >= 2) {
+                // Heart rate in bpm from a sensor the app is connected to, 0 for no reading.
+                heart_rate_set(buf[1]);
             }
             return rc;
         }

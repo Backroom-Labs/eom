@@ -3,6 +3,7 @@
 #include "eom-hal-esp32.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "heart_rate.h"
 #include "safety.h"
 #include "system/websocket_handler.h"
 #include "util/running_average.h"
@@ -75,6 +76,16 @@ static struct {
     float baseline; // < 0 until the first reading
     unsigned long elevated_since_ms; // when pressure rose above the resting band, 0 if not above
 } baseline_state = { .baseline = -1 };
+
+// Heart-rate features (Config.hr_*). Each falls back to pressure-only behaviour while
+// heart_rate_get() is 0.
+#define HR_ORGASM_DROP_WINDOW_MS (30 * 1000)
+static struct {
+    uint8_t peak_since_edge; // highest heart rate since the last edge, for hr_recovery_bpm
+    bool waiting;            // cooldown held until the heart rate recovers
+    uint8_t orgasm_peak;     // Orgasm mode, once permitted: recent peak, for hr_orgasm_drop_bpm
+    unsigned long orgasm_peak_ms;
+} hr_state = { 0 };
 
 volatile static struct {
     uint8_t orgasm_count;
@@ -204,6 +215,66 @@ static void orgasm_control_update_baseline(long p) {
 }
 
 /**
+ * The edge threshold, lowered by hr_edge_sensitivity percent while the heart rate is at or above
+ * hr_edge_bpm, so edges are caught earlier close to the limit.
+ */
+static int orgasm_control_edge_threshold(void) {
+    uint8_t hr = heart_rate_get();
+    if (Config.hr_edge_bpm > 0 && hr >= Config.hr_edge_bpm && Config.hr_edge_sensitivity < 100) {
+        return Config.sensitivity_threshold * (100 - Config.hr_edge_sensitivity) / 100;
+    }
+    return Config.sensitivity_threshold;
+}
+
+bool orgasm_control_is_hr_edge_zone(void) {
+    return orgasm_control_edge_threshold() < Config.sensitivity_threshold;
+}
+
+bool orgasm_control_is_hr_waiting(void) {
+    return hr_state.waiting;
+}
+
+/**
+ * Once edge_delay has passed, keep the cooldown going until the heart rate has dropped
+ * hr_recovery_bpm below its peak since the edge, for at most hr_recovery_max_s after the edge.
+ * Returns the ms of cooldown to keep, 0 when it's over.
+ */
+static unsigned long orgasm_control_hr_recovery_hold(unsigned long since_stop_ms) {
+    uint8_t hr = heart_rate_get();
+    unsigned long max_ms = Config.hr_recovery_max_s * 1000UL;
+    if (Config.hr_recovery_bpm == 0 || hr == 0 || output_state.motor_stop_time == 0 || since_stop_ms >= max_ms) {
+        return 0;
+    }
+    if (hr > hr_state.peak_since_edge) hr_state.peak_since_edge = hr;
+    if (hr + Config.hr_recovery_bpm <= hr_state.peak_since_edge) return 0;
+    return max_ms - since_stop_ms;
+}
+
+/**
+ * Orgasm mode, once permitted: an orgasm without a detected clench shows as the heart rate
+ * falling hr_orgasm_drop_bpm within HR_ORGASM_DROP_WINDOW_MS of its peak, while still stimulated.
+ */
+static void orgasm_control_hr_orgasm_detect(void) {
+    uint8_t hr = heart_rate_get();
+    unsigned long now = esp_timer_get_time() / 1000UL;
+    if (Config.hr_orgasm_drop_bpm == 0 || hr == 0) {
+        hr_state.orgasm_peak = 0;
+        return;
+    }
+    if (hr >= hr_state.orgasm_peak || now - hr_state.orgasm_peak_ms > HR_ORGASM_DROP_WINDOW_MS) {
+        hr_state.orgasm_peak = hr;
+        hr_state.orgasm_peak_ms = now;
+        return;
+    }
+    bool high_enough = Config.hr_orgasm_min_bpm == 0 || hr_state.orgasm_peak >= Config.hr_orgasm_min_bpm;
+    if (high_enough && hr + Config.hr_orgasm_drop_bpm <= hr_state.orgasm_peak && output_state.pleasure > 0) {
+        ESP_LOGI(TAG, "Orgasm detected from heart rate: %d -> %d bpm", hr_state.orgasm_peak, hr);
+        post_orgasm_state.detected_orgasm = ocTRUE;
+        hr_state.orgasm_peak = 0;
+    }
+}
+
+/**
  * Main orgasm detection / edging algorithm happens here.
  * This happens with a default update frequency of 50Hz.
  */
@@ -305,9 +376,11 @@ static void orgasm_control_update_pleasure() {
     long on_time = (esp_timer_get_time() / 1000UL) - output_state.motor_start_time;
 
     //check if its been long enough since motor stopped
-    if ((esp_timer_get_time() / 1000UL) - output_state.motor_stop_time >
-        (Config.edge_delay * 1000) + output_state.random_additional_delay) {
-        arousal_state.cooldown = 0;
+    unsigned long since_stop = (esp_timer_get_time() / 1000UL) - output_state.motor_stop_time;
+    if (since_stop > (Config.edge_delay * 1000) + output_state.random_additional_delay) {
+        // Then wait for the heart rate to settle, if hr_recovery_bpm is on.
+        arousal_state.cooldown = orgasm_control_hr_recovery_hold(since_stop);
+        update_check(hr_state.waiting, arousal_state.cooldown > 0);
     } else {
         arousal_state.cooldown = (Config.edge_delay * 1000) + output_state.random_additional_delay - 
                                    ((esp_timer_get_time() / 1000UL) - output_state.motor_stop_time);
@@ -317,7 +390,7 @@ static void orgasm_control_update_pleasure() {
         // It hasn't been long enough since the pleasure stopped
         orgasm_control_twitch_detect();  //if still aroused restart the cooldown timeout counter until arousal is below threshold
 
-    } else if (arousal_state.arousal > Config.sensitivity_threshold &&
+    } else if (arousal_state.arousal > orgasm_control_edge_threshold() &&
                output_state.pleasure > 0 && on_time > (Config.minimum_on_time * 1000)) {
         // EDGE DETECTED
         // We're not already in timeout, but arousal is high enough to stop the pleasure
@@ -328,6 +401,7 @@ static void orgasm_control_update_pleasure() {
             arousal_state.update_flag = ocTRUE;
             arousal_state.cooldown = (Config.edge_delay * 1000) + output_state.random_additional_delay;  //calculate cooldown
             orgasm_state.orgasm_count += 1;
+            hr_state.peak_since_edge = heart_rate_get();
             ESP_LOGI(TAG, "Orgasm Denied! Total: %d", orgasm_state.orgasm_count);
             if (Config.max_additional_delay  != 0) {
                 output_state.random_additional_delay = random() % (Config.max_additional_delay * 1000);
@@ -454,6 +528,8 @@ static void orgasm_control_update_edging_time() { // Edging+Orgasm timer
             //orgasm_control_pause_control(); // make sure orgasm is now possible
         }
 
+        orgasm_control_hr_orgasm_detect();
+
         // now detect the orgasm to start post orgasm torture timer
         if (post_orgasm_state.detected_orgasm) {
             post_orgasm_state.detected_orgasm = ocFALSE;
@@ -563,7 +639,12 @@ long orgasm_control_clench_detect(long p_check){
             !orgasm_detect) {
             orgasm_detect = true;
             if ( orgasm_control_is_permit_orgasm_reached() ) {
-                post_orgasm_state.detected_orgasm = ocTRUE;
+                uint8_t hr = heart_rate_get();
+                if (Config.hr_orgasm_min_bpm > 0 && hr > 0 && hr < Config.hr_orgasm_min_bpm) {
+                    ESP_LOGI(TAG, "Clench ignored: heart rate %d below %d", hr, Config.hr_orgasm_min_bpm);
+                } else {
+                    post_orgasm_state.detected_orgasm = ocTRUE;
+                }
             }
             //event_manager_dispatch(EVT_ORGASM_START, NULL, 0);    
         }
@@ -587,7 +668,7 @@ long orgasm_control_clench_detect(long p_check){
 }
 
 void orgasm_control_twitch_detect() {
-    if (arousal_state.arousal > Config.sensitivity_threshold) {
+    if (arousal_state.arousal > orgasm_control_edge_threshold()) {
         output_state.motor_stop_time = (esp_timer_get_time() / 1000UL);
         arousal_state.cooldown = (Config.edge_delay * 1000) + output_state.random_additional_delay;
         eom_hal_set_led_flash_interval(MINIMUM_BLINK_L);
@@ -747,6 +828,7 @@ void orgasm_control_trigger_arousal() {
     arousal_state.arousal = Config.sensitivity_threshold + 1;
     output_state.pleasure = 0;
     output_state.motor_stop_time = (esp_timer_get_time() / 1000UL);
+    hr_state.peak_since_edge = heart_rate_get();
     output_state.motor_start_time = 0;
     arousal_state.update_flag = ocTRUE;
 }
@@ -760,6 +842,8 @@ void orgasm_control_set_output_mode(orgasm_output_mode_t mode) {
     post_orgasm_state.auto_edging_start_millis = (esp_timer_get_time() / 1000UL);
     post_orgasm_state.post_orgasm_start_millis = 0;
     post_orgasm_state.rest_start_millis = 0;
+    hr_state.waiting = false;
+    hr_state.orgasm_peak = 0;
     if (mode != OC_MANUAL) {
         // A new session: forget the last one's orgasms and clench baseline.
         post_orgasm_state.session_orgasms = 0;

@@ -20,16 +20,20 @@
 
   const MAX_Y = 4096;
   const SAFETY_LABELS: Record<number, string> = { 1: "sensor fault", 2: "disconnected", 3: "time limit" };
+  // Heart rate is drawn on the same 0-100% axis, with 40-200 bpm across the full height.
+  const hrY = (bpm: number) => Math.max(0, Math.min(1, (bpm - 40) / 160)) * MAX_Y;
   const LINES = [
     { i: 3, label: "Pleasure", color: "--pleasure", width: 2, scale: MAX_Y / 255 },
     { i: 2, label: "Arousal", color: "--arousal", width: 2, scale: 1 },
     { i: 4, label: "Edge threshold", color: "--arousal", width: 1, scale: 1, dash: [6, 6] },
     { i: 1, label: "Pressure", color: "--pressure", width: 1, scale: 1 },
     { i: 7, label: "Resting pressure", color: "--pressure", width: 1, scale: 1, dash: [2, 4] },
+    { i: 10, label: "Heart rate (40–200 bpm)", color: "--heart", width: 1.5, scale: 1 },
   ];
 
   let selected = $state<SessionSummary | null>(null);
   let samples = $state.raw<Sample[]>([]);
+  let hasHr = $derived(samples.some((s) => s[10]));
   let loading = $state(false);
   let canvas = $state<HTMLCanvasElement>();
 
@@ -54,6 +58,7 @@
     return new Date(t).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   }
 
+  const avg = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) / xs.length);
   const pct = (v: number, max = MAX_Y) => `${Math.round((v / max) * 100)}%`;
 
   async function exportCsv(s: SessionSummary) {
@@ -149,10 +154,15 @@
     ctx.lineJoin = "round";
     for (const line of LINES) {
       if (line.i === 7 && !samples.some((s) => s[7] > 0)) continue; // firmware without a baseline
+      if (line.i === 10 && !hasHr) continue;
       const peaks = new Array<number>(cols).fill(-1);
       for (const s of samples) {
         const c = Math.min(cols - 1, Math.floor((s[0] / span) * cols));
-        peaks[c] = Math.max(peaks[c], s[line.i] * line.scale);
+        if (line.i === 10) {
+          if (s[10]) peaks[c] = Math.max(peaks[c], hrY(s[10]));
+        } else {
+          peaks[c] = Math.max(peaks[c], s[line.i]! * line.scale);
+        }
       }
       ctx.strokeStyle = color(line.color);
       ctx.lineWidth = line.width;
@@ -190,7 +200,7 @@
     {:else}
       <canvas bind:this={canvas} class="chart" aria-label="Session graph"></canvas>
       <ul class="legend">
-        {#each LINES as line}
+        {#each LINES.filter((l) => l.i !== 10 || hasHr) as line}
           <li><span class="swatch" class:dashed={line.dash} style="--c: var({line.color})"></span>{line.label}</li>
         {/each}
         <li><span class="swatch tall" style="--c: var(--denied)"></span>Denial</li>
@@ -205,6 +215,15 @@
       <div><dt>Peak arousal</dt><dd>{pct(s.peakArousal)}</dd></div>
       <div><dt>Avg pleasure</dt><dd>{pct(s.avgPleasure, 255)}</dd></div>
       <div><dt>Edge threshold</dt><dd>{pct(s.threshold)}</dd></div>
+      {#if s.peakHr}
+        <div><dt>Heart rate</dt><dd>{s.avgHr} avg, {s.peakHr} peak</dd></div>
+      {/if}
+      {#if s.edgeHrs?.length}
+        <div><dt>Heart rate at edges</dt><dd>{avg(s.edgeHrs)} bpm{#if s.edgeHrDrops?.length}, then −{avg(s.edgeHrDrops)}{/if}</dd></div>
+      {/if}
+      {#if s.orgasmHrPeaks?.length}
+        <div><dt>Heart rate at orgasm</dt><dd>{avg(s.orgasmHrPeaks)} bpm{#if s.orgasmHrDrops?.length}, then −{avg(s.orgasmHrDrops)}{/if}</dd></div>
+      {/if}
       {#if s.baselineStart}
         <div><dt>Resting drift</dt><dd>{s.baselineEnd >= s.baselineStart ? "+" : "−"}{pct(Math.abs(s.baselineEnd - s.baselineStart))}</dd></div>
       {/if}

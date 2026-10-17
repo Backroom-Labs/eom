@@ -3,6 +3,7 @@
 #include "eom-hal-esp32.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "heart_rate.h"
 #include "orgasm_control.h"
 #include "system/websocket_handler.h"
 #include <stdbool.h>
@@ -17,6 +18,8 @@ static const char* TAG = "safety";
 // The exact same value. A live sensor always has some noise or movement in it; a dead one, or a
 // tube that came off, reads a constant.
 #define SENSOR_FLAT_MS (30 * 1000)
+// The heart rate has to stay above hr_max_bpm this long, so one bad reading doesn't stop it.
+#define HEART_RATE_HIGH_MS (10 * 1000)
 
 static struct {
     safety_stop_t reason;
@@ -26,6 +29,7 @@ static struct {
     unsigned long rail_start_ms;
     unsigned long flat_start_ms;
     uint16_t flat_value;
+    unsigned long hr_ok_ms; // last time the heart rate was at or below hr_max_bpm (or unknown)
 } state = { 0 };
 
 static unsigned long now_ms(void) {
@@ -33,7 +37,9 @@ static unsigned long now_ms(void) {
 }
 
 static void stop(safety_stop_t reason) {
-    static const char* reasons[] = { "", "pressure sensor fault", "all clients disconnected", "session time limit" };
+    static const char* reasons[] = {
+        "", "pressure sensor fault", "all clients disconnected", "session time limit", "heart rate too high",
+    };
     ESP_LOGW(TAG, "Stopping: %s", reasons[reason]);
 
     state.reason = reason;
@@ -83,7 +89,11 @@ void safety_tick(uint16_t pressure) {
         state.rail_start_ms = now;
         state.flat_start_ms = now;
         state.flat_value = pressure;
+        state.hr_ok_ms = now;
     }
+
+    uint8_t hr = heart_rate_get();
+    if (Config.hr_max_bpm == 0 || hr <= Config.hr_max_bpm) state.hr_ok_ms = now;
 
     if (automatic && Config.sensor_fault_stop && sensor_faulty(pressure, now)) {
         stop(SAFETY_SENSOR_FAULT);
@@ -92,6 +102,8 @@ void safety_tick(uint16_t pressure) {
     } else if (Config.max_session_minutes > 0 &&
                now - state.session_start_ms > Config.max_session_minutes * 60UL * 1000UL) {
         stop(SAFETY_SESSION_LIMIT);
+    } else if (now - state.hr_ok_ms > HEART_RATE_HIGH_MS) {
+        stop(SAFETY_HEART_RATE);
     }
 }
 

@@ -2,6 +2,7 @@
 //#include "eom-hal.h"
 #include "eom-hal-esp32.h"
 #include "esp_log.h"
+#include "heart_rate.h"
 #include "orgasm_control.h"
 #include "system/websocket_handler.h"
 
@@ -80,7 +81,20 @@ static const websocket_command_t cmd_edging_sim_pressure_s = {
     .func = &cmd_edging_sim_pressure,
 };
 
+// Heart rate in bpm from a sensor the app is connected to; 0 for no reading.
+static command_err_t cmd_edging_heart_rate(cJSON* command, cJSON* response, websocket_client_t* client) {
+    int bpm = command->valueint;
+    heart_rate_set(bpm > 0 && bpm < 256 ? bpm : 0);
+    return CMD_OK;
+}
+
+static const websocket_command_t cmd_edging_heart_rate_s = {
+    .command = "heartRate",
+    .func = &cmd_edging_heart_rate,
+};
+
 void api_register_edging(void) {
+    websocket_register_command(&cmd_edging_heart_rate_s);
     websocket_register_command(&cmd_edging_sim_pressure_s);
     websocket_register_command(&cmd_edging_set_mode_s);
     websocket_register_command(&cmd_edging_set_motor_s);

@@ -9,7 +9,8 @@
   import Gauge from "./lib/Gauge.svelte";
   import SettingControl from "./lib/SettingControl.svelte";
   import SessionHistory from "./lib/SessionHistory.svelte";
-  import { Recorder, listSessions, suggestThreshold, type SessionSummary } from "./lib/history";
+  import { Recorder, listSessions, suggestHeartRate, suggestThreshold, type SessionSummary } from "./lib/history";
+  import { O2Ring, type RingReading } from "./lib/o2ring";
   import {
     QUICK_SETTINGS,
     SETTING_GROUPS,
@@ -43,6 +44,9 @@
     orgasms?: number; // orgasms detected this session
     rest?: number; // seconds left of a Milking rest
     baseline?: number; // resting pressure followed by the firmware (after 3.3.0)
+    hr?: number; // bpm from the O2Ring, added by the app
+    hrWait?: boolean; // cooldown waiting for the heart rate to settle (firmware 3.5.0)
+    hrZone?: boolean; // heart rate in the edge zone, edge threshold lowered
   };
 
   type RunMode = "MANUAL" | "ENDLESS" | "ORGASM";
@@ -56,6 +60,7 @@
     1: "Stopped: the pressure sensor isn't giving a usable signal. Check the sensor and its tube, then start again.",
     2: "Stopped because nothing was connected to the EOM. Start again when you're ready.",
     3: "Stopped: the session reached its time limit.",
+    4: "Stopped: your heart rate stayed above the limit set in Safety settings. Take a break before starting again.",
   };
 
   // Matches oc_after_orgasm_phase_t in src/include/orgasm_control.h.
@@ -65,6 +70,11 @@
 
   const MAX_Y = 4096; // arousal, pressure and threshold are 12 bit
   const PLEASURE_MAX = 255;
+  // Heart rate shares the 0-100% axis: 40-200 bpm across the full height.
+  const HR_MIN = 40;
+  const HR_MAX = 200;
+  const hrFraction = (bpm: number) => Math.max(0, Math.min(1, (bpm - HR_MIN) / (HR_MAX - HR_MIN)));
+  const HR_STALE_MS = 5000;
 
   const BT_SERVICE_UUID = "00006969-0000-1000-8000-00805f9b34fb";
   const BT_READINGS_CHAR = "0000696a-0000-1000-8000-00805f9b34fb";
@@ -75,6 +85,7 @@
   const BT_CMD_GET_CONFIG = 0x03;
   const BT_CMD_RESTART = 0x04;
   const BT_CMD_SIM_PRESSURE = 0x05;
+  const BT_CMD_HEART_RATE = 0x06;
 
   const isNativeMobile = Capacitor.getPlatform() === "ios" || Capacitor.getPlatform() === "android";
 
@@ -164,6 +175,45 @@
   let deviceList = $state([]);
   let BTLEDconnected = $state(false);
 
+  // Heart rate from an O2Ring, connected alongside the EOM
+  const ring = new O2Ring();
+  let ringConnected = $state(false);
+  let ringConnecting = $state(false);
+  let ringName = $state("");
+  let heart = $state<RingReading | null>(null);
+  let ringClosing = false; // disconnected on purpose, no toast
+  ring.onReading = (r) => {
+    heart = r;
+    sendHeartRate(r.hr ?? 0);
+  };
+  ring.onDisconnect = () => {
+    ringConnected = false;
+    heart = null;
+    sendHeartRate(0);
+    if (!ringClosing) showToast(`${ringName} disconnected`, "error");
+  };
+
+  async function ringConnect() {
+    ringConnecting = true;
+    try {
+      ringName = await ring.connect();
+      ringConnected = true;
+      showToast(`Connected to ${ringName}`);
+    } catch (error: any) {
+      console.error("O2Ring connection error:", error);
+      const text = String(error?.message ?? error);
+      if (!/cancel/i.test(text)) showToast(`Heart rate: ${text}`, "error");
+    } finally {
+      ringConnecting = false;
+    }
+  }
+
+  async function ringDisconnect() {
+    ringClosing = true;
+    await ring.disconnect();
+    ringClosing = false;
+  }
+
   // Session history and calibration
   const recorder = new Recorder();
   let sessions = $state.raw<SessionSummary[]>([]);
@@ -193,8 +243,16 @@
   let maxDenied = $derived(Number(config.max_denied) > 0 && Number(config.max_denied) < 100 ? Number(config.max_denied) : 20);
   let isEnhancement = $derived(Number(config.vibration_mode) === ENHANCEMENT);
   let onCooldown = $derived((latest.cooldown ?? 0) > 0 && latest.motor === 0);
-  let aroused = $derived(latest.arousal >= latest.threshold);
+  // The edge threshold the firmware is using right now (lowered in the heart-rate edge zone).
+  let edgeThreshold = $derived(
+    latest.hrZone ? Math.round((latest.threshold * (100 - Number(config.hr_edge_sensitivity))) / 100) : latest.threshold,
+  );
+  let aroused = $derived(latest.arousal >= edgeThreshold);
   let suggestion = $derived(suggestThreshold(sessions, latest.threshold));
+  let hrSuggestion = $derived(suggestHeartRate(sessions));
+  let heartText = $derived(
+    !heart ? "…" : heart.hr !== null ? `${heart.hr} bpm` : heart.finger ? "Reading…" : "No finger",
+  );
   let hasBaseline = $derived(latest.baseline !== undefined);
   let drift = $derived(sessionBaseline !== null && latest.baseline !== undefined ? latest.baseline - sessionBaseline : null);
 
@@ -235,7 +293,9 @@
     if (onCooldown) {
       return aroused
         ? { title: "Edge detected", detail: "Cooling down…", tone: "danger" }
-        : { title: "Denied", detail: `Resuming in ${latest.cooldown}s`, tone: "danger" };
+        : latest.hrWait
+          ? { title: "Denied", detail: `Waiting for your heart rate to settle (at most ${latest.cooldown}s)`, tone: "danger" }
+          : { title: "Denied", detail: `Resuming in ${latest.cooldown}s`, tone: "danger" };
     }
     if (runMode === "ORGASM") {
       const permit = latest.permit ?? 0;
@@ -268,6 +328,7 @@
   }
 
   function pushReading(r: Reading) {
+    if (heart?.hr && r.localTime - heart.localTime < HR_STALE_MS) r.hr = heart.hr;
     // Only against a recent reading, so (re)connecting mid-session doesn't toast.
     const recent = r.localTime - latest.localTime < 5000;
     if (recent && (r.orgasms ?? 0) > (latest.orgasms ?? 0)) showToast("Orgasm detected");
@@ -347,6 +408,18 @@
     // Not connected: preview the change locally so the UI can be explored.
     if (command === "setMotor") pushReading({ ...latest, motor: Number(value), runMode: "MANUAL", localTime: Date.now() });
     if (command === "setMode") pushReading({ ...latest, runMode: String(value), localTime: Date.now() });
+  }
+
+  // Forward the O2Ring's heart rate (0 = no reading) so the firmware can use it (Config.hr_*).
+  // Firmware before heart-rate support ignores it.
+  function sendHeartRate(bpm: number) {
+    if (isWsConnected && socket) {
+      socket.send(JSON.stringify({ heartRate: bpm }));
+    } else if (isBtConnected) {
+      btWrite(new Uint8Array([BT_CMD_HEART_RATE, Math.max(0, Math.min(255, bpm))])).catch((err) =>
+        console.warn("Couldn't send heart rate:", err),
+      );
+    }
   }
 
   // Pressure simulator, for testing without a sensor. Only firmware built with -DEOM_PRESSURE_SIM
@@ -503,6 +576,8 @@
       orgasms: r.orgasms,
       rest: r.rest,
       baseline: r.baseline,
+      hrWait: r.hrWait,
+      hrZone: r.hrZone,
       localTime: Date.now(),
     });
   }
@@ -542,6 +617,9 @@
       phase: data.length > 22 ? data[20] : 0,
       rest: data.length > 22 ? (data[21] << 8) | data[22] : 0,
       baseline: data.length > 24 ? (data[23] << 8) | data[24] : undefined, // added after 3.3.0
+      // added in 3.5.0: [25] heart rate the EOM is using, [26] flags
+      hrWait: data.length > 26 ? (data[26] & 0x01) !== 0 : false,
+      hrZone: data.length > 26 ? (data[26] & 0x02) !== 0 : false,
       localTime: Date.now(),
     };
     if (!syncDelta) syncDelta = r.localTime - r.millis;
@@ -649,12 +727,15 @@
     { key: "threshold", label: "Edge threshold", color: "--arousal", width: 1.5, dash: [6, 6] },
     { key: "denied", label: "Denials", color: "--denied", width: 2 },
     { key: "pressure", label: "Pressure", color: "--pressure", width: 1.5 },
+    { key: "hr", label: "Heart rate (40–200 bpm)", color: "--heart", width: 2 },
   ];
+  let chartLines = $derived(CHART_LINES.filter((l) => l.key !== "hr" || ringConnected));
 
   function lineValue(r: Reading, key: string): number {
     switch (key) {
       case "pleasure": return (r.motor / PLEASURE_MAX) * MAX_Y;
       case "denied": return ((r.denied ?? 0) / maxDenied) * MAX_Y;
+      case "hr": return hrFraction(r.hr ?? 0) * MAX_Y;
       default: return (r as any)[key] ?? 0;
     }
   }
@@ -687,7 +768,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
-    const pad = { l: 36, r: 8, t: 8, b: 8 };
+    const pad = { l: 36, r: 8, t: 8, b: 22 };
     const plotW = w - pad.l - pad.r;
     const plotH = h - pad.t - pad.b;
     const y = (v: number) => pad.t + plotH - (Math.max(0, Math.min(MAX_Y, v)) / MAX_Y) * plotH;
@@ -722,14 +803,42 @@
     const span = Math.max(1, pts[pts.length - 1].localTime - t0);
     const x = (r: Reading) => pad.l + ((r.localTime - t0) / span) * plotW;
 
+    // Time axis: seconds before the latest reading, with faint vertical grid lines.
+    const tEnd = pts[pts.length - 1].localTime;
+    const every = [1, 2, 5, 10, 15, 30, 60, 120].find((s) => span / 1000 / s <= 6) ?? 300;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    for (let s = 0; s * 1000 <= span; s += every) {
+      const gx = pad.l + ((tEnd - s * 1000 - t0) / span) * plotW;
+      ctx.strokeStyle = color("--line");
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(gx, pad.t);
+      ctx.lineTo(gx, pad.t + plotH);
+      ctx.stroke();
+      ctx.fillStyle = color("--muted");
+      const label = s === 0 ? "now" : s >= 60 && s % 60 === 0 ? `−${s / 60}m` : `−${s}s`;
+      ctx.fillText(label, Math.min(gx, w - pad.r - 12), pad.t + plotH + 6);
+    }
+
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
-    for (const line of CHART_LINES) {
+    for (const line of chartLines) {
       ctx.strokeStyle = color(line.color);
       ctx.lineWidth = line.width;
       ctx.setLineDash(line.dash ?? []);
       ctx.beginPath();
-      pts.forEach((r, i) => (i ? ctx.lineTo(x(r), y(lineValue(r, line.key))) : ctx.moveTo(x(r), y(lineValue(r, line.key)))));
+      // Heart rate has gaps (finger out, ring settling): start a new segment after each one.
+      let pen = false;
+      for (const r of pts) {
+        if (line.key === "hr" && !r.hr) {
+          pen = false;
+          continue;
+        }
+        if (pen) ctx.lineTo(x(r), y(lineValue(r, line.key)));
+        else ctx.moveTo(x(r), y(lineValue(r, line.key)));
+        pen = true;
+      }
       ctx.stroke();
     }
     ctx.setLineDash([]);
@@ -797,6 +906,7 @@
     { id: "detection", label: "Detection", groups: ["detection"] },
     { id: "clench", label: "Clench", groups: ["clench"] },
     { id: "safety", label: "Safety", groups: ["safety"] },
+    { id: "heartrate", label: "Heart rate", groups: ["heartrate"] },
     { id: "network", label: "Connectivity", groups: ["wifi", "bluetooth"] },
     { id: "app", label: "App", groups: [] },
     { id: "device", label: "Device", groups: [] },
@@ -940,6 +1050,7 @@
             markers={[
               { at: Number(config.mid_threshold) / MAX_Y, color: "var(--warn)", title: "Warning threshold" },
               { at: latest.threshold / MAX_Y, color: "var(--arousal)", title: "Edge threshold" },
+              ...(latest.hrZone ? [{ at: edgeThreshold / MAX_Y, color: "var(--heart)", title: "Edge threshold, lowered by heart rate" }] : []),
             ]}
             pulse={onCooldown}
           >
@@ -968,6 +1079,14 @@
               <button class="small" onclick={applyPressure} title="Shorter ramp and cooldown, higher threshold">Apply pressure</button>
             {/snippet}
           </Gauge>
+          {#if ringConnected}
+            <Gauge
+              label="Heart rate"
+              color="var(--heart)"
+              fraction={heart?.hr ? hrFraction(heart.hr) : 0}
+              text={heartText}
+            />
+          {/if}
           {#if showOrgasms}
             <Gauge
               label="Orgasms"
@@ -982,7 +1101,7 @@
         <div class="chartWrap">
           <canvas bind:this={chartCanvas} class="chart" aria-label="Live readings chart"></canvas>
           <ul class="legend">
-            {#each CHART_LINES as line}
+            {#each chartLines as line}
               <li><span class="swatch" class:dashed={line.dash} style="--c: var({line.color})"></span>{line.key === "denied" && deniedLabel === "Orgasms" ? "Orgasms" : line.label}</li>
             {/each}
           </ul>
@@ -993,6 +1112,9 @@
             <button class="stat" style="--c: var(--pressure)" onclick={applyPressure}>Pressure <b>{pct(latest.pressure, MAX_Y)}%</b></button>
             {#if showOrgasms}
               <span class="stat" style="--c: var(--orgasm)">Orgasms <b>{orgasmsText}</b></span>
+            {/if}
+            {#if ringConnected}
+              <span class="stat" style="--c: var(--heart)">Heart rate <b>{heartText}</b></span>
             {/if}
           </div>
         </div>
@@ -1133,6 +1255,23 @@
         {/if}
       </form>
     </section>
+    <section class="group">
+      <h3>Heart rate</h3>
+      {#if ringConnected}
+        <p class="muted">
+          {ringName}: {heartText}{#if heart?.spo2}, SpO2 {heart.spo2}%{/if}{#if heart}, battery {heart.battery}%{/if}.
+        </p>
+        <button onclick={ringDisconnect}>Disconnect</button>
+      {:else}
+        <p class="muted">
+          Optional. Connect a Wellue/Viatom O2Ring (also sold as the SleepHQ O2 Ring Pro) to show and record heart rate.
+          Close the ring's own app first, then pick the ring from the list. Works with or without the EOM connected.
+        </p>
+        <button class="primary" onclick={ringConnect} disabled={ringConnecting}>
+          {ringConnecting ? "Connecting…" : "Connect O2Ring"}
+        </button>
+      {/if}
+    </section>
   </div>
 </dialog>
 
@@ -1191,6 +1330,37 @@
                 <span><b>Suggested threshold: {pct(suggestion.threshold, MAX_Y)}%</b><small>From {suggestion.sessions} recorded session{suggestion.sessions === 1 ? "" : "s"}.</small></span>
                 <button class="small" disabled={locked} onclick={() => changeSetting("sensitivity_threshold", suggestion.threshold!)}>Apply</button>
               </div>
+            {/if}
+          </section>
+        {/if}
+
+        {#if tab.id === "heartrate"}
+          <section class="group">
+            <h3>Suggested from your history</h3>
+            <dl class="facts">
+              <dt>Heart rate now</dt>
+              <dd>
+                {ringConnected ? heartText : "No O2Ring connected"}
+                {#if latest.hrZone}<span class="muted"> (edge zone)</span>{/if}
+              </dd>
+            </dl>
+            {#if hrSuggestion.suggestions.length === 0}
+              <p class="muted">
+                {hrSuggestion.sessions === 0
+                  ? "Record a few sessions with the O2Ring connected, then suggestions appear here."
+                  : "Not enough edges or orgasms with a heart rate recorded yet. Keep recording sessions with the O2Ring connected."}
+              </p>
+            {:else}
+              <p class="muted">From {hrSuggestion.sessions} recorded session{hrSuggestion.sessions === 1 ? "" : "s"} with a heart rate.</p>
+              {#each hrSuggestion.suggestions as sug (sug.key)}
+                <div class="prefRow">
+                  <span>
+                    <b>{SETTINGS_BY_KEY[sug.key].label}: {formatSetting(SETTINGS_BY_KEY[sug.key], sug.value)}</b>
+                    <small>{sug.reason} Now: {formatSetting(SETTINGS_BY_KEY[sug.key], config[sug.key])}.</small>
+                  </span>
+                  <button class="small" disabled={locked || config[sug.key] === sug.value} onclick={() => changeSetting(sug.key, sug.value)}>Apply</button>
+                </div>
+              {/each}
             {/if}
           </section>
         {/if}

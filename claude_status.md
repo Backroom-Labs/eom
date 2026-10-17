@@ -7,8 +7,8 @@ _Last updated: 2026-10-17_
 
 ## Snapshot
 
-- **Version:** `PROJECT_VER` in [CMakeLists.txt](CMakeLists.txt) is **3.4.0**. `main` is pushed and
-  tags `v2.0.1` to `v3.4.0` are on GitHub. Release with
+- **Version:** `PROJECT_VER` in [CMakeLists.txt](CMakeLists.txt) is **3.5.0** (heart rate, not
+  committed or tagged yet). `main` is pushed and tags `v2.0.1` to `v3.4.0` are on GitHub. Release with
   `git push origin main && git tag vX.Y.Z && git push origin vX.Y.Z` (tag must match `PROJECT_VER`).
 - **Branches:** only `main`. Merged feature branches were deleted locally and on GitHub
   2026-10-17. An unmerged dependabot branch (`dependabot/npm_and_yarn/eomui/handlebars-4.7.10`) is
@@ -27,6 +27,8 @@ _Last updated: 2026-10-17_
 | What | How to test |
 |---|---|
 | **`post_orgasm_menu_lock`** | Turn it on, get an orgasm detected in Orgasm mode -> settings lock; lock clears when ramp-down ends. |
+| **Heart-rate features** (uncommitted, firmware + app) | Flash the firmware and rebuild the app first. With the ring connected: (1) Settings > Heart rate tab shows "Heart rate now"; WS `readings.hr` / BLE status byte 25 should match the ring, which proves the EOM receives it. (2) Wait for heart rate to settle = e.g. 5 bpm: after an edge the status says "Waiting for your heart rate to settle (at most Ns)" until it drops, never longer than the max. (3) Edge zone heart rate set just below your current HR: a second pink marker appears on the arousal gauge and edges trigger earlier. (4) Orgasm heart rate set above your HR: in Orgasm mode, once permitted, a clench is ignored (serial log "Clench ignored"). (5) Heart rate limit set below your HR: stops after 10 s with the heart-rate banner. (6) HR drop orgasm detection: hardest to test; try last. (7) Removing the ring / closing the app: everything falls back within 5 s. Also check the live chart's new time axis. |
+| **O2Ring heart rate in History** (uncommitted) | Live heart rate works with Russ's O2 Ring Pro (OxyII, no encryption needed). Still to check: record a session with the EOM and ring connected, then confirm the History graph line, avg/peak stats and CSV `heart_rate` column. |
 
 ## 2. Release / infrastructure checks
 
@@ -102,8 +104,63 @@ Done: 2, 3, 6, 7, 13 (see Done).
 | Pressure simulator | 3.3.0, 95357c2 | Yes |
 | Session history + auto-calibration (backlog 6, 7) | 3.4.0, 5ef8b5a | Yes |
 | README rewrite for 3.x + new screenshots (`doc/screenshots/`) | 2026-10-17 | n/a |
+| O2Ring heart rate in the app (live + history) | 2026-10-17, uncommitted | Live: yes (O2 Ring Pro). History: not yet |
+| Heart rate used by the firmware (cooldown, edge zone, orgasm, safety) + suggestions + live chart time axis | 2026-10-17, uncommitted | No. Builds for Echo + esp32dev; history stats tested offline |
 
 Details of each, for reference when changing that code:
+
+### Heart rate in the firmware (2026-10-17, uncommitted)
+
+- Russ asked for all of it at once, to test later. Every feature is a setting, 0 = off (default),
+  and each falls back to pressure-only when `heart_rate_get()` is 0 (no reading for 5 s).
+- `src/heart_rate.c/.h`: `heart_rate_set()` from WS `{"heartRate": n}` (api/edging.c) or BLE control
+  `0x06 bpm` (gatt_svc.c). The app sends it on every ring reading (~1 Hz), and 0 when the ring goes.
+- Settings (config.h/config.c, "Heart rate" group/tab in settings.ts): `hr_recovery_bpm`,
+  `hr_recovery_max_s` (90), `hr_edge_bpm`, `hr_edge_sensitivity` (20 %), `hr_orgasm_min_bpm`,
+  `hr_orgasm_drop_bpm`, and `hr_max_bpm` in the Safety group.
+- orgasm_control.c: `orgasm_control_edge_threshold()` replaces `Config.sensitivity_threshold` in the
+  edge check and `twitch_detect()` (reported `threshold` stays the configured one; the app draws the
+  lowered one from `hrZone`). `orgasm_control_hr_recovery_hold()` extends the cooldown after
+  edge_delay+random until HR <= peak since edge - hr_recovery_bpm, capped at hr_recovery_max_s after
+  the edge (cooldown then counts down to that cap). Peak is reset at each denial and
+  `trigger_arousal`. `hr_orgasm_min_bpm` gates the clench in `clench_detect()`;
+  `orgasm_control_hr_orgasm_detect()` (drop within 30 s of the peak, still stimulated) runs in the
+  permitted loop. `set_output_mode()` clears the HR state.
+- safety.c: `SAFETY_HEART_RATE = 4` when HR > hr_max_bpm for 10 s.
+- Readings: WS `hr`, `hrWait`, `hrZone`; **BLE status is 27 bytes**: 25 = HR the EOM uses, 26 =
+  flags (bit 0 waiting, bit 1 edge zone).
+- History (history.ts): summary `edgeHrs`, `edgeHrDrops`, `orgasmHrPeaks`, `orgasmHrDrops` (drop =
+  peak to low within 60 s after). `suggestHeartRate()`: edge zone = median edge HR - 5; recovery =
+  60 % of median drop; orgasm min = 90 % of median pre-orgasm peak; orgasm drop = 60 % of median
+  drop. Shown with Apply buttons in the Heart rate tab; stats in SessionHistory.
+- Live chart: time axis (seconds before now) with vertical grid lines.
+- README: Heart rate section, safety row, readings/BLE/WS/settings tables, What's new 3.5.0.
+  `PROJECT_VER` bumped to 3.5.0.
+- Known nit: gatt_svc.c logs every control write at ESP_LOGE ("Received data ..."), so the 1 Hz
+  heart rate fills the serial log. Left as is.
+
+### O2Ring heart rate (2026-10-17, app only)
+
+- Russ has a SleepHQ O2 Ring Pro (rebadged Wellue/Viatom O2Ring). nRF Connect showed service
+  `14839ac4-7d7e-415c-9a42-167340cf2339`, same as the original O2Ring.
+- **The Pro is OxyII, not the legacy O2Ring protocol.** It also exposes the legacy 14839ac4 service
+  but ignores 0xAA commands (that's why tries 1-2 got nothing). khromov/wellue-o2ring-web-ui lists it
+  as "SHQO2Pro" (OxyII). `eomui/src/lib/o2ring.ts` picks OxyII when service `e8fb0001-...` exists,
+  else legacy (MackeyStingray/o2r). Writes go without response first (with response failed with
+  "GATT operation failed"), chunked to 20 bytes.
+- OxyII: `A5 cmd ~cmd flag seq len16 payload crc8`; sends `10 [00]` (auto-RT off), then polls `04`
+  every 1 s, one request at a time, matched by seq. RtParam [5] sensor, [6] SpO2, [7] PI x10, [8-9]
+  PR. After 3 failed polls it tries AUTH (0xFF) once; if the ring returns a key it wants AES-128-ECB,
+  which isn't implemented (console error says so).
+- The picker lists all devices (ring names vary and the service may not be advertised).
+- App: Connection dialog "Heart rate" section, "Heart rate" gauge and chart line (40-200 bpm on the
+  0-100% axis) while connected. `pushReading()` adds `hr` to each EOM reading if the ring's last
+  reading is < 5 s old, so it's only recorded alongside an EOM session.
+- History: `Sample[10]` = hr (0 = none; absent in older sessions), summary `avgHr`/`peakHr`, CSV
+  `heart_rate` column, solid `--heart` line in the session graph.
+- Not done: firmware doesn't see HR (could later feed edge detection); SpO2 is shown but not stored.
+- Decided against adding SpO2 or a MAX30102 to the device. EMG (MyoWare on Grove G32) noted as a
+  possible external alternative to the pressure sensor; not started.
 
 ### README + screenshots (2026-10-17)
 
@@ -268,9 +325,10 @@ files (the toy components and node_modules still have many old type errors).
 
 ## Protocol
 
-- BLE status is 25 bytes: 17 settings lock, 18 safety stop, 19 orgasms, 20 phase, 21-22 rest,
-  23-24 baseline (multi-byte values MSB first).
-- BLE control: `0x02` set setting (saved), `0x04` save and restart, `0x05` simulated pressure.
+- BLE status is 27 bytes: 17 settings lock, 18 safety stop, 19 orgasms, 20 phase, 21-22 rest,
+  23-24 baseline, 25 heart rate, 26 heart-rate flags (multi-byte values MSB first).
+- BLE control: `0x02` set setting (saved), `0x04` save and restart, `0x05` simulated pressure,
+  `0x06` heart rate (bpm).
 
 ## OTA
 

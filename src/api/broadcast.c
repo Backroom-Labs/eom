@@ -2,6 +2,7 @@
 #include "cJSON.h"
 #include "config_defs.h"
 #include "esp_timer.h"
+#include "heart_rate.h"
 #include "orgasm_control.h"
 #include "safety.h"
 #include "system/websocket_handler.h"
@@ -41,6 +42,9 @@ void api_broadcast_readings(void) {
     cJSON_AddNumberToObject(root, "orgasms", orgasm_control_get_session_orgasms());
     cJSON_AddNumberToObject(root, "rest", orgasm_control_get_rest_remaining_seconds());
     cJSON_AddNumberToObject(root, "baseline", orgasm_control_get_baseline());
+    cJSON_AddNumberToObject(root, "hr", heart_rate_get());
+    cJSON_AddBoolToObject(root, "hrWait", orgasm_control_is_hr_waiting());
+    cJSON_AddBoolToObject(root, "hrZone", orgasm_control_is_hr_edge_zone());
 
     websocket_broadcast(payload, WS_BROADCAST_READINGS);
     cJSON_Delete(payload);
