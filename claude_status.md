@@ -8,8 +8,8 @@ _Last updated: 2026-10-17_
 ## Snapshot
 
 - **Version:** `PROJECT_VER` in [CMakeLists.txt](CMakeLists.txt) is **3.5.0** (heart rate), committed
-  as 9c94e22 and tagged `v3.5.0` locally, **not pushed yet**. Tags `v2.0.1` to `v3.4.0` are on
-  GitHub. Pushing the tag starts the CI release. Release with
+  as 9c94e22, tagged `v3.5.0` and pushed 2026-10-17 (heart-rate features not yet tested on the
+  Echo). Tags `v2.0.1` to `v3.5.0` are on GitHub; check the v3.5.0 CI release there. Release with
   `git push origin main && git tag vX.Y.Z && git push origin vX.Y.Z` (tag must match `PROJECT_VER`).
 - **Branches:** only `main`. Merged feature branches were deleted locally and on GitHub
   2026-10-17. An unmerged dependabot branch (`dependabot/npm_and_yarn/eomui/handlebars-4.7.10`) is
