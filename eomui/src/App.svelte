@@ -720,17 +720,7 @@
   }
 
   function updateButtplugDevice(device: any, r: Reading) {
-    device.controls.forEach((control: any) => {
-      if (control.mode === "manual") return;
-      let value = toyValue(control.mode, r, 256);
-      if (control.sliderElement && value >= 0) {
-        if (control.invert) value = (control.limitMax ?? control.max ?? 255) - value;
-        if (control.sliderElement.value != String(Math.round(value))) {
-          control.sliderElement.value = Math.round(value);
-          deviceComponent?.handleDeviceChange(device, control, value / 255.0);
-        }
-      }
-    });
+    device.controls.forEach((control: any) => deviceComponent?.followReading(device, control, r, maxDenied));
   }
 
   function updateOssmDevice(device: any, r: Reading) {

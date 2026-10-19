@@ -130,11 +130,14 @@ volatile static struct {
 //     //orgasm_state.orgasm_count += 1;
 // }
 
+// Sets variable to value, flagging an update if it changed. value is evaluated once: it is often a
+// call with side effects, such as a vibration mode's increment().
 #define update_check(variable, value)                                                              \
     {                                                                                              \
-        if (variable != (value)) {                                                                 \
+        __typeof__(variable) update_check_value = (value);                                         \
+        if (variable != update_check_value) {                                                      \
             ESP_LOGD(TAG, "updated: %s = %s", #variable, #value);                                  \
-            variable = value;                                                                      \
+            variable = update_check_value;                                                         \
             arousal_state.update_flag = ocTRUE;                                                    \
         }                                                                                          \
     }
@@ -918,6 +921,12 @@ void orgasm_control_set_output_mode(orgasm_output_mode_t mode) {
     output_state.output_mode = mode;
     output_state.control_motor = mode != OC_MANUAL;
     if (mode != OC_MANUAL) safety_clear();
+    if (old == OC_MANUAL && mode != OC_MANUAL) {
+        // Starting a session: begin the vibration mode afresh at initial_pleasure, rather than
+        // carrying on from the manual setting or where the last session's ramp left off.
+        output_state.pleasure = 0;
+        output_state.motor_start_time = 0;
+    }
     output_state.motor_stop_time = 0;
     post_orgasm_state.auto_edging_start_millis = (esp_timer_get_time() / 1000UL);
     post_orgasm_state.post_orgasm_start_millis = 0;
