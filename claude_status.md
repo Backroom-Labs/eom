@@ -3,23 +3,25 @@
 Read this at the start of a new session to pick up where work stopped. Update it whenever a task
 finishes or the plan changes: move items from **Backlog** to **Done** and keep **Snapshot** current.
 
-_Last updated: 2026-10-19_
+_Last updated: 2026-10-20_
 
 ## Snapshot
 
 - **Version:** `PROJECT_VER` in [CMakeLists.txt](CMakeLists.txt) is **3.6.0** (detailed recording +
-  arousal fade/memory), committed on `main` as e6d72a0 2026-10-19, not tagged or pushed. 3.5.0 (heart rate) was committed
+  arousal fade/memory), committed on `main` as e6d72a0 2026-10-19 and pushed, not tagged. 3.5.0 (heart rate) was committed
   as 9c94e22, tagged `v3.5.0` and pushed 2026-10-17 (heart-rate features not yet tested on the
   Echo). Tags `v2.0.1` to `v3.5.0` are on GitHub; check the v3.5.0 CI release there. Release with
   `git push origin main && git tag vX.Y.Z && git push origin vX.Y.Z` (tag must match `PROJECT_VER`).
 - **Branches:** only `main`. `feature/control-command` (architecture refactor) was merged into
-  `main` as 7c9f33a 2026-10-19, before testing on the Echo; `main` is not pushed. Merged feature branches were deleted locally and on GitHub 2026-10-17. An unmerged dependabot branch (`dependabot/npm_and_yarn/eomui/handlebars-4.7.10`) is
+  `main` as 7c9f33a 2026-10-19, before testing on the Echo. The toy output + Endless ramp fixes were
+  merged as f8416ef 2026-10-20 and `main` is pushed. Merged feature branches were deleted locally and on GitHub 2026-10-17. An unmerged dependabot branch (`dependabot/npm_and_yarn/eomui/handlebars-4.7.10`) is
   still on GitHub.
 - **Build pins:** espressif32@6.13.0 / ESP-IDF 5.5.2 (see "Dependencies" under Key facts).
 - **Test hardware:** M5Stack Atom Echo. Russ has no pressure sensor yet, so tests use the pressure
   simulator build.
 - `gh` CLI is installed and logged in as backroom-labs (2026-10-19).
 - **Host tests:** `pio test -e native` (Unity, no hardware). CI runs them before the firmware builds.
+  App tests: `node --test test/*.test.ts` in `eomui` (Node's built-in runner; not in CI yet).
 - **Agent docs:** `AGENTS.md` (imported by `CLAUDE.md`), `docs/agents/`, `GLOSSARY.md`, `docs/adr/`.
 
 ---
@@ -60,8 +62,9 @@ _Last updated: 2026-10-19_
 10. **Keyholder / partner mode:** PIN for settings/mode changes (extends `edge_menu_lock`), view-only
     second WS client.
 11. **MQTT / Home Assistant** state + commands.
-12. **Housekeeping:** host unit tests for `orgasm_control` edge detection, the post-orgasm refactor
-    TODO, deps step B (below).
+12. **Housekeeping:** host unit tests for `orgasm_control` edge detection (the suite
+    `test/test_orgasm_control` exists now and covers starting Endless; add edge, cooldown and
+    post-orgasm cases there), the post-orgasm refactor TODO, deps step B (below).
 
 Done: 2, 3, 6, 7, 13 (see Done).
 
@@ -117,8 +120,34 @@ using History, and an optional girth sensor input.
 | README rewrite for 3.x + new screenshots (`doc/screenshots/`) | 2026-10-17 | n/a |
 | O2Ring heart rate in the app (live + history) | 3.5.0, 9c94e22 | Live: yes (O2 Ring Pro). History: not yet |
 | Heart rate used by the firmware (cooldown, edge zone, orgasm, safety) + suggestions + live chart time axis | 3.5.0, 9c94e22 | No. Builds for Echo + esp32dev; history stats tested offline |
+| Buttplug toy output fixes (full range, fewer commands, Invert) + Endless ramp fixes | 2efac2a, merged f8416ef | Yes, Lovense Domi, 2026-10-20 |
 
 Details of each, for reference when changing that code:
+
+### Toy output + Endless ramp fixes (2efac2a, 2026-10-20)
+
+- Reported with a Lovense Domi: never reached full power, its light flashed constantly, steps felt
+  jumpy, and later Endless jumped straight to 100%. Russ tested the fixes: all fine.
+- **App** (`eomui/src/lib/toyOutput.ts`, tests in `eomui/test/toyOutput.test.ts`): toy-following
+  logic moved out of `App.svelte`/`ButtplugConnector.svelte`. (1) Controls defaulted to max 100/255,
+  capping toys at 39%; now 255. (2) A command went out on every 1/255 change; the Domi has 20 levels,
+  so ~95% of commands changed nothing and each flashed the light. `ToyFollower` now sends only when
+  the toy's level changes, at most every 100 ms (`MIN_COMMAND_GAP_MS`); step count comes from the
+  feature's `Output[type].Value`, else 100. (3) Invert was applied twice (App and
+  `handleDeviceChange`); now once in `scalarFor()`.
+- Level jumps (5% each on the Domi) are the toy's 20-level limit; nothing more to do in the app.
+- **Firmware** (`src/orgasm_control.c`): (1) `set_output_mode()` kept the old pleasure, and Depletion
+  keeps its ramp position between sessions, so Manual -> Endless could start at the old level or 100%.
+  Now Manual -> any automatic mode zeroes pleasure and `motor_start_time`, so the next update calls
+  `controller->start()`. Endless -> Orgasm (permit) does not reset. (2) `update_check()` evaluated its
+  value twice, so `controller->increment()` ran twice per update and ramps took half of
+  `motor_ramp_time_s`. It now evaluates once; ramps feel twice as slow at the same setting.
+- New host suite `test/test_orgasm_control` runs the real `orgasm_control.c` and all vibration modes
+  on a fake clock and pressure sensor (`fakes.c`). Adds stubs `esp_timer.h`, `esp_err.h`,
+  `esp_http_server.h`, `freertos/FreeRTOS.h` in `test/stubs`. Start the fake clock well after boot
+  (it uses an hour), or the edge delay holds pleasure at 0.
+- A stale `eomui/public/index.html` (built 2026-10-17) hid the app fix at first; see the rebuild note
+  at the end.
 
 ### Detailed recording + arousal fade/memory (3.6.0, uncommitted)
 
