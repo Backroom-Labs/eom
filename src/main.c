@@ -1,6 +1,7 @@
 #include "api/broadcast.h"
 #include "config.h"
 #include "config_defs.h"
+#include "control_command.h"
 #include "eom-hal-esp32.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -113,6 +114,8 @@ static void main_task(void* args) {
     orgasm_control_set_pleasure(0);
 
     for (;;) {
+        // Only this task changes edging state (docs/adr/0001).
+        control_command_apply_pending();
         orgasm_control_tick();
         eom_hal_led_tick();
         main_task_ticks++;

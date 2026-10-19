@@ -3,22 +3,24 @@
 Read this at the start of a new session to pick up where work stopped. Update it whenever a task
 finishes or the plan changes: move items from **Backlog** to **Done** and keep **Snapshot** current.
 
-_Last updated: 2026-10-17_
+_Last updated: 2026-10-19_
 
 ## Snapshot
 
 - **Version:** `PROJECT_VER` in [CMakeLists.txt](CMakeLists.txt) is **3.6.0** (detailed recording +
-  arousal fade/memory, **uncommitted**). 3.5.0 (heart rate) was committed
+  arousal fade/memory), committed on `main` as e6d72a0 2026-10-19, not tagged or pushed. 3.5.0 (heart rate) was committed
   as 9c94e22, tagged `v3.5.0` and pushed 2026-10-17 (heart-rate features not yet tested on the
   Echo). Tags `v2.0.1` to `v3.5.0` are on GitHub; check the v3.5.0 CI release there. Release with
   `git push origin main && git tag vX.Y.Z && git push origin vX.Y.Z` (tag must match `PROJECT_VER`).
-- **Branches:** only `main`. Merged feature branches were deleted locally and on GitHub
-  2026-10-17. An unmerged dependabot branch (`dependabot/npm_and_yarn/eomui/handlebars-4.7.10`) is
+- **Branches:** `main`, plus local `feature/control-command` (architecture refactor, see below; not
+  merged or pushed). Merged feature branches were deleted locally and on GitHub 2026-10-17. An unmerged dependabot branch (`dependabot/npm_and_yarn/eomui/handlebars-4.7.10`) is
   still on GitHub.
 - **Build pins:** espressif32@6.13.0 / ESP-IDF 5.5.2 (see "Dependencies" under Key facts).
 - **Test hardware:** M5Stack Atom Echo. Russ has no pressure sensor yet, so tests use the pressure
   simulator build.
-- `gh` CLI is not installed, so CI runs, releases and PRs can't be checked from here. Look on GitHub.
+- `gh` CLI is installed and logged in as backroom-labs (2026-10-19).
+- **Host tests:** `pio test -e native` (Unity, no hardware). CI runs them before the firmware builds.
+- **Agent docs:** `AGENTS.md` (imported by `CLAUDE.md`), `docs/agents/`, `GLOSSARY.md`, `docs/adr/`.
 
 ---
 
@@ -29,7 +31,8 @@ _Last updated: 2026-10-17_
 | What | How to test |
 |---|---|
 | **`post_orgasm_menu_lock`** | Turn it on, get an orgasm detected in Orgasm mode -> settings lock; lock clears when ramp-down ends. |
-| **Detailed recording + arousal fade/memory** (3.6.0, uncommitted) | Flash 3.6.0. (1) Settings > App > Detailed recording on, run a session, History > Export detailed CSV: ~50 rows a second, `reading` numbers mostly consecutive (gaps = lost BLE notifications). Try over BLE and Wi-Fi. (2) Detection > Arousal fade time 1.4 s should feel exactly as before; raise to 5-10 s and watch arousal fall more slowly on the chart. (3) Arousal memory e.g. 60 s: after a burst, arousal holds at the Warning threshold and fades slowly; it must never edge on its own. Starting a mode clears it. |
+| **Control command + status snapshot refactor** (`feature/control-command`) | Flash the branch. Over both BLE and Wi-Fi: modes, motor slider, trigger arousal, reset denied, settings changes and the pressure simulator behave as before, and the live chart, status and History look the same (wire format is meant to be unchanged). New: set Max pleasure low, then drive the motor from BLE or a Monsterpub remote; it must not go above Max pleasure (before, it did). A remote motor write now switches to Manual. |
+| **Detailed recording + arousal fade/memory** (3.6.0) | Flash 3.6.0. (1) Settings > App > Detailed recording on, run a session, History > Export detailed CSV: ~50 rows a second, `reading` numbers mostly consecutive (gaps = lost BLE notifications). Try over BLE and Wi-Fi. (2) Detection > Arousal fade time 1.4 s should feel exactly as before; raise to 5-10 s and watch arousal fall more slowly on the chart. (3) Arousal memory e.g. 60 s: after a burst, arousal holds at the Warning threshold and fades slowly; it must never edge on its own. Starting a mode clears it. |
 | **Heart-rate features** (3.5.0, firmware + app) | Flash the firmware and rebuild the app first. With the ring connected: (1) Settings > Heart rate tab shows "Heart rate now"; WS `readings.hr` / BLE status byte 25 should match the ring, which proves the EOM receives it. (2) Wait for heart rate to settle = e.g. 5 bpm: after an edge the status says "Waiting for your heart rate to settle (at most Ns)" until it drops, never longer than the max. (3) Edge zone heart rate set just below your current HR: a second pink marker appears on the arousal gauge and edges trigger earlier. (4) Orgasm heart rate set above your HR: in Orgasm mode, once permitted, a clench is ignored (serial log "Clench ignored"). (5) Heart rate limit set below your HR: stops after 10 s with the heart-rate banner. (6) HR drop orgasm detection: hardest to test; try last. (7) Removing the ring / closing the app: everything falls back within 5 s. Also check the live chart's new time axis. |
 | **O2Ring heart rate in History** (3.5.0) | Live heart rate works with Russ's O2 Ring Pro (OxyII, no encryption needed). Still to check: record a session with the EOM and ring connected, then confirm the History graph line, avg/peak stats and CSV `heart_rate` column. |
 

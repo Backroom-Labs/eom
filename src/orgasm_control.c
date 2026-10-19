@@ -6,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "heart_rate.h"
 #include "safety.h"
+#include "status_snapshot.h"
 #include "system/websocket_handler.h"
 #include "util/running_average.h"
 #include <math.h>
@@ -14,6 +15,25 @@
 #include <time.h>
 
 static const char* TAG = "orgasm_control";
+
+// Read only here, mostly to fill the status snapshot.
+static uint16_t orgasm_control_get_arousal(void);
+static uint16_t orgasm_control_get_last_pressure(void);
+static uint16_t orgasm_control_get_average_pressure(void);
+static uint16_t orgasm_control_get_arousal_threshold(void);
+static uint8_t orgasm_control_get_orgasm_count(void);
+static uint8_t orgasm_control_get_arousal_sensitivity(void);
+static uint8_t orgasm_control_get_cooldown(void);
+static uint16_t orgasm_control_get_permit_orgasm_remaining_seconds(void);
+static oc_bool_t orgasm_control_is_menu_locked(void);
+static oc_after_orgasm_phase_t orgasm_control_get_after_orgasm_phase(void);
+static uint8_t orgasm_control_get_session_orgasms(void);
+static uint16_t orgasm_control_get_rest_remaining_seconds(void);
+static uint16_t orgasm_control_get_baseline(void);
+static uint32_t orgasm_control_get_raw_pressure(uint16_t* out, uint8_t n);
+static bool orgasm_control_is_hr_waiting(void);
+static bool orgasm_control_is_hr_edge_zone(void);
+static void publish_status_snapshot(void);
 
 static const char* orgasm_output_mode_str[] = {
     "MANUAL",
@@ -118,10 +138,10 @@ volatile static struct {
             arousal_state.update_flag = ocTRUE;                                                    \
         }                                                                                          \
     }
-uint8_t orgasm_control_get_orgasm_count(void) {
+static uint8_t orgasm_control_get_orgasm_count(void) {
     return orgasm_state.orgasm_count;
 }
-uint8_t orgasm_control_get_arousal_sensitivity(void) {
+static uint8_t orgasm_control_get_arousal_sensitivity(void) {
     return Config.sensor_sensitivity;
 }
 
@@ -161,6 +181,14 @@ void orgasm_control_set_pleasure_ex(uint8_t pleasure, bool use_motor) {
  */
 void orgasm_control_set_pleasure(uint8_t pleasure) {
     orgasm_control_set_pleasure_ex(pleasure, true);
+}
+
+void orgasm_control_set_motor2(uint8_t speed) {
+    if (speed > Config.max_pleasure) speed = Config.max_pleasure;
+    if (speed > Config.max_motor_output) speed = Config.max_motor_output;
+    #if MOTOR2_ENABLED
+    eom_hal_set_motor2_speed(speed);
+    #endif
 }
 
 void orgasm_control_init(void) {
@@ -235,11 +263,11 @@ static int orgasm_control_edge_threshold(void) {
     return Config.sensitivity_threshold;
 }
 
-bool orgasm_control_is_hr_edge_zone(void) {
+static bool orgasm_control_is_hr_edge_zone(void) {
     return orgasm_control_edge_threshold() < Config.sensitivity_threshold;
 }
 
-bool orgasm_control_is_hr_waiting(void) {
+static bool orgasm_control_is_hr_waiting(void) {
     return hr_state.waiting;
 }
 
@@ -725,7 +753,7 @@ orgasm_output_mode_t orgasm_control_get_output_mode(void) {
     return output_state.output_mode;
 }
 
-uint8_t orgasm_control_get_cooldown(void) {  //convert to seconds for display
+static uint8_t orgasm_control_get_cooldown(void) {  //convert to seconds for display
     return (uint8_t)(arousal_state.cooldown / 1000UL);
 }
 
@@ -751,7 +779,8 @@ oc_bool_t orgasm_control_is_recording() {
     return (oc_bool_t) !!logger_state.logfile;
 }
 
-void orgasm_control_tick() {
+// Called every tick; updates at Config.update_frequency_hz.
+static void orgasm_control_update(void) {
     if (Config.update_frequency_hz == 0) return;
 
     unsigned long millis = esp_timer_get_time() / 1000UL;
@@ -799,6 +828,11 @@ void orgasm_control_tick() {
     }
 }
 
+void orgasm_control_tick() {
+    orgasm_control_update();
+    publish_status_snapshot();
+}
+
 oc_bool_t orgasm_control_updated() {
     return arousal_state.update_flag;
 }
@@ -822,7 +856,7 @@ uint8_t orgasm_control_get_pleasure_percent() {
     return (uint8_t)(orgasm_control_get_pleasure() * 100.0f / Config.max_pleasure);
 }
 
-uint16_t orgasm_control_get_arousal() {
+static uint16_t orgasm_control_get_arousal() {
     return arousal_state.arousal;
 }
 
@@ -842,11 +876,11 @@ void orgasm_control_set_arousal_threshold(int threshold) {
     config_enqueue_save(300);
 }
 
-uint16_t orgasm_control_get_arousal_threshold(void) {
+static uint16_t orgasm_control_get_arousal_threshold(void) {
     return Config.sensitivity_threshold;
 }
 
-uint32_t orgasm_control_get_raw_pressure(uint16_t* out, uint8_t n) {
+static uint32_t orgasm_control_get_raw_pressure(uint16_t* out, uint8_t n) {
     if (n > RAW_PRESSURE_LEN) n = RAW_PRESSURE_LEN;
     portENTER_CRITICAL(&raw_lock);
     uint32_t seq = raw_seq;
@@ -858,11 +892,11 @@ uint32_t orgasm_control_get_raw_pressure(uint16_t* out, uint8_t n) {
     return seq;
 }
 
-uint16_t orgasm_control_get_last_pressure() {
+static uint16_t orgasm_control_get_last_pressure() {
     return arousal_state.pressure_value;
 }
 
-uint16_t orgasm_control_get_average_pressure() {
+static uint16_t orgasm_control_get_average_pressure() {
     return running_average_get_average(arousal_state.average);
 }
 
@@ -942,7 +976,7 @@ oc_bool_t orgasm_control_is_permit_orgasm_reached() {
     }
 }
 
-uint16_t orgasm_control_get_permit_orgasm_remaining_seconds() {
+static uint16_t orgasm_control_get_permit_orgasm_remaining_seconds() {
     if (output_state.output_mode != OC_ORGASM || orgasm_control_is_permit_orgasm_reached()) {
         return 0;
     } else {
@@ -962,7 +996,7 @@ oc_bool_t orgasm_control_is_post_orgasm_reached() {
     }
 }
 
-oc_after_orgasm_phase_t orgasm_control_get_after_orgasm_phase(void) {
+static oc_after_orgasm_phase_t orgasm_control_get_after_orgasm_phase(void) {
     if (post_orgasm_state.ruined) return OC_PHASE_RUINED;
     if (post_orgasm_state.rest_start_millis > 0) return OC_PHASE_RESTING;
     if (output_state.output_mode == OC_ORGASM && orgasm_control_is_post_orgasm_reached()) {
@@ -971,22 +1005,22 @@ oc_after_orgasm_phase_t orgasm_control_get_after_orgasm_phase(void) {
     return OC_PHASE_NONE;
 }
 
-uint16_t orgasm_control_get_baseline(void) {
+static uint16_t orgasm_control_get_baseline(void) {
     return baseline_state.baseline < 0 ? 0 : (uint16_t)baseline_state.baseline;
 }
 
-uint8_t orgasm_control_get_session_orgasms(void) {
+static uint8_t orgasm_control_get_session_orgasms(void) {
     return post_orgasm_state.session_orgasms;
 }
 
-uint16_t orgasm_control_get_rest_remaining_seconds(void) {
+static uint16_t orgasm_control_get_rest_remaining_seconds(void) {
     if (post_orgasm_state.rest_start_millis == 0) return 0;
     unsigned long end = post_orgasm_state.rest_start_millis + (Config.milking_rest_seconds * 1000UL);
     unsigned long now = esp_timer_get_time() / 1000UL;
     return now >= end ? 0 : (uint16_t)((end - now + 999) / 1000);
 }
 
-oc_bool_t orgasm_control_is_menu_locked() {
+static oc_bool_t orgasm_control_is_menu_locked() {
     return post_orgasm_state.menu_is_locked;
 };
 
@@ -996,4 +1030,38 @@ void orgasm_control_lock_menu(oc_bool_t value) {
 
 void orgasm_control_reset_denied(void) {
     orgasm_state.orgasm_count = 0;
+}
+
+// Everything the app is told about, gathered in one tick (status_snapshot.h).
+static void publish_status_snapshot(void) {
+    RGBColor led = eom_hal_get_rgb_color();
+    status_snapshot_t s = {
+        .millis = esp_timer_get_time() / 1000,
+        .pressure = orgasm_control_get_last_pressure(),
+        .pressure_avg = orgasm_control_get_average_pressure(),
+        .arousal = orgasm_control_get_arousal(),
+        .threshold = orgasm_control_get_arousal_threshold(),
+        .sensitivity = orgasm_control_get_arousal_sensitivity(),
+        .motor = orgasm_control_get_pleasure(),
+        .cooldown = orgasm_control_get_cooldown(),
+        .denied = orgasm_control_get_orgasm_count(),
+        .mode = (uint8_t)orgasm_control_get_output_mode(),
+        .mode_name = orgasm_control_get_output_mode_str(),
+        .vibration_mode = (uint8_t)Config.vibration_mode,
+        .permit_s = orgasm_control_get_permit_orgasm_remaining_seconds(),
+        .menu_locked = orgasm_control_is_menu_locked(),
+        .safety = (uint8_t)safety_get_stop_reason(),
+        .phase = (uint8_t)orgasm_control_get_after_orgasm_phase(),
+        .session_orgasms = orgasm_control_get_session_orgasms(),
+        .rest_s = orgasm_control_get_rest_remaining_seconds(),
+        .baseline = orgasm_control_get_baseline(),
+        .hr = heart_rate_get(),
+        .hr_waiting = orgasm_control_is_hr_waiting(),
+        .hr_zone = orgasm_control_is_hr_edge_zone(),
+        .led_r = led.r,
+        .led_g = led.g,
+        .led_b = led.b,
+    };
+    s.raw_seq = orgasm_control_get_raw_pressure(s.raw, STATUS_SNAPSHOT_RAW_LEN);
+    status_snapshot_publish(&s);
 }

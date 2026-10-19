@@ -68,17 +68,9 @@ static const websocket_command_t cmd_config_save_s = {
     .func = &cmd_config_save,
 };
 
+// Settings are control commands (control_command.h), applied at once like BLE setting writes.
 static command_err_t cmd_config_set(cJSON* command, cJSON* response, websocket_client_t* client) {
-    json_to_config_merge(command, &Config);
-    config_enqueue_save(1);
-
-    // Propagate changes to hardware:
-    cJSON* sensor_sensitivity = cJSON_GetObjectItem(command, "sensor_sensitivity");
-    if (sensor_sensitivity != NULL) {
-        eom_hal_set_sensor_sensitivity(sensor_sensitivity->valueint);
-    }
-
-    return CMD_OK;
+    return api_cc_result(control_command_from_ws("configSet", command));
 }
 
 static const websocket_command_t cmd_config_set_s = {

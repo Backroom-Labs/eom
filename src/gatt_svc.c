@@ -17,6 +17,8 @@
 #include "orgasm_control.h"
 #include <cJSON.h>
 #include "config_defs.h"
+#include "control_command.h"
+#include "status_snapshot.h"
 #include "system/ble_ota.h"
 #include "esp_system.h"
 #include "mbedtls/sha256.h"
@@ -41,7 +43,6 @@ static const ble_uuid16_t status_svc_uuid = BLE_UUID16_INIT(GATTS_SERVICE_EOM_UU
 
 static uint8_t status_chr_val[9] = {0};
 static uint16_t status_chr_val_handle;
-#define BLE_RAW_SAMPLES 16
 static const ble_uuid16_t status_chr_uuid = BLE_UUID16_INIT(GATTS_CHAR_STATUS_UUID); //EOM status
 static uint16_t status_chr_conn_handle = 0;
 static bool status_chr_conn_handle_inited = false;
@@ -256,55 +257,11 @@ static int status_out_chr_access(uint16_t conn_handle, uint16_t attr_handle, str
         }
         if (attr_handle == status_chr_val_handle) {
             
-            uint16_t permit_seconds = orgasm_control_get_permit_orgasm_remaining_seconds();
-            uint32_t current_time = esp_timer_get_time() / 1000UL;
-
-            uint16_t rest_seconds = orgasm_control_get_rest_remaining_seconds();
-            uint16_t baseline = orgasm_control_get_baseline();
-
-            uint8_t chr_flags = (orgasm_control_is_hr_waiting() ? 0x01 : 0) | (orgasm_control_is_hr_edge_zone() ? 0x02 : 0);
-
-            // Raw pressure for detailed recording: the last BLE_RAW_SAMPLES readings. Notifications go
-            // out every 100 ms and readings come at 50 Hz, so this leaves room for a dropped one.
-            uint16_t raw[BLE_RAW_SAMPLES];
-            uint32_t raw_seq = orgasm_control_get_raw_pressure(raw, BLE_RAW_SAMPLES);
-
-            uint8_t chr_val[27 + 3 + 2 * BLE_RAW_SAMPLES] = {
-                (uint8_t)(orgasm_control_get_last_pressure() >> 4), // Scale from 12-bit (0-4095) to 8-bit (0-255)
-                (uint8_t)(orgasm_control_get_arousal() >> 4),
-                (uint8_t)(orgasm_control_get_arousal_threshold() >> 4),
-                orgasm_control_get_pleasure(),
-                orgasm_control_get_cooldown(),
-                orgasm_control_get_orgasm_count(),
-                (uint8_t)orgasm_control_get_output_mode(),
-                (uint8_t)Config.vibration_mode,
-                (uint8_t)((permit_seconds >> 8) & 0xFF),  // MSB
-                (uint8_t)(permit_seconds & 0xFF),        // LSB
-                (uint8_t)eom_hal_get_rgb_color().r,
-                (uint8_t)eom_hal_get_rgb_color().g,
-                (uint8_t)eom_hal_get_rgb_color().b,
-                (uint8_t)((current_time >> 24) & 0xFF),
-                (uint8_t)((current_time >> 16) & 0xFF),
-                (uint8_t)((current_time >> 8) & 0xFF),
-                (uint8_t)(current_time & 0xFF),
-                (uint8_t)orgasm_control_is_menu_locked(),
-                (uint8_t)safety_get_stop_reason(),
-                orgasm_control_get_session_orgasms(),
-                (uint8_t)orgasm_control_get_after_orgasm_phase(),
-                (uint8_t)((rest_seconds >> 8) & 0xFF),  // MSB
-                (uint8_t)(rest_seconds & 0xFF),         // LSB
-                (uint8_t)((baseline >> 8) & 0xFF),      // MSB, full 12-bit resolution
-                (uint8_t)(baseline & 0xFF),             // LSB
-                heart_rate_get(),                       // bpm the EOM is using, 0 = none
-                chr_flags,                              // bit 0 waiting for heart rate, bit 1 heart-rate edge zone
-                (uint8_t)((raw_seq >> 8) & 0xFF),       // readings since boot (low 16 bits), MSB
-                (uint8_t)(raw_seq & 0xFF),              // LSB; the last raw sample is number raw_seq - 1
-                BLE_RAW_SAMPLES,                        // raw samples that follow, oldest first, 2 bytes each
-            };
-            for (int i = 0; i < BLE_RAW_SAMPLES; i++) {
-                chr_val[30 + 2 * i] = raw[i] >> 8;
-                chr_val[31 + 2 * i] = raw[i] & 0xFF;
-            }
+            // The latest status snapshot (status_snapshot.h), 62 bytes.
+            status_snapshot_t snapshot;
+            uint8_t chr_val[STATUS_SNAPSHOT_BLE_LEN];
+            status_snapshot_get(&snapshot);
+            status_snapshot_to_ble(&snapshot, chr_val);
             rc = os_mbuf_append(ctxt->om, chr_val, sizeof(chr_val));
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         }
@@ -351,71 +308,20 @@ static int update_main_chr_access(uint16_t conn_handle, uint16_t attr_handle, st
             hex_str[len * 2] = '\0'; // Null terminate
             ESP_LOGE(TAG, "Received data (hex): %s", hex_str);
             
-            // Check if buffer contains a ':' character (0x3A)
-            bool has_colon = false;
-            int colon_pos = -1;
-            for (int i = 0; i < len; i++) {
-                if (buf[i] == 0x3A) {  // ':' character
-                    has_colon = true;
-                    colon_pos = i;
-                    break;
-                }
+            // 0x01 control, 0x02 setting, 0x05 simulated pressure and 0x06 heart rate are control
+            // commands (control_command.h); 0x03 config dump and 0x04 restart are handled here.
+            switch (control_command_from_ble(buf, len)) {
+            case CC_OK: return 0;
+            case CC_BAD_ARG: return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
+            case CC_QUEUE_FULL: return BLE_ATT_ERR_INSUFFICIENT_RES;
+            case CC_UNKNOWN: break;
             }
-            
-            if (buf[0] == 0x01 && len >= 4) {
-                //mode, trigger arousal, reset denied, (optional) motor1/pleasure, (optional) motor2
-                uint8_t mode = buf[1];
-                bool trigger_arousal = buf[2] != 0;
-                bool reset_denied = buf[3] != 0;
-                ESP_LOGE(TAG, "Setting mode to %d, trigger_arousal=%d, reset_denied=%d", mode, trigger_arousal, reset_denied);
-                if (orgasm_control_get_output_mode() != mode) {
-                    orgasm_control_set_output_mode(mode);
-                }
-                if (trigger_arousal) {
-                    orgasm_control_trigger_arousal();
-                }
-                if (reset_denied) {
-                    orgasm_control_reset_denied();
-                }
-                
-                if (len >= 5) {
-                    uint8_t pleasure_or_motor = buf[4];
-                    orgasm_control_set_pleasure_ex(pleasure_or_motor,false);
-                    eom_hal_set_motor1_speed(pleasure_or_motor);
-                }
-                if (len >= 6) {
-                    uint8_t motor2 = buf[5];
-                    eom_hal_set_motor2_speed(motor2);
-                }
-            } else if (buf[0] == 0x02 && len >= 2 && has_colon) {
-                char setting_name[colon_pos + 1];  
-                memcpy(setting_name, &buf[1], colon_pos - 1);  // Skip 0x02 command byte, stop at colon (no quotes)
-                setting_name[colon_pos - 1] = '\0';  // Null terminate
-                
-                char setting_value[len - colon_pos];
-                memcpy(setting_value, &buf[colon_pos + 1], len - colon_pos - 1);  //starting after colon
-                setting_value[len - colon_pos - 1] = '\0';  // Null terminate
-
-                ESP_LOGE(TAG, "Setting name: %s, value: %s", setting_name, setting_value);
-                if (set_config_value(setting_name, setting_value, NULL)) {
-                    ESP_LOGD(TAG, "Set config value successfully");
-                    config_enqueue_save(1);
-                } else {
-                    ESP_LOGD(TAG, "Failed to set config value");
-                }
-            } else if (buf[0] == 0x03) {
+            if (buf[0] == 0x03) {
                 ESP_LOGE(TAG, "Received config dump request");
                 xTaskCreate(deferred_send_config_task, "SendConfig", 6*1024, NULL, 5, NULL);
             } else if (buf[0] == 0x04) {
                 ESP_LOGI(TAG, "Received restart request");
                 xTaskCreate(deferred_restart_task, "Restart", 6*1024, NULL, 5, NULL);
-            } else if (buf[0] == 0x05 && len >= 3) {
-                // Simulated pressure (test builds only): 2 bytes MSB first, 0xFFFF for the real sensor.
-                uint16_t value = (buf[1] << 8) | buf[2];
-                eom_hal_set_simulated_pressure(value == 0xFFFF ? -1 : value);
-            } else if (buf[0] == 0x06 && len >= 2) {
-                // Heart rate in bpm from a sensor the app is connected to, 0 for no reading.
-                heart_rate_set(buf[1]);
             }
             return rc;
         }
@@ -553,18 +459,12 @@ static int input1_chr_access(uint16_t conn_handle, uint16_t attr_handle,
             
             ESP_LOGE(TAG, "Received data (hex): %s", hex_str);
             
-            //update motor speed here
-            // Inputs are percentages; clamp so values above 100 don't wrap past 255.
-            uint16_t motor1_speed = floor(MIN(buf[0], 100) * 2.55);
-            ESP_LOGE(TAG, "Setting motor1 speed to: %d, %02x", motor1_speed, buf[0]);
-            eom_hal_set_motor1_speed((uint8_t) motor1_speed);
-            if (len >= 2) {
-                uint16_t motor2_speed = floor(MIN(buf[1], 100) * 2.55);
-                ESP_LOGE(TAG, "Setting motor2 speed to: %d, %02x", motor2_speed, buf[1]);
-                eom_hal_set_motor2_speed((uint8_t) motor2_speed);
+            // Motor percentages from a remote: a control command (control_command.h).
+            switch (control_command_from_remote(buf, len)) {
+            case CC_OK: return 0;
+            case CC_QUEUE_FULL: return BLE_ATT_ERR_INSUFFICIENT_RES;
+            default: return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
             }
-            orgasm_control_set_pleasure_ex((uint8_t) motor1_speed, false); //update internal state without changing motor speed again
-            return rc;
         }
         goto error;
 
