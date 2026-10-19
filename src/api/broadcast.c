@@ -1,10 +1,7 @@
 #include "api/broadcast.h"
 #include "cJSON.h"
 #include "config_defs.h"
-#include "esp_timer.h"
-#include "heart_rate.h"
-#include "orgasm_control.h"
-#include "safety.h"
+#include "status_snapshot.h"
 #include "system/websocket_handler.h"
 
 void api_broadcast_config(void) {
@@ -21,38 +18,9 @@ void api_broadcast_readings(void) {
     cJSON* payload = cJSON_CreateObject();
     cJSON* root = cJSON_AddObjectToObject(payload, "readings");
 
-    cJSON_AddNumberToObject(root, "arousal", orgasm_control_get_arousal());
-    cJSON_AddNumberToObject(root, "cooldown", orgasm_control_get_cooldown());
-    cJSON_AddNumberToObject(root, "denied", orgasm_control_get_orgasm_count());
-    cJSON_AddNumberToObject(root, "millis", esp_timer_get_time() / 1000);
-    cJSON_AddNumberToObject(root, "motor", orgasm_control_get_pleasure());
-    cJSON_AddNumberToObject(root, "pavg", orgasm_control_get_average_pressure());
-    cJSON_AddNumberToObject(root, "permit", orgasm_control_get_permit_orgasm_remaining_seconds());
-    cJSON_AddNumberToObject(root, "pressure", orgasm_control_get_last_pressure());
-    cJSON_AddStringToObject(root, "runMode", orgasm_control_get_output_mode_str());
-    cJSON_AddNumberToObject(root, "sensitivity", orgasm_control_get_arousal_sensitivity());
-    cJSON_AddNumberToObject(root, "threshold", orgasm_control_get_arousal_threshold());
-
-    // Everything around this is deprecated and should be moved into its own broadcast.
-    // cJSON_AddBoolToObject(root, "permitOrgasm", orgasm_control_is_permit_orgasm_reached());
-    // cJSON_AddBoolToObject(root, "postOrgasm", orgasm_control_is_post_orgasm_reached());
-    cJSON_AddBoolToObject(root, "lock", orgasm_control_is_menu_locked());
-    cJSON_AddNumberToObject(root, "safety", safety_get_stop_reason());
-    cJSON_AddNumberToObject(root, "phase", orgasm_control_get_after_orgasm_phase());
-    cJSON_AddNumberToObject(root, "orgasms", orgasm_control_get_session_orgasms());
-    cJSON_AddNumberToObject(root, "rest", orgasm_control_get_rest_remaining_seconds());
-    cJSON_AddNumberToObject(root, "baseline", orgasm_control_get_baseline());
-    cJSON_AddNumberToObject(root, "hr", heart_rate_get());
-    cJSON_AddBoolToObject(root, "hrWait", orgasm_control_is_hr_waiting());
-    cJSON_AddBoolToObject(root, "hrZone", orgasm_control_is_hr_edge_zone());
-
-    // Raw pressure for detailed recording: readings are sent at ~15 Hz and taken at 50 Hz, so send
-    // the last 8. rawSeq counts readings since boot; the last one in raw is number rawSeq - 1.
-    uint16_t raw[8];
-    uint32_t raw_seq = orgasm_control_get_raw_pressure(raw, 8);
-    cJSON_AddNumberToObject(root, "rawSeq", raw_seq);
-    cJSON* raw_arr = cJSON_AddArrayToObject(root, "raw");
-    for (int i = 0; i < 8; i++) cJSON_AddItemToArray(raw_arr, cJSON_CreateNumber(raw[i]));
+    status_snapshot_t snapshot;
+    status_snapshot_get(&snapshot);
+    status_snapshot_to_json(&snapshot, root);
 
     websocket_broadcast(payload, WS_BROADCAST_READINGS);
     cJSON_Delete(payload);

@@ -18,6 +18,7 @@
 #include <cJSON.h>
 #include "config_defs.h"
 #include "control_command.h"
+#include "status_snapshot.h"
 #include "system/ble_ota.h"
 #include "esp_system.h"
 #include "mbedtls/sha256.h"
@@ -42,7 +43,6 @@ static const ble_uuid16_t status_svc_uuid = BLE_UUID16_INIT(GATTS_SERVICE_EOM_UU
 
 static uint8_t status_chr_val[9] = {0};
 static uint16_t status_chr_val_handle;
-#define BLE_RAW_SAMPLES 16
 static const ble_uuid16_t status_chr_uuid = BLE_UUID16_INIT(GATTS_CHAR_STATUS_UUID); //EOM status
 static uint16_t status_chr_conn_handle = 0;
 static bool status_chr_conn_handle_inited = false;
@@ -257,55 +257,11 @@ static int status_out_chr_access(uint16_t conn_handle, uint16_t attr_handle, str
         }
         if (attr_handle == status_chr_val_handle) {
             
-            uint16_t permit_seconds = orgasm_control_get_permit_orgasm_remaining_seconds();
-            uint32_t current_time = esp_timer_get_time() / 1000UL;
-
-            uint16_t rest_seconds = orgasm_control_get_rest_remaining_seconds();
-            uint16_t baseline = orgasm_control_get_baseline();
-
-            uint8_t chr_flags = (orgasm_control_is_hr_waiting() ? 0x01 : 0) | (orgasm_control_is_hr_edge_zone() ? 0x02 : 0);
-
-            // Raw pressure for detailed recording: the last BLE_RAW_SAMPLES readings. Notifications go
-            // out every 100 ms and readings come at 50 Hz, so this leaves room for a dropped one.
-            uint16_t raw[BLE_RAW_SAMPLES];
-            uint32_t raw_seq = orgasm_control_get_raw_pressure(raw, BLE_RAW_SAMPLES);
-
-            uint8_t chr_val[27 + 3 + 2 * BLE_RAW_SAMPLES] = {
-                (uint8_t)(orgasm_control_get_last_pressure() >> 4), // Scale from 12-bit (0-4095) to 8-bit (0-255)
-                (uint8_t)(orgasm_control_get_arousal() >> 4),
-                (uint8_t)(orgasm_control_get_arousal_threshold() >> 4),
-                orgasm_control_get_pleasure(),
-                orgasm_control_get_cooldown(),
-                orgasm_control_get_orgasm_count(),
-                (uint8_t)orgasm_control_get_output_mode(),
-                (uint8_t)Config.vibration_mode,
-                (uint8_t)((permit_seconds >> 8) & 0xFF),  // MSB
-                (uint8_t)(permit_seconds & 0xFF),        // LSB
-                (uint8_t)eom_hal_get_rgb_color().r,
-                (uint8_t)eom_hal_get_rgb_color().g,
-                (uint8_t)eom_hal_get_rgb_color().b,
-                (uint8_t)((current_time >> 24) & 0xFF),
-                (uint8_t)((current_time >> 16) & 0xFF),
-                (uint8_t)((current_time >> 8) & 0xFF),
-                (uint8_t)(current_time & 0xFF),
-                (uint8_t)orgasm_control_is_menu_locked(),
-                (uint8_t)safety_get_stop_reason(),
-                orgasm_control_get_session_orgasms(),
-                (uint8_t)orgasm_control_get_after_orgasm_phase(),
-                (uint8_t)((rest_seconds >> 8) & 0xFF),  // MSB
-                (uint8_t)(rest_seconds & 0xFF),         // LSB
-                (uint8_t)((baseline >> 8) & 0xFF),      // MSB, full 12-bit resolution
-                (uint8_t)(baseline & 0xFF),             // LSB
-                heart_rate_get(),                       // bpm the EOM is using, 0 = none
-                chr_flags,                              // bit 0 waiting for heart rate, bit 1 heart-rate edge zone
-                (uint8_t)((raw_seq >> 8) & 0xFF),       // readings since boot (low 16 bits), MSB
-                (uint8_t)(raw_seq & 0xFF),              // LSB; the last raw sample is number raw_seq - 1
-                BLE_RAW_SAMPLES,                        // raw samples that follow, oldest first, 2 bytes each
-            };
-            for (int i = 0; i < BLE_RAW_SAMPLES; i++) {
-                chr_val[30 + 2 * i] = raw[i] >> 8;
-                chr_val[31 + 2 * i] = raw[i] & 0xFF;
-            }
+            // The latest status snapshot (status_snapshot.h), 62 bytes.
+            status_snapshot_t snapshot;
+            uint8_t chr_val[STATUS_SNAPSHOT_BLE_LEN];
+            status_snapshot_get(&snapshot);
+            status_snapshot_to_ble(&snapshot, chr_val);
             rc = os_mbuf_append(ctxt->om, chr_val, sizeof(chr_val));
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         }
