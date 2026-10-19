@@ -1,27 +1,14 @@
 #include "api/index.h"
-//#include "eom-hal.h"
-#include "eom-hal-esp32.h"
-#include "esp_log.h"
-#include "heart_rate.h"
+#include "control_command.h"
 #include "orgasm_control.h"
 #include "system/websocket_handler.h"
 
-static const char* TAG = "api/edging";
+// Edging commands over WebSocket. Each one is a control command; see control_command.h.
 
 static command_err_t
 cmd_edging_set_mode(cJSON* command, cJSON* response, websocket_client_t* client) {
-    const char* mode_str = command->valuestring;
-    orgasm_output_mode_t mode = orgasm_control_str_to_output_mode(mode_str);
-
-    ESP_LOGI(TAG, "orgasm_control_str_to_output_mode(%s) = %d", mode_str, mode);
-
-    if (mode != _OC_MODE_ERROR) {
-        orgasm_control_set_output_mode(mode);
-        //cJSON_AddStringToObject(response, "mode", orgasm_control_get_output_mode_str()); //immediate response seemse to be crashing websocket server
-        return CMD_OK;
-    } else {
-        return CMD_ARG_ERR;
-    }
+    //cJSON_AddStringToObject(response, "mode", orgasm_control_get_output_mode_str()); //immediate response seemse to be crashing websocket server
+    return api_cc_result(control_command_from_ws("setMode", command));
 }
 
 static const websocket_command_t cmd_edging_set_mode_s = {
@@ -31,15 +18,12 @@ static const websocket_command_t cmd_edging_set_mode_s = {
 
 static command_err_t
 cmd_edging_set_motor(cJSON* command, cJSON* response, websocket_client_t* client) {
-    int speed = command->valueint;
-    if (orgasm_control_get_output_mode() != OC_MANUAL) {
-        orgasm_control_set_output_mode(OC_MANUAL);
-        cJSON_AddStringToObject(response, "mode", orgasm_control_get_output_mode_str());
-    }
-
-    orgasm_control_set_pleasure(speed);
+    // The switch to manual happens on the next tick; report it now, as before.
+    bool switching = orgasm_control_get_output_mode() != OC_MANUAL;
+    cc_result_t result = control_command_from_ws("setMotor", command);
+    if (result == CC_OK && switching) cJSON_AddStringToObject(response, "mode", "MANUAL");
     //cJSON_AddNumberToObject(response, "speed", speed);  //immediate response seemse to be crashing websocket server
-    return CMD_OK;
+    return api_cc_result(result);
 }
 
 static const websocket_command_t cmd_edging_set_motor_s = {
@@ -49,9 +33,7 @@ static const websocket_command_t cmd_edging_set_motor_s = {
 
 static command_err_t
 cmd_edging_reset_denied(cJSON* command, cJSON* response, websocket_client_t* client) {
-    orgasm_control_reset_denied();
-    //cJSON_AddNumberToObject(response, "denied", 0);
-    return CMD_OK;
+    return api_cc_result(control_command_from_ws("resetDenied", command));
 }
 
 static const websocket_command_t cmd_edging_reset_denied_s = {
@@ -60,9 +42,7 @@ static const websocket_command_t cmd_edging_reset_denied_s = {
 };
 
 static command_err_t cmd_edging_trigger_arousal(cJSON* command, cJSON* response, websocket_client_t* client) {
-    orgasm_control_trigger_arousal();
-    //cJSON_AddNumberToObject(response, "arousal", orgasm_control_get_arousal());
-    return CMD_OK;
+    return api_cc_result(control_command_from_ws("triggerArousal", command));
 }
 
 static const websocket_command_t cmd_edging_trigger_arousal_s = {
@@ -72,8 +52,7 @@ static const websocket_command_t cmd_edging_trigger_arousal_s = {
 
 // Test builds only (-DEOM_PRESSURE_SIM), ignored otherwise: value replaces the sensor, -1 for the real one.
 static command_err_t cmd_edging_sim_pressure(cJSON* command, cJSON* response, websocket_client_t* client) {
-    eom_hal_set_simulated_pressure(command->valueint);
-    return CMD_OK;
+    return api_cc_result(control_command_from_ws("simPressure", command));
 }
 
 static const websocket_command_t cmd_edging_sim_pressure_s = {
@@ -83,9 +62,7 @@ static const websocket_command_t cmd_edging_sim_pressure_s = {
 
 // Heart rate in bpm from a sensor the app is connected to; 0 for no reading.
 static command_err_t cmd_edging_heart_rate(cJSON* command, cJSON* response, websocket_client_t* client) {
-    int bpm = command->valueint;
-    heart_rate_set(bpm > 0 && bpm < 256 ? bpm : 0);
-    return CMD_OK;
+    return api_cc_result(control_command_from_ws("heartRate", command));
 }
 
 static const websocket_command_t cmd_edging_heart_rate_s = {

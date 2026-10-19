@@ -5,6 +5,18 @@
 extern "C" {
 #endif
 
+#include "config.h"
+#include "control_command.h"
+
+// A control command result as a WebSocket command result.
+static inline command_err_t api_cc_result(cc_result_t result) {
+    switch (result) {
+    case CC_OK: return CMD_OK;
+    case CC_BAD_ARG: return CMD_ARG_ERR;
+    default: return CMD_FAIL;
+    }
+}
+
 void api_register_config(void);
 void api_register_system(void);
 void api_register_edging(void);

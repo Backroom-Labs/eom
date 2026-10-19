@@ -163,6 +163,14 @@ void orgasm_control_set_pleasure(uint8_t pleasure) {
     orgasm_control_set_pleasure_ex(pleasure, true);
 }
 
+void orgasm_control_set_motor2(uint8_t speed) {
+    if (speed > Config.max_pleasure) speed = Config.max_pleasure;
+    if (speed > Config.max_motor_output) speed = Config.max_motor_output;
+    #if MOTOR2_ENABLED
+    eom_hal_set_motor2_speed(speed);
+    #endif
+}
+
 void orgasm_control_init(void) {
     eom_hal_init_pressure_sensor();
     ESP_LOGI(TAG, "Pressure sensor initialized.");

@@ -39,6 +39,8 @@ void orgasm_control_clear_update_flag(void);
 void orgasm_control_increment_arousal_threshold(int threshold);
 void orgasm_control_set_pleasure(uint8_t speed); // Defaults control_motor to true
 void orgasm_control_set_pleasure_ex(uint8_t speed, bool control_motor); // Extended version with explicit control
+// Drive motor 2 on its own (a remote or BLE control packet gave it a value), capped like pleasure.
+void orgasm_control_set_motor2(uint8_t speed);
 void orgasm_control_set_arousal_threshold(int threshold);
 uint16_t orgasm_control_get_arousal_threshold(void);
 uint8_t orgasm_control_get_orgasm_count(void);
