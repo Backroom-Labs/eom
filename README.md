@@ -48,6 +48,7 @@ You could use the app by itself to control multiple sex toys at once without an 
 
 |Version|What changed|
 |---|---|
+|**3.6.0**|[Detailed recording](#session-history-and-auto-calibration) of the raw pressure at full speed, with a detailed CSV export.  [Arousal fade time and arousal memory](#arousal-fade-and-memory) settings for the quiet spells between contractions.|
 |**3.5.0**|[Heart rate](#heart-rate) from a Wellue/Viatom O2Ring (including the SleepHQ O2 Ring Pro): shown live, recorded in history, and optionally used for cooldowns, edge detection, orgasm detection and a safety stop. A time axis on the live chart.|
 |**3.4.0**|[Session history](#session-history-and-auto-calibration) with charts, stats and CSV export. Automatic calibration that follows your resting pressure, and a suggested edge threshold based on your past sessions.|
 |**3.3.0**|[After-orgasm modes](#after-an-orgasm): Ruin, Post-orgasm or Milking. An Orgasms counter. A [pressure simulator](#testing-without-a-pressure-sensor) build for testing without a sensor.|
@@ -164,6 +165,7 @@ The app records every session while it's connected and keeps it **in that browse
 - a chart of pleasure, arousal, edge threshold, pressure and resting pressure, with denials and orgasms marked
 - duration, edges, denials, orgasms, peak arousal, average pleasure, edge threshold and resting-pressure drift
 - **Export CSV** to keep or analyse the readings elsewhere
+- **Export detailed CSV**, if **Settings > App > Detailed recording** was on: the raw pressure at the EOM's full update rate (50 times a second) with the other readings alongside, for studying contraction patterns.  Needs firmware 3.6.0, and it takes more storage in the browser.
 
 A session starts when a mode runs or the intensity goes above 0, and ends 30 seconds after the EOM stops.  Sessions shorter than 15 seconds aren't kept, and the last 200 are saved.  Turn recording off under **Settings > App > Record sessions**.
 
@@ -171,9 +173,18 @@ A session starts when a mode runs or the intensity goes above 0, and ends 30 sec
 
 **Suggested threshold** (Settings > Detection > Calibration) looks at your last 10 recorded sessions and suggests an edge threshold:
 - If you had orgasms, 80% of how high your arousal peaked just before them, so edging stops just before that point.
-- Otherwise it adjusts from your latest session: lower it if you edged constantly (more than 2 edges a minute), raise it if you went 10 minutes without an edge.
+- Otherwise it adjusts from your latest session: raise it if you edged constantly (more than 2 edges a minute), lower it if you went 10 minutes without an edge.
 
 Tap **Apply** to use the suggestion.
+
+### Arousal fade and memory
+
+Arousal is built up from the size of your contractions and fades when they stop.  Involuntary contractions tend to come in waves, often around a minute on and a minute off, and you can still be close to orgasm during the quiet part.  Two settings in **Settings > Detection** help with that:
+
+|Setting|Default|What it does|
+|---|---|---|
+|**Arousal fade time**|1.4 s|How long arousal takes to fall by half once contractions stop.  1.4 s is the classic behaviour; longer keeps arousal up through short pauses.|
+|**Arousal memory**|Off|Arousal stays up near its recent peak and fades with this half-life, but never above the **Warning threshold**, so it can't cause an edge by itself.  Small contractions then edge you sooner after you've been close.|
 
 ## Heart rate
 
@@ -325,7 +336,7 @@ Using Xtoys you can connect to the EOM and let it control your other Xtoys devic
 
 WebSockets are supported for backwards compatibility with nogasm and edge-o-matic devices, but not necessary for Bluetooth.  Documentation for the WebSocket API is in [doc/WebSocket.md](doc/WebSocket.md) and the config keys are in [doc/Config.json.md](doc/Config.json.md).
 
-Newer firmware adds these to the readings, over both WebSocket (`readings`) and Bluetooth (status characteristic, now 27 bytes, multi-byte values MSB first):
+Newer firmware adds these to the readings, over both WebSocket (`readings`) and Bluetooth (status characteristic, now 62 bytes, multi-byte values MSB first):
 
 |Field|WebSocket|Bluetooth byte|Since|Meaning|
 |---|---|---|---|---|
@@ -337,6 +348,7 @@ Newer firmware adds these to the readings, over both WebSocket (`readings`) and 
 |Resting pressure|`baseline`|23-24|3.4.0|Tracked resting pressure|
 |Heart rate|`hr`|25|3.5.0|Heart rate the EOM is using, in bpm (0 = none)|
 |Heart-rate state|`hrWait`, `hrZone`|26 (bit 0, bit 1)|3.5.0|Cooldown waiting for the heart rate to settle; heart rate in the edge zone|
+|Raw pressure|`rawSeq`, `raw` (last 8)|27-28 reading number (low 16 bits), 29 count, then 16 × 2 bytes|3.6.0|The last raw pressure readings, oldest first; the newest is reading number `rawSeq - 1` since boot|
 
 Bluetooth control commands: `0x02` change a setting (saved), `0x04` save and restart, `0x05` set the simulated pressure (simulator builds only), `0x06 <bpm>` heart rate from an external sensor.  Over WebSocket the heart rate is `{"heartRate": <bpm>}`.
 
@@ -349,6 +361,8 @@ New settings since 3.0.0:
 |`milking_max_orgasms`|3|Orgasms per session (0 = no limit)|
 |`post_orgasm_menu_lock`|false|Lock settings after orgasm|
 |`auto_baseline`|true|Follow resting pressure|
+|`arousal_fade_ms`|1400|Arousal fade time|
+|`arousal_memory_s`|0|Arousal memory (0 = off)|
 |`sensor_fault_stop`|true|Stop on sensor fault|
 |`disconnect_stop_s`|10|Stop when disconnected (0 = off)|
 |`max_session_minutes`|0|Session time limit (0 = off)|

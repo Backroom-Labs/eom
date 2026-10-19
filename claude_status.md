@@ -7,7 +7,8 @@ _Last updated: 2026-10-17_
 
 ## Snapshot
 
-- **Version:** `PROJECT_VER` in [CMakeLists.txt](CMakeLists.txt) is **3.5.0** (heart rate), committed
+- **Version:** `PROJECT_VER` in [CMakeLists.txt](CMakeLists.txt) is **3.6.0** (detailed recording +
+  arousal fade/memory, **uncommitted**). 3.5.0 (heart rate) was committed
   as 9c94e22, tagged `v3.5.0` and pushed 2026-10-17 (heart-rate features not yet tested on the
   Echo). Tags `v2.0.1` to `v3.5.0` are on GitHub; check the v3.5.0 CI release there. Release with
   `git push origin main && git tag vX.Y.Z && git push origin vX.Y.Z` (tag must match `PROJECT_VER`).
@@ -28,6 +29,7 @@ _Last updated: 2026-10-17_
 | What | How to test |
 |---|---|
 | **`post_orgasm_menu_lock`** | Turn it on, get an orgasm detected in Orgasm mode -> settings lock; lock clears when ramp-down ends. |
+| **Detailed recording + arousal fade/memory** (3.6.0, uncommitted) | Flash 3.6.0. (1) Settings > App > Detailed recording on, run a session, History > Export detailed CSV: ~50 rows a second, `reading` numbers mostly consecutive (gaps = lost BLE notifications). Try over BLE and Wi-Fi. (2) Detection > Arousal fade time 1.4 s should feel exactly as before; raise to 5-10 s and watch arousal fall more slowly on the chart. (3) Arousal memory e.g. 60 s: after a burst, arousal holds at the Warning threshold and fades slowly; it must never edge on its own. Starting a mode clears it. |
 | **Heart-rate features** (3.5.0, firmware + app) | Flash the firmware and rebuild the app first. With the ring connected: (1) Settings > Heart rate tab shows "Heart rate now"; WS `readings.hr` / BLE status byte 25 should match the ring, which proves the EOM receives it. (2) Wait for heart rate to settle = e.g. 5 bpm: after an edge the status says "Waiting for your heart rate to settle (at most Ns)" until it drops, never longer than the max. (3) Edge zone heart rate set just below your current HR: a second pink marker appears on the arousal gauge and edges trigger earlier. (4) Orgasm heart rate set above your HR: in Orgasm mode, once permitted, a clench is ignored (serial log "Clench ignored"). (5) Heart rate limit set below your HR: stops after 10 s with the heart-rate banner. (6) HR drop orgasm detection: hardest to test; try last. (7) Removing the ring / closing the app: everything falls back within 5 s. Also check the live chart's new time axis. |
 | **O2Ring heart rate in History** (3.5.0) | Live heart rate works with Russ's O2 Ring Pro (OxyII, no encryption needed). Still to check: record a session with the EOM and ring connected, then confirm the History graph line, avg/peak stats and CSV `heart_rate` column. |
 
@@ -59,6 +61,11 @@ _Last updated: 2026-10-17_
     TODO, deps step B (below).
 
 Done: 2, 3, 6, 7, 13 (see Done).
+
+**Algorithm ideas** (from the restim wiki, agreed 2026-10-17): detailed recording and arousal
+fade/memory are done (3.6.0). Next candidates: an orgasm detector from the pressure drop at orgasm
+plus rhythmic contractions (tune from detailed CSVs), checking whether heart rate actually helps
+using History, and an optional girth sensor input.
 
 ## 5. Dependency updates still to do
 
@@ -109,6 +116,28 @@ Done: 2, 3, 6, 7, 13 (see Done).
 | Heart rate used by the firmware (cooldown, edge zone, orgasm, safety) + suggestions + live chart time axis | 3.5.0, 9c94e22 | No. Builds for Echo + esp32dev; history stats tested offline |
 
 Details of each, for reference when changing that code:
+
+### Detailed recording + arousal fade/memory (3.6.0, uncommitted)
+
+- Prompted by the restim wiki (github.com/diglet48/restim/wiki/edging-sensor-data): involuntary
+  contractions run ~1-2 min on / ~1 min off and orgasm is still possible in the off part; the old
+  arousal halved in ~1.4 s, so it read ~0 in the quiet part. Other wiki points not done yet (backlog
+  4, "Algorithm ideas"): orgasm signature = pressure drop + rhythmic contractions; HR "not well
+  correlated" per the author; girth sensor.
+- Firmware: `orgasm_control_update_arousal()` decays with `arousal_fade_ms` (half-life, default
+  1400 = old `* 0.99` at 50 Hz, truncating like before) and, if `arousal_memory_s` > 0, keeps arousal
+  >= a peak follower that halves every arousal_memory_s, capped at `mid_threshold` (or 90 % of the
+  edge threshold if mid >= edge). Memory cleared in `set_output_mode()`.
+- Raw pressure: ring buffer of the last 32 `pressure_value`s with a reading counter (portMUX),
+  `orgasm_control_get_raw_pressure()`. WS readings `rawSeq` + `raw` (last 8); **BLE status is 62
+  bytes**: 27-28 counter low 16 bits, 29 count (16), then 16 u16 MSB first. Notify is every 100 ms
+  (`ble_task`, vTaskDelay(10) at 100 Hz tick), so 16 samples cover a missed notification.
+- App: pref `detailedRecording` (off). `Recorder.addRaw()` de-duplicates by reading number into
+  `RawSegment`s (new segment on a gap) saved inside chunks (`raw` field, no DB version bump);
+  summary `rawSamples/rawHz/rawSeq0/rawT0` map reading numbers to session time. `toDetailedCsv()`;
+  "Export detailed CSV" in SessionHistory. BLE counter is unwrapped to 32 bits in App.svelte.
+- README: 3.6.0 row, detailed CSV, "Arousal fade and memory" section, tables. Also fixed the
+  suggested-threshold bullet, which had raise/lower backwards.
 
 ### Heart rate in the firmware (3.5.0)
 

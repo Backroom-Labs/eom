@@ -229,6 +229,19 @@ export const SETTINGS: SettingDef[] = [
   },
 
   {
+    key: "arousal_fade_ms",
+    label: "Arousal fade time",
+    description: "How long arousal takes to fall by half once contractions stop. Longer keeps arousal up through short pauses between contractions, so edges are caught sooner. 1.4 s is the classic behaviour.",
+    kind: "range", default: 1400, min: 200, max: 30000, step: 100, format: millis,
+  },
+  {
+    key: "arousal_memory_s",
+    label: "Arousal memory",
+    description: "Involuntary contractions come and go in waves, often a minute on and a minute off, and you can still be close during the quiet part. With this on, arousal stays up near its recent peak and fades with this half-life, but never above the Warning threshold, so it can't cause an edge by itself. 0 turns it off.",
+    kind: "range", default: 0, min: 0, max: 300, step: 5,
+    format: (v) => (v === 0 ? "Off" : seconds(v)),
+  },
+  {
     key: "auto_baseline",
     label: "Follow resting pressure",
     description: "Track the resting pressure as it drifts (warming air, a shifted plug) and keep the clench threshold above it, so drift isn't taken for a clench.",
@@ -446,7 +459,10 @@ export const SETTING_GROUPS: SettingGroup[] = [
   {
     id: "detection",
     title: "Arousal detection",
-    keys: ["sensitivity_threshold", "mid_threshold", "sensor_sensitivity", "pressure_smoothing", "use_average_values", "update_frequency_hz"],
+    keys: [
+      "sensitivity_threshold", "mid_threshold", "arousal_fade_ms", "arousal_memory_s", "sensor_sensitivity",
+      "pressure_smoothing", "use_average_values", "update_frequency_hz",
+    ],
   },
   {
     id: "clench",

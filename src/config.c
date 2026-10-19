@@ -72,6 +72,8 @@ CONFIG_DEFS {
     CFG_BOOL(post_orgasm_menu_lock, false);
     CFG_BOOL(edge_menu_lock, false);
     CFG_BOOL(auto_baseline, true);
+    CFG_NUMBER(arousal_fade_ms, 1400);
+    CFG_NUMBER(arousal_memory_s, 0);
     CFG_NUMBER(max_clench_duration_ms, 3000);
 
     // Safety

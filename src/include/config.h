@@ -291,6 +291,13 @@ struct config {
     // Follow the resting pressure baseline and keep the clench threshold above it, so slow drift
     // (warming air, a shifted plug) isn't taken for a clench.
     bool auto_baseline;
+    // How long arousal takes to fall by half once contractions stop, in ms. 1400 matches the old
+    // fixed 1% per update at 50 Hz.
+    int arousal_fade_ms;
+    // Arousal memory half-life in seconds, 0 = off. After a peak, arousal doesn't fall below a slowly
+    // fading copy of it, capped at mid_threshold, so quiet spells between contractions don't hide
+    // that you're close.
+    int arousal_memory_s;
 
     //= Safety
 

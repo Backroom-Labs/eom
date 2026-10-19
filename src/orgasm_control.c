@@ -3,6 +3,7 @@
 #include "eom-hal-esp32.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
 #include "heart_rate.h"
 #include "safety.h"
 #include "system/websocket_handler.h"
@@ -29,7 +30,15 @@ static struct {
     uint16_t arousal;
     uint8_t update_flag;
     unsigned long cooldown;
+    float memory; // slowly fading copy of recent arousal peaks (Config.arousal_memory_s)
 } arousal_state;
+
+// The last RAW_PRESSURE_LEN raw pressure readings, one per update, for detailed recording in the
+// app. raw_seq counts every reading since boot; the newest is raw_buf[(raw_seq - 1) % LEN].
+#define RAW_PRESSURE_LEN 32
+static uint16_t raw_buf[RAW_PRESSURE_LEN];
+static uint32_t raw_seq = 0;
+static portMUX_TYPE raw_lock = portMUX_INITIALIZER_UNLOCKED;
 
 static struct {
     orgasm_output_mode_t output_mode;
@@ -279,11 +288,36 @@ static void orgasm_control_hr_orgasm_detect(void) {
  * This happens with a default update frequency of 50Hz.
  */
 static void orgasm_control_update_arousal() {
-    // Decay stale arousal value:
-    update_check(arousal_state.arousal, arousal_state.arousal * 0.99);  //why are we measureing pleasure as a float but arousal as an int?  Why decrease at 1%? (should be configurable)
+    float hz = Config.update_frequency_hz > 0 ? Config.update_frequency_hz : 50;
+
+    // Decay stale arousal: halve every arousal_fade_ms. Truncating, like the old fixed `* 0.99`,
+    // so the default (1400 ms at 50 Hz) behaves the same and it always reaches 0.
+    float fade_ms = Config.arousal_fade_ms > 0 ? Config.arousal_fade_ms : 1400;
+    float keep = powf(0.5f, 1000.0f / hz / fade_ms);
+    update_check(arousal_state.arousal, (uint16_t)(arousal_state.arousal * keep));
+
+    // Arousal memory: follow peaks at once, fade with a half-life of arousal_memory_s, and keep
+    // arousal at least at that level, capped below the edge threshold so it can't edge by itself.
+    if (Config.arousal_memory_s > 0) {
+        if (arousal_state.arousal > arousal_state.memory) {
+            arousal_state.memory = arousal_state.arousal;
+        } else {
+            arousal_state.memory *= powf(0.5f, 1.0f / hz / Config.arousal_memory_s);
+        }
+        float cap = Config.mid_threshold < Config.sensitivity_threshold ? Config.mid_threshold
+                                                                         : Config.sensitivity_threshold * 0.9f;
+        uint16_t floor = (uint16_t)fminf(arousal_state.memory, cap);
+        if (arousal_state.arousal < floor) update_check(arousal_state.arousal, floor);
+    } else {
+        arousal_state.memory = 0;
+    }
 
     // Acquire new pressure and take average:
     arousal_state.pressure_value = eom_hal_get_pressure_reading();
+    portENTER_CRITICAL(&raw_lock);
+    raw_buf[raw_seq % RAW_PRESSURE_LEN] = arousal_state.pressure_value;
+    raw_seq++;
+    portEXIT_CRITICAL(&raw_lock);
     running_average_set_window(arousal_state.average, Config.pressure_smoothing);
     running_average_add_value(arousal_state.average, arousal_state.pressure_value);
     long p_avg = running_average_get_average(arousal_state.average);
@@ -812,6 +846,18 @@ uint16_t orgasm_control_get_arousal_threshold(void) {
     return Config.sensitivity_threshold;
 }
 
+uint32_t orgasm_control_get_raw_pressure(uint16_t* out, uint8_t n) {
+    if (n > RAW_PRESSURE_LEN) n = RAW_PRESSURE_LEN;
+    portENTER_CRITICAL(&raw_lock);
+    uint32_t seq = raw_seq;
+    for (uint8_t i = 0; i < n; i++) {
+        // Oldest first; before n readings exist, the missing ones read as 0.
+        out[i] = seq + i >= n ? raw_buf[(seq + i - n) % RAW_PRESSURE_LEN] : 0;
+    }
+    portEXIT_CRITICAL(&raw_lock);
+    return seq;
+}
+
 uint16_t orgasm_control_get_last_pressure() {
     return arousal_state.pressure_value;
 }
@@ -844,6 +890,7 @@ void orgasm_control_set_output_mode(orgasm_output_mode_t mode) {
     post_orgasm_state.rest_start_millis = 0;
     hr_state.waiting = false;
     hr_state.orgasm_peak = 0;
+    arousal_state.memory = 0;
     if (mode != OC_MANUAL) {
         // A new session: forget the last one's orgasms and clench baseline.
         post_orgasm_state.session_orgasms = 0;

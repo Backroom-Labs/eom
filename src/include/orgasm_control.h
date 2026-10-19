@@ -95,6 +95,9 @@ uint8_t orgasm_control_get_session_orgasms(void);
 uint16_t orgasm_control_get_rest_remaining_seconds(void);
 // Resting pressure (same scale as the pressure reading), followed over time.
 uint16_t orgasm_control_get_baseline(void);
+// The last n (at most 32) raw pressure readings, oldest first, one per update. Returns how many
+// readings there have been since boot, so the newest is number (return - 1).
+uint32_t orgasm_control_get_raw_pressure(uint16_t* out, uint8_t n);
 // Heart rate (Config.hr_*): the cooldown is waiting for the heart rate to settle.
 bool orgasm_control_is_hr_waiting(void);
 // Heart rate is in the edge zone, so the edge threshold is lowered.

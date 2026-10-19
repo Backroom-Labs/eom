@@ -47,6 +47,7 @@
     hr?: number; // bpm from the O2Ring, added by the app
     hrWait?: boolean; // cooldown waiting for the heart rate to settle (firmware 3.5.0)
     hrZone?: boolean; // heart rate in the edge zone, edge threshold lowered
+    raw?: { end: number; p: number[]; hz: number }; // raw pressure batch (firmware 3.6.0), see history.ts
   };
 
   type RunMode = "MANUAL" | "ENDLESS" | "ORGASM";
@@ -99,6 +100,7 @@
     keepAwake: boolean;
     pressureSim: boolean; // show the pressure simulator (needs a -DEOM_PRESSURE_SIM firmware build)
     recordSessions: boolean; // keep session history in this browser
+    detailedRecording: boolean; // also record raw pressure at the EOM's update rate
   };
   const PREFS_KEY = "eom.prefs";
   const LEGACY_WS_URL_KEY = "eom.wsUrl";
@@ -113,6 +115,7 @@
       keepAwake: true,
       pressureSim: false,
       recordSessions: true,
+      detailedRecording: false,
     };
     try {
       const legacy = localStorage.getItem(LEGACY_WS_URL_KEY);
@@ -230,6 +233,7 @@
   };
   $effect(() => {
     recorder.enabled = prefs.recordSessions;
+    recorder.detailed = prefs.detailedRecording;
     if (!prefs.recordSessions) recorder.end();
   });
 
@@ -578,8 +582,23 @@
       baseline: r.baseline,
       hrWait: r.hrWait,
       hrZone: r.hrZone,
+      raw: Array.isArray(r.raw) && typeof r.rawSeq === "number" ? { end: r.rawSeq, p: r.raw, hz: rawHz() } : undefined,
       localTime: Date.now(),
     });
+  }
+
+  // Raw pressure readings arrive at the EOM's update rate.
+  function rawHz() {
+    return Number(config.update_frequency_hz) || 50;
+  }
+
+  // BLE sends only the low 16 bits of the raw reading number; extend it from the last one seen.
+  let btRawSeq = -1;
+  function unwrapRawSeq(low16: number): number {
+    if (btRawSeq < 0) return (btRawSeq = low16);
+    const delta = (low16 - (btRawSeq & 0xffff)) & 0xffff;
+    if (delta < 0x8000) btRawSeq += delta;
+    return btRawSeq;
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -590,6 +609,7 @@
     btDeviceId = null;
     isBtConnected = false;
     syncDelta = 0;
+    btRawSeq = -1;
   }
 
   async function btDisconnect() {
@@ -620,6 +640,14 @@
       // added in 3.5.0: [25] heart rate the EOM is using, [26] flags
       hrWait: data.length > 26 ? (data[26] & 0x01) !== 0 : false,
       hrZone: data.length > 26 ? (data[26] & 0x02) !== 0 : false,
+      // added in 3.6.0: [27-28] raw reading number (low 16 bits), [29] count, then that many u16
+      raw: data.length > 29 && data.length >= 30 + 2 * data[29]
+        ? {
+            end: unwrapRawSeq((data[27] << 8) | data[28]),
+            p: Array.from({ length: data[29] }, (_, i) => (data[30 + 2 * i] << 8) | data[31 + 2 * i]),
+            hz: rawHz(),
+          }
+        : undefined,
       localTime: Date.now(),
     };
     if (!syncDelta) syncDelta = r.localTime - r.millis;
@@ -1389,6 +1417,10 @@
             <label class="prefRow">
               <span><b>Record sessions</b><small>Keep a history of sessions in this browser, for the History view and threshold suggestions.</small></span>
               <input type="checkbox" class="check" bind:checked={prefs.recordSessions} />
+            </label>
+            <label class="prefRow">
+              <span><b>Detailed recording</b><small>Also record the raw pressure at full speed (50 times a second) for each session, for a detailed CSV export. Needs firmware 3.6.0. Uses more storage.</small></span>
+              <input type="checkbox" class="check" bind:checked={prefs.detailedRecording} disabled={!prefs.recordSessions} />
             </label>
             <label class="prefRow">
               <span><b>Pressure simulator</b><small>Test without a sensor. Needs firmware built with EOM_PRESSURE_SIM.</small></span>

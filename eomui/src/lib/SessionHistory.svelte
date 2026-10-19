@@ -5,8 +5,10 @@
     csvFileName,
     deleteAllSessions,
     deleteSession,
+    loadRaw,
     loadSamples,
     toCsv,
+    toDetailedCsv,
     type Sample,
     type SessionSummary,
   } from "./history";
@@ -61,10 +63,11 @@
   const avg = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) / xs.length);
   const pct = (v: number, max = MAX_Y) => `${Math.round((v / max) * 100)}%`;
 
-  async function exportCsv(s: SessionSummary) {
+  async function exportCsv(s: SessionSummary, detailed = false) {
     const data = samples.length && selected?.id === s.id ? samples : await loadSamples(s.id);
-    const name = csvFileName(s);
-    const file = new File([toCsv(s, data)], name, { type: "text/csv" });
+    const name = detailed ? csvFileName(s).replace(/\.csv$/, "-detailed.csv") : csvFileName(s);
+    const text = detailed ? toDetailedCsv(s, data, await loadRaw(s.id)) : toCsv(s, data);
+    const file = new File([text], name, { type: "text/csv" });
     // In the Android/iOS app a download link goes nowhere, so use the share sheet.
     if (Capacitor.isNativePlatform() && navigator.canShare?.({ files: [file] })) {
       await navigator.share({ files: [file], title: name }).catch(() => {});
@@ -233,6 +236,9 @@
     </dl>
     <div class="row">
       <button class="primary" onclick={() => exportCsv(s)}>Export CSV</button>
+      {#if s.rawSamples}
+        <button onclick={() => exportCsv(s, true)} title="Raw pressure at {s.rawHz ?? 50} Hz">Export detailed CSV</button>
+      {/if}
       <button onclick={() => remove(s)}>Delete</button>
     </div>
   </div>

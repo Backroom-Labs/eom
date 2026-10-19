@@ -46,6 +46,14 @@ void api_broadcast_readings(void) {
     cJSON_AddBoolToObject(root, "hrWait", orgasm_control_is_hr_waiting());
     cJSON_AddBoolToObject(root, "hrZone", orgasm_control_is_hr_edge_zone());
 
+    // Raw pressure for detailed recording: readings are sent at ~15 Hz and taken at 50 Hz, so send
+    // the last 8. rawSeq counts readings since boot; the last one in raw is number rawSeq - 1.
+    uint16_t raw[8];
+    uint32_t raw_seq = orgasm_control_get_raw_pressure(raw, 8);
+    cJSON_AddNumberToObject(root, "rawSeq", raw_seq);
+    cJSON* raw_arr = cJSON_AddArrayToObject(root, "raw");
+    for (int i = 0; i < 8; i++) cJSON_AddItemToArray(raw_arr, cJSON_CreateNumber(raw[i]));
+
     websocket_broadcast(payload, WS_BROADCAST_READINGS);
     cJSON_Delete(payload);
 }

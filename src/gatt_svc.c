@@ -41,6 +41,7 @@ static const ble_uuid16_t status_svc_uuid = BLE_UUID16_INIT(GATTS_SERVICE_EOM_UU
 
 static uint8_t status_chr_val[9] = {0};
 static uint16_t status_chr_val_handle;
+#define BLE_RAW_SAMPLES 16
 static const ble_uuid16_t status_chr_uuid = BLE_UUID16_INIT(GATTS_CHAR_STATUS_UUID); //EOM status
 static uint16_t status_chr_conn_handle = 0;
 static bool status_chr_conn_handle_inited = false;
@@ -263,7 +264,12 @@ static int status_out_chr_access(uint16_t conn_handle, uint16_t attr_handle, str
 
             uint8_t chr_flags = (orgasm_control_is_hr_waiting() ? 0x01 : 0) | (orgasm_control_is_hr_edge_zone() ? 0x02 : 0);
 
-            uint8_t chr_val[27] = {
+            // Raw pressure for detailed recording: the last BLE_RAW_SAMPLES readings. Notifications go
+            // out every 100 ms and readings come at 50 Hz, so this leaves room for a dropped one.
+            uint16_t raw[BLE_RAW_SAMPLES];
+            uint32_t raw_seq = orgasm_control_get_raw_pressure(raw, BLE_RAW_SAMPLES);
+
+            uint8_t chr_val[27 + 3 + 2 * BLE_RAW_SAMPLES] = {
                 (uint8_t)(orgasm_control_get_last_pressure() >> 4), // Scale from 12-bit (0-4095) to 8-bit (0-255)
                 (uint8_t)(orgasm_control_get_arousal() >> 4),
                 (uint8_t)(orgasm_control_get_arousal_threshold() >> 4),
@@ -290,8 +296,15 @@ static int status_out_chr_access(uint16_t conn_handle, uint16_t attr_handle, str
                 (uint8_t)((baseline >> 8) & 0xFF),      // MSB, full 12-bit resolution
                 (uint8_t)(baseline & 0xFF),             // LSB
                 heart_rate_get(),                       // bpm the EOM is using, 0 = none
-                chr_flags                               // bit 0 waiting for heart rate, bit 1 heart-rate edge zone
+                chr_flags,                              // bit 0 waiting for heart rate, bit 1 heart-rate edge zone
+                (uint8_t)((raw_seq >> 8) & 0xFF),       // readings since boot (low 16 bits), MSB
+                (uint8_t)(raw_seq & 0xFF),              // LSB; the last raw sample is number raw_seq - 1
+                BLE_RAW_SAMPLES,                        // raw samples that follow, oldest first, 2 bytes each
             };
+            for (int i = 0; i < BLE_RAW_SAMPLES; i++) {
+                chr_val[30 + 2 * i] = raw[i] >> 8;
+                chr_val[31 + 2 * i] = raw[i] & 0xFF;
+            }
             rc = os_mbuf_append(ctxt->om, chr_val, sizeof(chr_val));
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         }

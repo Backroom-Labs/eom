@@ -15,7 +15,13 @@ export type LiveReading = {
   runMode: string;
   localTime: number;
   hr?: number; // bpm from a heart-rate sensor, if one is connected
+  // Raw pressure readings (firmware 3.6.0): the last few, oldest first, ending at reading number
+  // `end` - 1 (counted since the EOM booted). Overlaps the previous reading's batch.
+  raw?: { end: number; p: number[]; hz: number };
 };
+
+// A run of consecutive raw pressure readings, starting at reading number seq.
+export type RawSegment = { seq: number; p: number[] };
 
 // One row per SAMPLE_MS. Arousal is the peak inside the bucket so edges aren't smoothed away; the
 // rest are the bucket's last reading.
@@ -57,6 +63,12 @@ export type SessionSummary = {
   edgeHrDrops?: number[]; // how far the heart rate fell in the minute after each denial (peak to low)
   orgasmHrPeaks?: number[]; // peak heart rate in the minute before each orgasm
   orgasmHrDrops?: number[]; // how far it fell in the minute after each orgasm
+  // Detailed recording: raw pressure at the EOM's update rate. Reading number rawSeq0 was taken at
+  // rawT0 ms into the session; the rest follow at rawHz.
+  rawSamples?: number;
+  rawHz?: number;
+  rawSeq0?: number;
+  rawT0?: number;
 };
 
 const SAMPLE_MS = 200;
@@ -116,7 +128,7 @@ export async function loadSamples(id: number): Promise<Sample[]> {
   const tx = (await db()).transaction(CHUNKS);
   const range = IDBKeyRange.bound([id, 0], [id, Infinity]);
   const chunks = await request(tx.objectStore(CHUNKS).getAll(range) as IDBRequest<{ n: number; samples: Sample[] }[]>);
-  return chunks.sort((a, b) => a.n - b.n).flatMap((c) => c.samples);
+  return chunks.sort((a, b) => a.n - b.n).flatMap((c) => c.samples ?? []);
 }
 
 export async function deleteSession(id: number): Promise<void> {
@@ -133,11 +145,19 @@ export async function deleteAllSessions(): Promise<void> {
   await done(tx);
 }
 
-async function saveChunk(summary: SessionSummary, n: number, samples: Sample[]) {
+async function saveChunk(summary: SessionSummary, n: number, samples: Sample[], raw: RawSegment[] = []) {
   const tx = (await db()).transaction([SESSIONS, CHUNKS], "readwrite");
   tx.objectStore(SESSIONS).put(plainCopy(summary));
-  if (samples.length) tx.objectStore(CHUNKS).put({ id: summary.id, n, samples });
+  if (samples.length || raw.length) tx.objectStore(CHUNKS).put({ id: summary.id, n, samples, ...(raw.length ? { raw } : {}) });
   await done(tx);
+}
+
+// Detailed recording: the session's raw pressure segments, in order.
+export async function loadRaw(id: number): Promise<RawSegment[]> {
+  const tx = (await db()).transaction(CHUNKS);
+  const range = IDBKeyRange.bound([id, 0], [id, Infinity]);
+  const chunks = await request(tx.objectStore(CHUNKS).getAll(range) as IDBRequest<{ n: number; raw?: RawSegment[] }[]>);
+  return chunks.sort((a, b) => a.n - b.n).flatMap((c) => c.raw ?? []);
 }
 
 // Structured clone can't copy Svelte proxies; summaries are plain objects but be safe.
@@ -172,6 +192,8 @@ type Current = {
   hrN: number;
   // Denials and orgasms in the last minute, for how far the heart rate falls afterwards.
   hrWatch: { t: number; orgasm: boolean; peak: number; low: number }[];
+  rawPending: RawSegment[];
+  rawNext: number; // next raw reading number expected, -1 before the first
   aboveThreshold: boolean;
 };
 
@@ -183,6 +205,7 @@ function closeHrWatch(s: SessionSummary, w: Current["hrWatch"][number]) {
 export class Recorder {
   private current: Current | null = null;
   enabled = true;
+  detailed = false; // also keep raw pressure at the EOM's update rate
   // Called after a session is saved for the last time.
   onSessionEnd?: (summary: SessionSummary | null) => void;
 
@@ -206,7 +229,7 @@ export class Recorder {
           baselineStart: r.baseline ?? 0, baselineEnd: r.baseline ?? 0, orgasmPeaks: [],
         },
         chunkNo: 0, stored: 0, pending: [], recent: [], bucketStart: now, bucketPeak: r.arousal, last: r,
-        lastActive: now, lastFlush: now, pleasureSum: 0, pleasureN: 0, hrSum: 0, hrN: 0, hrWatch: [], aboveThreshold: false,
+        lastActive: now, lastFlush: now, pleasureSum: 0, pleasureN: 0, hrSum: 0, hrN: 0, hrWatch: [], rawPending: [], rawNext: -1, aboveThreshold: false,
       };
     }
     const c = this.current;
@@ -235,6 +258,7 @@ export class Recorder {
       }
     }
     if (r.hr) this.watchHr(r.hr, now);
+    if (r.raw && this.detailed) this.addRaw(r.raw, now);
     const above = r.arousal > r.threshold && r.motor > 0;
     if (above && !c.aboveThreshold) s.edges++;
     c.aboveThreshold = r.arousal > r.threshold;
@@ -256,6 +280,28 @@ export class Recorder {
       else w.low = Math.min(w.low, hr);
     }
     while (c.hrWatch.length && now - c.hrWatch[0].t > HR_DROP_WINDOW_MS) closeHrWatch(c.summary, c.hrWatch.shift()!);
+  }
+
+  // Keep only raw readings not seen yet; a jump in numbering (missed notifications, reconnect)
+  // starts a new segment.
+  private addRaw(raw: NonNullable<LiveReading["raw"]>, now: number) {
+    const c = this.current!;
+    const s = c.summary;
+    const start = raw.end - raw.p.length;
+    if (s.rawSeq0 === undefined) {
+      s.rawHz = raw.hz;
+      s.rawSeq0 = raw.end - 1;
+      s.rawT0 = now - s.start;
+      s.rawSamples = 0;
+    }
+    if (raw.end <= c.rawNext) return;
+    const from = Math.max(start, c.rawNext);
+    const fresh = raw.p.slice(from - start);
+    const last = c.rawPending[c.rawPending.length - 1];
+    if (last && last.seq + last.p.length === from) last.p.push(...fresh);
+    else c.rawPending.push({ seq: from, p: fresh });
+    c.rawNext = raw.end;
+    s.rawSamples! += fresh.length;
   }
 
   // Call every few seconds: ends a session whose readings stopped (disconnected).
@@ -306,7 +352,9 @@ export class Recorder {
     c.stored += samples.length;
     c.summary.samples = c.stored;
     c.lastFlush = c.last.localTime;
-    saveChunk(c.summary, c.chunkNo++, samples).catch((err) => console.error("Couldn't save session history:", err));
+    const raw = c.rawPending;
+    c.rawPending = [];
+    saveChunk(c.summary, c.chunkNo++, samples, raw).catch((err) => console.error("Couldn't save session history:", err));
   }
 
   // Finish the current session (also called when recording is turned off).
@@ -327,7 +375,7 @@ export class Recorder {
       return;
     }
     const summary = c.summary;
-    saveChunk(summary, c.chunkNo, c.pending)
+    saveChunk(summary, c.chunkNo, c.pending, c.rawPending)
       .then(pruneOldSessions)
       .then(() => this.onSessionEnd?.(summary))
       .catch((err) => console.error("Couldn't save session history:", err));
@@ -345,6 +393,26 @@ export function toCsv(summary: SessionSummary, samples: Sample[]): string {
     ),
   ];
   return `# EOM session ${new Date(summary.start).toISOString()}\n${rows.join("\n")}\n`;
+}
+
+// Detailed CSV: one row per raw pressure reading, with the other values from the 5 Hz samples
+// (the latest one at or before that time).
+export function toDetailedCsv(summary: SessionSummary, samples: Sample[], raw: RawSegment[]): string {
+  const hz = summary.rawHz || 50;
+  const seq0 = summary.rawSeq0 ?? 0;
+  const t0 = summary.rawT0 ?? 0;
+  const rows = ["time_s,reading,pressure_raw,arousal_peak,pleasure,edge_threshold,denials,orgasms,heart_rate"];
+  let j = 0;
+  for (const seg of raw) {
+    seg.p.forEach((p, i) => {
+      const seq = seg.seq + i;
+      const t = t0 + ((seq - seq0) * 1000) / hz;
+      while (j + 1 < samples.length && samples[j + 1][0] <= t) j++;
+      const x = samples[j];
+      rows.push([(t / 1000).toFixed(3), seq, p, x?.[2] ?? "", x?.[3] ?? "", x?.[4] ?? "", x?.[5] ?? "", x?.[6] ?? "", x?.[10] || ""].join(","));
+    });
+  }
+  return `# EOM session ${new Date(summary.start).toISOString()}, raw pressure at ${hz} Hz\n${rows.join("\n")}\n`;
 }
 
 export function csvFileName(summary: SessionSummary): string {
