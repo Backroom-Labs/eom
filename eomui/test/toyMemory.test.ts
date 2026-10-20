@@ -67,3 +67,24 @@ test("with no saved preferences to use, toys still connect at full range on Manu
   new ToyMemory(undefined).restore("Domi", [after]);
   assert.deepEqual([after.min, after.max, after.invert, after.mode], [0, 255, false, "manual"]);
 });
+
+test("saved settings that aren't valid are ignored, and ranges are kept within 0-255", () => {
+  const storage = fakeStorage();
+  const key = (index: number) => JSON.stringify(["Domi", "Vibrate", index]);
+  storage.setItem("eom.toyControls", JSON.stringify({
+    [key(0)]: { min: -20, max: 300, invert: true }, // out of bounds: clamped
+    [key(1)]: { min: 200, max: 40, invert: true }, // min above max: ignored
+    [key(2)]: { min: "40", max: 200, invert: false }, // not a number: ignored
+    [key(3)]: { min: 40, max: 200, invert: "yes" }, // invert not true or false: ignored
+    [key(4)]: "nonsense",
+  }));
+  const controls = [0, 1, 2, 3, 4].map((index) => ({ ...vibrator(), index }));
+  new ToyMemory(storage).restore("Domi", controls);
+  assert.deepEqual(controls.map((c) => [c.min, c.max, c.invert]), [
+    [0, 255, true],
+    [0, 255, false],
+    [0, 255, false],
+    [0, 255, false],
+    [0, 255, false],
+  ]);
+});
