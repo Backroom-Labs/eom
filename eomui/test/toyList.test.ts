@@ -11,7 +11,7 @@ function recordingToy() {
   const calls: string[] = [];
   const toy: Toy = {
     key: {},
-    status: () => ({ name: "Toy", level: 0, follows: "Manual" }),
+    status: () => ({ name: "Toy", strength: 0, follows: [] }),
     follow: () => { calls.push("follow"); },
     stop: async () => { calls.push("stop"); },
   };
@@ -288,14 +288,14 @@ test("the toy strip has nothing when no toy is connected", () => {
   assert.deepEqual(new ToyList().strip(), []);
 });
 
-test("the toy strip shows each toy's name, live level and what its toy controls follow", async () => {
+test("the toy strip shows each toy's name, live strength and what its toy controls follow", async () => {
   const { toys, bp, ossm } = listOfBoth();
   assert.deepEqual(toys.strip(), [
-    { key: bp.toy.key, name: "Domi", level: 100, follows: "Arousal" },
-    { key: ossm.ossm, name: "OSSM", level: 100, follows: "Pleasure, Arousal" },
+    { key: bp.toy.key, name: "Domi", strength: 100, follows: ["arousal"] },
+    { key: ossm.ossm, name: "OSSM", strength: 100, follows: ["pleasure", "arousal"] },
   ]);
   await toys.follow(AROUSAL_HALF, 20);
-  assert.equal(toys.strip()[0].level, 50);
+  assert.equal(toys.strip()[0].strength, 50);
 });
 
 test("the screen is told when a toy connects or leaves, so the strip shows and hides", () => {
@@ -308,6 +308,14 @@ test("the screen is told when a toy connects or leaves, so the strip shows and h
   assert.deepEqual(shown, [["Toy"], []]);
 });
 
+test("the screen isn't told when a toy that isn't connected leaves", () => {
+  const toys = new ToyList();
+  let told = 0;
+  toys.onChange(() => told++);
+  toys.remove({});
+  assert.equal(told, 0);
+});
+
 // To resume, the user picks what it follows in the Toys drawer.
 test("stopping one toy from the strip stops just that toy, and it stays stopped through later readings", async () => {
   const { toys, bp, ossm } = listOfBoth();
@@ -316,9 +324,9 @@ test("stopping one toy from the strip stops just that toy, and it stays stopped 
   const sent = bp.sent().length;
   await toys.follow(PLEASURE_FULL, 20);
   await settle();
-  assert.deepEqual(toys.strip().map(({ name, level, follows }) => ({ name, level, follows })), [
-    { name: "Domi", level: 0, follows: "Manual" },
-    { name: "OSSM", level: 100, follows: "Pleasure, Arousal" },
+  assert.deepEqual(toys.strip().map(({ name, strength, follows }) => ({ name, strength, follows })), [
+    { name: "Domi", strength: 0, follows: [] },
+    { name: "OSSM", strength: 100, follows: ["pleasure", "arousal"] },
   ]);
   assert.equal(bp.sent().length, sent, "nothing sent after the stop");
   assert.equal(ossm.ossm.controls.stroke.value, 100, "the OSSM still follows");

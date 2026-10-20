@@ -2,25 +2,27 @@
 
 import { InputType } from "buttplug";
 import type { ButtplugToy, ButtplugToyControl } from "./toyList.ts";
-import { DEFAULT_LEVELS, rangeOf, type FollowMode, type ToyControl } from "./toyOutput.ts";
+import { FOLLOW_MODES, percentOf, rangeOf, type FollowMode, type ToyControl } from "./toyOutput.ts";
+
+const LABELS: Record<FollowMode, string> = {
+  manual: "Manual",
+  pleasure: "Pleasure",
+  arousal: "Arousal",
+  pressure: "Pressure",
+  denied: "Denials",
+};
 
 // What a toy control can follow, in the order the drawer offers them.
-export const FOLLOWS: readonly { mode: FollowMode; label: string }[] = [
-  { mode: "manual", label: "Manual" },
-  { mode: "pleasure", label: "Pleasure" },
-  { mode: "arousal", label: "Arousal" },
-  { mode: "pressure", label: "Pressure" },
-  { mode: "denied", label: "Denials" },
-];
+export const FOLLOWS: readonly { mode: FollowMode; label: string }[] = FOLLOW_MODES.map((mode) => ({ mode, label: LABELS[mode] }));
+
+// What a toy or toy control follows, e.g. "Follows pleasure, arousal", or "Manual" if nothing.
+export function followsText(follows: readonly FollowMode[]): string {
+  const following = follows.filter((mode) => mode !== "manual");
+  return following.length ? `Follows ${following.map((mode) => LABELS[mode].toLowerCase()).join(", ")}` : "Manual";
+}
 
 // A 0-255 value as a whole percent.
-export const percent255 = (value: number) => Math.round((value / 255) * 100);
-
-// The toy level the toy was last set to, in %, for the control's value pill. 0 until it's set.
-export function toyLevelPercent(control: Pick<ToyControl, "toyLevel" | "levels">): number {
-  const n = control.levels && control.levels > 0 ? control.levels : DEFAULT_LEVELS;
-  return Math.round(((control.toyLevel ?? 0) / n) * 100);
-}
+export const percent255 = (value: number) => percentOf(value, 0, 255);
 
 // Moves one end of the control's range (0-255), stopping at the other end so they can't cross.
 // Returns where it ended up, for the slider thumb.
@@ -42,8 +44,7 @@ export function minThumbOnTop(control: Pick<ToyControl, "min" | "max">): boolean
 // e.g. "Follows pleasure between 20% and 80%." Inverted, it gives the levels the toy really gets.
 export function toyControlHelp(control: ToyControl): string {
   const mode = control.mode ?? "manual";
-  const label = FOLLOWS.find((f) => f.mode === mode)?.label.toLowerCase() ?? mode;
-  const what = mode === "manual" ? "Set by hand" : `Follows ${label}`;
+  const what = mode === "manual" ? "Set by hand" : followsText([mode]);
   const { min, max } = rangeOf(control);
   if (control.invert) return `${what} inverted, from ${percent255(255 - min)}% down to ${percent255(255 - max)}%.`;
   return `${what} between ${percent255(min)}% and ${percent255(max)}%.`;
