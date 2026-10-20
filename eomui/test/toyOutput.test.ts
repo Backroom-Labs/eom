@@ -1,28 +1,30 @@
 // Run from eomui/: node --test test/*.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ToyFollower, DEFAULT_MIN, DEFAULT_MAX, type ToyControl, type ToyReading } from "../src/lib/toyOutput.ts";
+import { ToyFollower, setToyPercent, disconnectToy, DEFAULT_MIN, DEFAULT_MAX, type ToyControl, type ToyReading } from "../src/lib/toyOutput.ts";
+// @ts-ignore - the vendored v4 bundle has no matching typings
+import { ButtplugClientDevice } from "../buttplug/buttplug.mjs";
 
 const READING_HZ = 15; // the EOM's WebSocket readings rate
 const DOMI_STEPS = 20; // Lovense vibrate levels
 const MAX_COMMANDS_PER_S = 10;
 
-type Sent = { t: number; scalar: number };
+type Sent = { t: number; percent: number };
 
 function run(control: ToyControl, readings: ToyReading[]): Sent[] {
   const follower = new ToyFollower(control, DOMI_STEPS);
   const sent: Sent[] = [];
   readings.forEach((r, i) => {
     const t = (i * 1000) / READING_HZ;
-    const scalar = follower.onReading(r, 20, t);
-    if (scalar !== null) sent.push({ t, scalar });
+    const percent = follower.onReading(r, 20, t);
+    if (percent !== null) sent.push({ t, percent });
   });
   return sent;
 }
 
 const reading = (motor: number, arousal = 0): ToyReading => ({ motor, arousal, pressure: 0, denied: 0 });
 const seconds = (s: number) => Math.round(s * READING_HZ);
-const step = (scalar: number) => Math.round(scalar * DOMI_STEPS);
+const step = (percent: number) => Math.round(percent * DOMI_STEPS);
 
 // A ramp from 0 to full over 120 s, an edge stop, then full motor.
 function rampSession(): ToyReading[] {
@@ -56,20 +58,20 @@ function maxPerSecond(sent: Sent[]): number {
 
 test("full motor drives the toy at full power", () => {
   const sent = run(newControl("pleasure"), rampSession());
-  assert.equal(sent.at(-1)!.scalar, 1);
+  assert.equal(sent.at(-1)!.percent, 1);
 });
 
 test("the toy is sent 0 promptly when the motor stops for an edge", () => {
   const readings = rampSession();
   const stopAt = (seconds(120) * 1000) / READING_HZ;
   const sent = run(newControl("pleasure"), readings);
-  const zero = sent.find((s) => s.t >= stopAt && s.scalar === 0);
+  const zero = sent.find((s) => s.t >= stopAt && s.percent === 0);
   assert.ok(zero && zero.t - stopAt <= 200, `stop sent at ${zero?.t}`);
 });
 
 test("following the ramp, every command changes the toy's level", () => {
   const sent = run(newControl("pleasure"), rampSession());
-  const repeats = sent.filter((s, i) => i > 0 && step(s.scalar) === step(sent[i - 1].scalar));
+  const repeats = sent.filter((s, i) => i > 0 && step(s.percent) === step(sent[i - 1].percent));
   assert.equal(repeats.length, 0, `${repeats.length} of ${sent.length} commands left the level unchanged`);
 });
 
@@ -83,4 +85,51 @@ test("an inverted control runs full when the motor is off and stops at full moto
   const follower = new ToyFollower(control, DOMI_STEPS);
   assert.equal(follower.onReading(reading(0), 20, 0), 1);
   assert.equal(follower.onReading(reading(255), 20, 1000), 0);
+});
+
+// A toy on the real Buttplug client, with the wire to the server replaced by a list of sent messages.
+function fakeToy(output: Record<string, unknown>) {
+  const sent: any[] = [];
+  const device = ButtplugClientDevice.fromMsg(
+    { DeviceIndex: 3, DeviceName: "Toy", DeviceFeatures: { "0": { FeatureIndex: 0, Output: output } } },
+    async (msg: unknown) => { sent.push(msg); return { Ok: { Id: 1 } }; },
+  );
+  return { device, feature: device.features.get(0), sent };
+}
+
+test("a vibrator control is set through Buttplug as a percent", async () => {
+  const { feature, sent } = fakeToy({ Vibrate: { Value: DOMI_STEPS } });
+  await setToyPercent(feature, "Vibrate", 0.45);
+  assert.deepEqual(sent.map((m) => m.ScalarCmd?.Scalars), [[{ Index: 0, Scalar: 0.45, ActuatorType: "Vibrate" }]]);
+});
+
+test("a stroker control is moved through Buttplug to a percent position", async () => {
+  const { feature, sent } = fakeToy({ HwPositionWithDuration: { Value: 100 } });
+  await setToyPercent(feature, "HwPositionWithDuration", 0.25);
+  assert.deepEqual(sent.map((m) => m.LinearCmd?.Vectors), [[{ Index: 0, Position: 0.25, Duration: 100 }]]);
+});
+
+test("disconnecting a toy stops it through Buttplug", async () => {
+  const { device, sent } = fakeToy({ Vibrate: { Value: DOMI_STEPS } });
+  await disconnectToy(device);
+  assert.deepEqual(sent, [{ StopDeviceCmd: { Id: 1, DeviceIndex: 3 } }]);
+});
+
+test("a toy that can't be reached still disconnects", async () => {
+  const device = ButtplugClientDevice.fromMsg(
+    { DeviceIndex: 3, DeviceName: "Toy", DeviceFeatures: {} },
+    async () => { throw new Error("GATT Server is disconnected"); },
+  );
+  let removed = false;
+  device.on("deviceremoved", () => (removed = true));
+  await disconnectToy(device);
+  assert.ok(removed);
+});
+
+test("an output Buttplug can't set fails as a rejected promise, so callers can catch it", async () => {
+  const { feature, sent } = fakeToy({ Position: { Value: 100 } });
+  let call: Promise<void> | undefined;
+  assert.doesNotThrow(() => { call = setToyPercent(feature, "Position", 0.5); });
+  await assert.rejects(call!);
+  assert.equal(sent.length, 0);
 });

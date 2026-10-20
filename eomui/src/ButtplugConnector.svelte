@@ -4,11 +4,10 @@
   import { ButtplugWasmClientConnector } from "../buttplug/wasm/buttplug-wasm.mjs";
   // @ts-ignore - local prebuilt buttplug v4 bundle does not ship matching TS typings
   import { ButtplugClient, ButtplugClientDevice, DeviceOutput, OutputType, InputType, DeviceOutputCommand } from "../buttplug/buttplug.mjs";
-  // Type-only stand-ins: the prebuilt bundle has no typings for these
+  // Type-only stand-in: the prebuilt bundle has no typings for this
   type ButtplugClientDeviceFeature = { [key: string]: any };
-  type ButtplugMessage = unknown;
 import { BleClient } from "@capacitor-community/bluetooth-le";
-  import { ToyFollower, DEFAULT_MIN, DEFAULT_MAX, scalarFor } from "./lib/toyOutput";
+  import { ToyFollower, DEFAULT_MIN, DEFAULT_MAX, percentFor, setToyPercent, disconnectToy, type ToyFeature } from "./lib/toyOutput";
 
   const isCapacitorNative =
     typeof window !== "undefined" &&
@@ -389,6 +388,7 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
     type: OutputType;
     // attributes: any[];
     index: number;
+    feature: ToyFeature; // kept because spreading the client's feature drops its methods
     // descriptor: string;
     
     mode?: string;
@@ -466,6 +466,7 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
         const control = {
           ...feature,
           index: idx,
+          feature,
           //descriptor: feature.FeatureDescriptor || `Vibrate ${idx + 1}`,
           mode: "manual",
           invert: false,
@@ -554,30 +555,20 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
   // The slider was moved by hand. value is 0-1.
   export function handleDeviceChange(device: ButtplugClientDevice, control: EOMButtplugClientDeviceControl, value: number) {
     control.follower?.forget();
-    sendScalar(device, control, scalarFor(control, value));
+    sendPercent(device, control, percentFor(control, value));
   }
 
   // Follow an EOM reading, sending the toy a command only when its level changes.
   export function followReading(device: ButtplugClientDevice, control: EOMButtplugClientDeviceControl, reading: any, maxDenied: number) {
-    const scalar = control.follower?.onReading(reading, maxDenied, performance.now());
-    if (scalar === null || scalar === undefined) return;
+    const percent = control.follower?.onReading(reading, maxDenied, performance.now());
+    if (percent === null || percent === undefined) return;
     if (control.sliderElement) control.sliderElement.value = String(control.follower!.sliderValue);
-    sendScalar(device, control, scalar);
+    sendPercent(device, control, percent);
   }
 
-  function sendScalar(device: ButtplugClientDevice, control: EOMButtplugClientDeviceControl, normalizedValue: number) {
-    console.log(`Setting device ${device.name} (${control.type}) feature ${control.index} to ${normalizedValue} (min: ${control.min}, max: ${control.max}, invert: ${control.invert})`);
-    device
-      .send({
-        ScalarCmd: {
-          DeviceIndex: device.index,
-          Scalars: [{ 
-            Index: control.index, 
-            Scalar: normalizedValue,
-            ActuatorType: control.type 
-          }],
-        },
-      } as unknown as ButtplugMessage)
+  function sendPercent(device: ButtplugClientDevice, control: EOMButtplugClientDeviceControl, percent: number) {
+    console.log(`Setting device ${device.name} (${control.type}) feature ${control.index} to ${percent} (min: ${control.min}, max: ${control.max}, invert: ${control.invert})`);
+    setToyPercent(control.feature, control.type, percent)
       .catch((err) => console.error(`Error sending command to device ${device.name}:`, err));
   }
 </script>
@@ -603,8 +594,7 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
               style="color: red; float:right; padding: 0 .25em 0 .25em; font-size: 1.25em; background: #444; cursor: pointer; line-height: .05em; display: flex; align-items: center; justify-content: center;"
               aria-label="Close settings"
               onclick={async () => {
-                await device.stop();
-                device.emitDisconnected();
+                await disconnectToy(device);
                 device.removeAllListeners();
                 deviceList = deviceList.filter(d => d !== device);
                 }}
