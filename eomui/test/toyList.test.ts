@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { ToyList, buttplugToy, ossmToy, type Toy, type ButtplugToyControl } from "../src/lib/toyList.ts";
 import { type ToyReading } from "../src/lib/toyOutput.ts";
 import { fakeToy, settle } from "./fakeToy.ts";
+import { setRangeEnd, toyControlChanged } from "../src/lib/toyControlView.ts";
 
 // A toy that records what the list asks of it.
 function recordingToy() {
@@ -245,4 +246,37 @@ test("a stop with toys connected says so, so the user knows they're on Manual", 
   toys.add(recordingToy().toy);
   await toys.stopAll();
   assert.equal(told, 1);
+});
+
+test("a Buttplug toy keeps the toy level it set each control to, and 0 after a stop", async () => {
+  const t = fakeButtplugToy("manual");
+  t.toy.setByHand(t.control, 0.5);
+  assert.equal(t.control.toyLevel, 10);
+  t.control.mode = "arousal";
+  t.toy.follow(AROUSAL_FULL, 20);
+  assert.equal(t.control.toyLevel, 20);
+  await t.toy.stop();
+  assert.equal(t.control.toyLevel, 0);
+});
+
+// So the toy and the value pill agree with the new range or invert.
+test("changing a Manual control's range or invert sets the toy again from where its slider is", async () => {
+  const t = fakeButtplugToy("manual");
+  t.toy.setByHand(t.control, 0.5);
+  setRangeEnd(t.control, "max", 128);
+  toyControlChanged(t.toy, t.control, 128);
+  assert.equal(t.control.toyLevel, 5);
+  t.control.invert = true;
+  toyControlChanged(t.toy, t.control, 128);
+  assert.equal(t.control.toyLevel, 15);
+  await new Promise((resolve) => setTimeout(resolve, 150)); // past the toy's command gap
+  // Paced: 5 was still waiting for the gap when 15 replaced it.
+  assert.deepEqual(t.sent().map((c) => c.Vibrate.Value), [10, 15]);
+});
+
+test("changing a following control's range leaves it to the next reading", () => {
+  const t = fakeButtplugToy("arousal");
+  setRangeEnd(t.control, "max", 128);
+  toyControlChanged(t.toy, t.control, 0);
+  assert.equal(t.control.toyLevel, undefined);
 });

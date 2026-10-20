@@ -1,7 +1,7 @@
 // Every connected toy (Buttplug toys and OSSMs) in one list, which follows EOM readings and can
 // stop them all.
 
-import { followFraction, levelFor, toyLevels, ToyFollower, ToyPacer, type PacedControl, type ToyControl, type ToyReading } from "./toyOutput.ts";
+import { followFraction, levelFor, toyLevels, ToyFollower, ToyPacer, type FollowMode, type PacedControl, type ToyControl, type ToyReading } from "./toyOutput.ts";
 
 // One connected toy, whatever kind it is.
 export interface Toy {
@@ -88,8 +88,13 @@ export function buttplugToy<C extends ButtplugToyControl>(
 ): ButtplugToy<C> {
   const pacer = new ToyPacer(handle);
   const controls = (handle.controls ?? []).filter((control) => control.type);
-  const levels = new Map(controls.map((c) => [c, toyLevels(c.feature, c.type!)]));
-  const followers = new Map(controls.map((c) => [c, new ToyFollower(c, levels.get(c))]));
+  for (const control of controls) control.levels ??= toyLevels(control.feature, control.type!);
+  const followers = new Map(controls.map((c) => [c, new ToyFollower(c, c.levels)]));
+  // Every toy level goes through here, so each control knows the level its toy was set to.
+  const setLevel = (control: C, level: number) => {
+    control.toyLevel = level;
+    pacer.set(control, level);
+  };
   return {
     key: handle,
     follow(r, maxDenied) {
@@ -98,15 +103,16 @@ export function buttplugToy<C extends ButtplugToyControl>(
         const level = follower.onReading(r, maxDenied);
         if (level === null) continue;
         show(control, follower.sliderValue);
-        pacer.set(control, level);
+        setLevel(control, level);
       }
     },
     setByHand(control, fraction) {
-      pacer.set(control, levelFor(control, fraction, levels.get(control)));
+      setLevel(control, levelFor(control, fraction, control.levels));
     },
     async stop() {
       for (const control of controls) {
         control.mode = "manual";
+        control.toyLevel = 0;
         show(control, 0);
       }
       try {
@@ -150,7 +156,7 @@ export function ossmToy(ossm: OssmHandle): Toy {
     follow(r, maxDenied) {
       for (const [name, control] of Object.entries(ossm.controls)) {
         if (!control.mode || control.mode === "manual") continue;
-        let value = Math.min(1, Math.max(0, followFraction(control.mode, r, maxDenied)));
+        let value = Math.min(1, Math.max(0, followFraction(control.mode as FollowMode, r, maxDenied)));
         if (control.inverted) value = 1 - value;
         const min = control.limitMin ?? control.min;
         const max = control.limitMax ?? control.max;

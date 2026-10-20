@@ -1,5 +1,6 @@
 <script lang="ts">
   import { BleClient } from '@capacitor-community/bluetooth-le';
+  import { errorMessage } from './lib/errors';
 
   let BTLEDdeviceId: string | null = $state(null);
   let deviceConfig: LEDdevice | undefined = $state(undefined);
@@ -111,7 +112,7 @@
 
     } catch (err) {
       console.error("Bluetooth connection failed:", err);
-      const text = err instanceof Error ? err.message : String(err);
+      const text = errorMessage(err);
       // Closing the device picker isn't an error worth showing.
       if (!/cancel/i.test(text)) error = `Couldn't connect to the light: ${text}`;
       BTLEDconnected = false;
