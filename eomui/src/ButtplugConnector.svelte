@@ -3,10 +3,11 @@
   import { ButtplugWasmClientConnector } from "buttplug-wasm";
   import { ButtplugClient, ButtplugClientDevice, OutputType } from "buttplug";
   import { BleClient } from "@capacitor-community/bluetooth-le";
-  import { DEFAULT_MIN, DEFAULT_MAX, disconnectToy, rangeOf, type FollowMode, type ToyFeature } from "./lib/toyOutput";
+  import { DEFAULT_MIN, DEFAULT_MAX, disconnectToy, rangeOf, toyLevelPercent, type FollowMode, type ToyFeature } from "./lib/toyOutput";
   import { buttplugToy, type ButtplugToy, type ToyList } from "./lib/toyList";
-  import { FOLLOWS, minThumbOnTop, percent255, readToyBattery, setRangeEnd, toyControlChanged, toyControlHelp, toyLevelPercent } from "./lib/toyControlView";
+  import { FOLLOWS, minThumbOnTop, percent255, readToyBattery, setRangeEnd, toyControlChanged, toyControlHelp } from "./lib/toyControlView";
   import { ToyMemory } from "./lib/toyMemory";
+  import { savedPreferences } from "./lib/savedPreferences";
   import { errorMessage } from "./lib/errors";
   import SettingControl from "./lib/SettingControl.svelte";
   import type { SettingDef } from "./lib/settings";
@@ -421,13 +422,7 @@
   const BATTERY_REFRESH_MS = 60_000;
 
   // Each toy control's range and invert, kept in this phone's or browser's saved preferences.
-  const toyMemory = new ToyMemory((() => {
-    try {
-      return localStorage;
-    } catch {
-      return undefined; // storage blocked: toys connect at full range, as before
-    }
-  })());
+  const toyMemory = new ToyMemory(savedPreferences);
 
   async function initialize_buttplug() {
     // Split transport strategy:
@@ -577,15 +572,15 @@
   }
 
   // Moves one end of the control's range, and sets a Manual toy to match. Returns where it ended up.
+  // The range is remembered once the thumb is let go (rememberRangeAndInvert), not on every step.
   function setRange(device: EOMButtplugClientDevice, control: EOMButtplugClientDeviceControl, end: "min" | "max", value: number): number {
     const at = setRangeEnd(control, end, value);
-    rangeOrInvertChanged(device, control);
+    toyControlChanged(device.toy, control, control.sliderPosition);
     return at;
   }
 
-  // Sets a Manual toy to match, and remembers the range and invert for when the toy reconnects.
-  function rangeOrInvertChanged(device: EOMButtplugClientDevice, control: EOMButtplugClientDeviceControl) {
-    toyControlChanged(device.toy, control, control.sliderPosition);
+  // Remembers the range and invert for when the toy reconnects.
+  function rememberRangeAndInvert(device: EOMButtplugClientDevice, control: EOMButtplugClientDeviceControl) {
     toyMemory.save(device.name, control);
   }
 
@@ -655,6 +650,7 @@
           aria-label="{control.type} range minimum"
           style:z-index={minThumbOnTop(control) ? 2 : 1}
           oninput={(e) => (e.currentTarget.value = String(setRange(device, control, "min", Number(e.currentTarget.value))))}
+          onchange={() => rememberRangeAndInvert(device, control)}
         />
         <input
           type="range"
@@ -664,13 +660,15 @@
           value={max}
           aria-label="{control.type} range maximum"
           oninput={(e) => (e.currentTarget.value = String(setRange(device, control, "max", Number(e.currentTarget.value))))}
+          onchange={() => rememberRangeAndInvert(device, control)}
         />
       </div>
     </div>
 
     <SettingControl def={invertDef(id)} value={control.invert ?? false} onchange={(_, v) => {
       control.invert = Boolean(v);
-      rangeOrInvertChanged(device, control);
+      toyControlChanged(device.toy, control, control.sliderPosition);
+      rememberRangeAndInvert(device, control);
     }} />
   </div>
 {/snippet}

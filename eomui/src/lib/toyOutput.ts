@@ -5,8 +5,9 @@ import { DeviceOutput, type IButtplugClientDeviceFeature, type OutputType } from
 
 export type ToyReading = { motor: number; arousal: number; pressure: number; denied?: number };
 
-// What a toy control follows, or "manual" when it's set by hand.
-export type FollowMode = "manual" | "pleasure" | "arousal" | "pressure" | "denied";
+// What a toy control can follow, or "manual" when it's set by hand, in the order the app lists them.
+export const FOLLOW_MODES = ["manual", "pleasure", "arousal", "pressure", "denied"] as const;
+export type FollowMode = (typeof FOLLOW_MODES)[number];
 
 export type ToyControl = {
   mode?: FollowMode;
@@ -35,6 +36,15 @@ export function commandGapMs(toy: { messageTimingGap?: number }): number {
 
 // Used when the toy doesn't say how many toy levels it has.
 export const DEFAULT_LEVELS = 100;
+
+// Where value sits between from and to, as a whole percent.
+export const percentOf = (value: number, from: number, to: number) => Math.round(((value - from) / (to - from)) * 100);
+
+// The toy level the toy was last set to, in %. 0 until it's set.
+export function toyLevelPercent(control: Pick<ToyControl, "toyLevel" | "levels">): number {
+  const n = control.levels && control.levels > 0 ? control.levels : DEFAULT_LEVELS;
+  return percentOf(control.toyLevel ?? 0, 0, n);
+}
 
 // The control's range, 0-255 at each end.
 export function rangeOf(control: Pick<ToyControl, "min" | "max">): { min: number; max: number } {

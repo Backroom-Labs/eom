@@ -23,6 +23,8 @@
     type SettingValue,
   } from "./lib/settings";
   import { ToyList } from "./lib/toyList";
+  import { followsText } from "./lib/toyControlView";
+  import { savedPreferences } from "./lib/savedPreferences";
 
   // ---------------------------------------------------------------------------------------------
   // Types and constants
@@ -118,10 +120,10 @@
       recordSessions: true,
       detailedRecording: false,
     };
+    const legacy = savedPreferences.getItem(LEGACY_WS_URL_KEY);
+    if (legacy) defaults.wsUrl = legacy;
     try {
-      const legacy = localStorage.getItem(LEGACY_WS_URL_KEY);
-      if (legacy) defaults.wsUrl = legacy;
-      return { ...defaults, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") };
+      return { ...defaults, ...JSON.parse(savedPreferences.getItem(PREFS_KEY) ?? "{}") };
     } catch {
       return defaults;
     }
@@ -129,10 +131,7 @@
 
   let prefs = $state(loadPrefs());
   $effect(() => {
-    const snapshot = JSON.stringify(prefs);
-    try {
-      localStorage.setItem(PREFS_KEY, snapshot);
-    } catch {}
+    savedPreferences.setItem(PREFS_KEY, JSON.stringify(prefs));
   });
 
   // ---------------------------------------------------------------------------------------------
@@ -177,7 +176,7 @@
   // Every connected Buttplug toy and OSSM. A stop switches them to Manual, which is easy to miss.
   const toys = new ToyList(() => showToast("Toys stopped and switched to Manual"));
   const logToyError = (err: unknown) => console.error("Error driving toys:", err);
-  // The toy strip on the main screen. Toys coming and going bump the version; live levels and
+  // The toy strip on the main screen. Toys coming and going bump the version; live strengths and
   // modes update by themselves, as each toy's controls are reactive.
   let toysVersion = $state(0);
   toys.onChange(() => toysVersion++);
@@ -1149,9 +1148,9 @@
             <li>
               <div class="toyInfo">
                 <span class="toyName">{toy.name}</span>
-                <span class="toyFollows">{toy.follows === "Manual" ? "Manual" : `Follows ${toy.follows.toLowerCase()}`}</span>
+                <span class="toyFollows">{followsText(toy.follows)}</span>
               </div>
-              <span class="pill">{toy.level}%</span>
+              <span class="pill">{toy.strength}%</span>
               <button
                 class="iconBtn toyStop"
                 aria-label="Stop {toy.name}"
