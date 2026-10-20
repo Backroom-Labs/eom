@@ -5,11 +5,16 @@ import { DeviceOutput, type IButtplugClientDeviceFeature, type OutputType } from
 
 export type ToyReading = { motor: number; arousal: number; pressure: number; denied?: number };
 
+// What a toy control follows, or "manual" when it's set by hand.
+export type FollowMode = "manual" | "pleasure" | "arousal" | "pressure" | "denied";
+
 export type ToyControl = {
-  mode?: string;
+  mode?: FollowMode;
   invert?: boolean;
   min?: number; // 0-255
   max?: number; // 0-255
+  levels?: number; // how many toy levels the toy has for this output, if it says
+  toyLevel?: number; // the toy level the toy was last set to, if it has been
 };
 
 const MAX_Y = 4096; // arousal and pressure are 12 bit
@@ -31,20 +36,28 @@ export function commandGapMs(toy: { messageTimingGap?: number }): number {
 // Used when the toy doesn't say how many toy levels it has.
 export const DEFAULT_LEVELS = 100;
 
+// The control's range, 0-255 at each end.
+export function rangeOf(control: Pick<ToyControl, "min" | "max">): { min: number; max: number } {
+  return { min: control.min ?? DEFAULT_MIN, max: control.max ?? DEFAULT_MAX };
+}
+
 // Where a reading puts a control that follows it, 0-1.
-export function followFraction(mode: string, r: ToyReading, maxDenied: number): number {
+export function followFraction(mode: FollowMode, r: ToyReading, maxDenied: number): number {
   switch (mode) {
     case "arousal": return r.arousal / MAX_Y;
     case "pressure": return r.pressure / MAX_Y;
     case "denied": return (r.denied ?? 0) / maxDenied;
-    default: return r.motor / 255;
+    case "pleasure":
+    case "manual":
+    default: return r.motor / 255; // default: an OSSM's mode is a plain string
   }
 }
 
 // The Buttplug percent (0-1) for a slider position (0-1), within the control's min and max.
 export function percentFor(control: ToyControl, fraction: number): number {
-  const min = (control.min ?? DEFAULT_MIN) / 255;
-  const max = (control.max ?? DEFAULT_MAX) / 255;
+  const range = rangeOf(control);
+  const min = range.min / 255;
+  const max = range.max / 255;
   const f = Math.min(1, Math.max(0, fraction));
   const percent = f * (max - min) + min;
   return control.invert ? 1 - percent : percent;

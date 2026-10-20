@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { ButtplugWasmClientConnector } from "buttplug-wasm";
-  import { ButtplugClient, ButtplugClientDevice, OutputType, InputType } from "buttplug";
+  import { ButtplugClient, ButtplugClientDevice, OutputType } from "buttplug";
   import { BleClient } from "@capacitor-community/bluetooth-le";
-  import { DEFAULT_MIN, DEFAULT_MAX, disconnectToy, toyLevels, type ToyFeature } from "./lib/toyOutput";
+  import { DEFAULT_MIN, DEFAULT_MAX, disconnectToy, rangeOf, type FollowMode, type ToyFeature } from "./lib/toyOutput";
   import { buttplugToy, type ButtplugToy, type ToyList } from "./lib/toyList";
-  import { FOLLOWS, percent255, setRangeEnd, toyControlHelp, toyLevelPercent } from "./lib/toyControlView";
+  import { FOLLOWS, minThumbOnTop, percent255, readToyBattery, setRangeEnd, toyControlChanged, toyControlHelp, toyLevelPercent } from "./lib/toyControlView";
+  import { errorMessage } from "./lib/errors";
   import SettingControl from "./lib/SettingControl.svelte";
   import type { SettingDef } from "./lib/settings";
 
@@ -389,12 +390,13 @@
     index: number;
     feature: ToyFeature;
 
-    mode?: string;
+    mode?: FollowMode;
     invert?: boolean;
     min?: number;
     max?: number;
-    slider: number; // 0-255, where the live slider is
+    sliderPosition: number; // 0-255, where the live slider is
     levels?: number; // how many toy levels the toy has for this output, if it says
+    toyLevel?: number; // the toy level the toy was last set to, for the value pill
   }
 
   export interface EOMButtplugClientDevice extends ButtplugClientDevice {
@@ -469,7 +471,7 @@
       await client.startScanning();
     } catch (e) {
       console.error("Couldn't scan for toys:", e);
-      error = `Couldn't look for toys: ${e instanceof Error ? e.message : String(e)}`;
+      error = `Couldn't look for toys: ${errorMessage(e)}`;
     }
   }
 
@@ -481,21 +483,17 @@
     delete batteries[device.index];
   }
 
-  // Reads the toy's battery level, if it reports one.
+  // Reads the toy's battery level, if it reports one. A toy that's gone by the time the read
+  // finishes isn't shown, and nor is anything for another toy given the same index since.
   async function readBattery(device: ButtplugClientDevice) {
-    if (!device.hasInput(InputType.Battery)) return;
-    try {
-      const level = await device.battery();
-      batteries[device.index] = Math.round(level * 100);
-    } catch (e) {
-      console.error(`Couldn't read the battery of toy ${device.name}:`, e);
-    }
+    const level = await readToyBattery(device, () => deviceList.includes(device));
+    if (level !== undefined) batteries[device.index] = level;
   }
 
   onMount(() => {
     initialize_buttplug().catch(err => {
       console.error(err);
-      error = `Couldn't start Buttplug: ${err instanceof Error ? err.message : String(err)}`;
+      error = `Couldn't start Buttplug: ${errorMessage(err)}`;
     });
     const batteryTimer = setInterval(() => deviceList.forEach(readBattery), BATTERY_REFRESH_MS);
     return () => clearInterval(batteryTimer);
@@ -511,7 +509,7 @@
           invert: false,
           min: DEFAULT_MIN,
           max: DEFAULT_MAX,
-          slider: 0,
+          sliderPosition: 0,
         };
 
         // Vibrate = 'Vibrate',
@@ -547,10 +545,8 @@
           control.type = OutputType.Led;
         }
 
-        if (control.type) {
-          control.levels = toyLevels(feature, control.type);
-          controls.push(control);
-        }
+        // buttplugToy works out how many toy levels it has.
+        if (control.type) controls.push(control);
         console.log("New feature:",control)
     }
     return controls;
@@ -564,7 +560,14 @@
   // Shows a toy control's slider position after the toy changed it (following, or stopped).
   // A stop also switched its mode to Manual, which shows by itself: the control is reactive.
   function showControl(control: EOMButtplugClientDeviceControl, sliderValue: number) {
-    control.slider = sliderValue;
+    control.sliderPosition = sliderValue;
+  }
+
+  // Moves one end of the control's range, and sets a Manual toy to match. Returns where it ended up.
+  function setRange(device: EOMButtplugClientDevice, control: EOMButtplugClientDeviceControl, end: "min" | "max", value: number): number {
+    const at = setRangeEnd(control, end, value);
+    toyControlChanged(device.toy, control, control.sliderPosition);
+    return at;
   }
 
   const invertDef = (id: string): SettingDef => ({
@@ -578,12 +581,11 @@
 
 {#snippet toyControl(device: EOMButtplugClientDevice, control: EOMButtplugClientDeviceControl)}
   {@const id = `toy-${device.index}-${control.index}`}
-  {@const min = control.min ?? DEFAULT_MIN}
-  {@const max = control.max ?? DEFAULT_MAX}
+  {@const { min, max } = rangeOf(control)}
   <div class="toyControl">
     <div class="row">
       <label class="title" for="{id}-level">{control.type}</label>
-      <output class="pill" for="{id}-level">{toyLevelPercent(control, control.slider, control.levels)}%</output>
+      <output class="pill" for="{id}-level">{toyLevelPercent(control)}%</output>
     </div>
     <p class="desc">{toyControlHelp(control)}</p>
 
@@ -608,13 +610,13 @@
       class="slider"
       min="0"
       max="255"
-      value={control.slider}
+      value={control.sliderPosition}
       disabled={control.mode !== "manual"}
       title={control.mode === "manual" ? undefined : "Switch to Manual to set it by hand"}
-      style="--fill: {(control.slider / 255) * 100}%"
+      style="--fill: {(control.sliderPosition / 255) * 100}%"
       oninput={(e) => {
-        control.slider = Number(e.currentTarget.value);
-        handleDeviceChange(device, control, control.slider / 255);
+        control.sliderPosition = Number(e.currentTarget.value);
+        handleDeviceChange(device, control, control.sliderPosition / 255);
       }}
     />
 
@@ -624,7 +626,7 @@
         <span class="pill">{percent255(min)}% – {percent255(max)}%</span>
       </div>
       <div class="dualRange" style="--lo: {min / 255}; --hi: {max / 255}">
-        <!-- At the top end only the min thumb can move, so it goes on top there. -->
+        <!-- Where the thumbs meet only the top one can be grabbed: the one with room to move. -->
         <input
           type="range"
           class="slider"
@@ -632,8 +634,8 @@
           max="255"
           value={min}
           aria-label="{control.type} range minimum"
-          style:z-index={min > 127 ? 2 : 1}
-          oninput={(e) => (e.currentTarget.value = String(setRangeEnd(control, "min", Number(e.currentTarget.value))))}
+          style:z-index={minThumbOnTop(control) ? 2 : 1}
+          oninput={(e) => (e.currentTarget.value = String(setRange(device, control, "min", Number(e.currentTarget.value))))}
         />
         <input
           type="range"
@@ -642,12 +644,15 @@
           max="255"
           value={max}
           aria-label="{control.type} range maximum"
-          oninput={(e) => (e.currentTarget.value = String(setRangeEnd(control, "max", Number(e.currentTarget.value))))}
+          oninput={(e) => (e.currentTarget.value = String(setRange(device, control, "max", Number(e.currentTarget.value))))}
         />
       </div>
     </div>
 
-    <SettingControl def={invertDef(id)} value={control.invert ?? false} onchange={(_, v) => (control.invert = Boolean(v))} />
+    <SettingControl def={invertDef(id)} value={control.invert ?? false} onchange={(_, v) => {
+      control.invert = Boolean(v);
+      toyControlChanged(device.toy, control, control.sliderPosition);
+    }} />
   </div>
 {/snippet}
 
@@ -747,6 +752,10 @@
   .label {
     font-weight: 600;
     font-size: 0.9rem;
+  }
+  /* Following, the live slider can't be moved by hand: it looks disabled, like a locked setting. */
+  .slider:disabled {
+    opacity: 0.5;
   }
   .desc {
     margin: -0.3rem 0 0;
