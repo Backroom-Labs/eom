@@ -29,7 +29,7 @@ export function commandGapMs(toy: { messageTimingGap?: number }): number {
 }
 
 // Used when the toy doesn't say how many toy levels it has.
-const DEFAULT_LEVELS = 100;
+export const DEFAULT_LEVELS = 100;
 
 // Where a reading puts a control that follows it, 0-1.
 export function followFraction(mode: string, r: ToyReading, maxDenied: number): number {
