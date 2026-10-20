@@ -14,7 +14,7 @@ Gotchas that the code doesn't show. Decisions are in `docs/adr/`.
 
 - CI builds it in the `android` job of `.github/workflows/release.yml`. Locally: `npm run build`, `npx cap sync android`, then `./gradlew assembleRelease` in `eomui/android` (JDK 21, Android platform 36).
 - Release builds sign with `ANDROID_KEYSTORE_FILE` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` from the environment, else `.local/keystore.properties`, else the debug key. Keep the key (alias `eom`) the same, or releases stop installing over each other.
-- `versionName` / `versionCode` come from the tag through `scripts/android-version.mjs` (`-PversionName`, `-PversionCode`). Untagged builds are `0.0.0-dev`, code 1. Number prereleases upwards across labels (beta.1, beta.2, rc.3): the code uses only the trailing number.
+- `versionName` / `versionCode` come from the tag through `scripts/android-version.mjs` (`-PversionName`, `-PversionCode`). Untagged builds are `0.0.0-dev`, code 7. A tag the script refuses fails the whole release, firmware included. Number prereleases upwards across labels (beta.1, beta.2, rc.3): the code uses only the trailing number.
 
 ## Settings
 

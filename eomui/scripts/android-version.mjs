@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
 export function androidVersion(tag) {
   const match = /^v(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z.-]+)?$/.exec(tag);
   if (!match) throw new Error(`"${tag}" isn't a version tag like v1.2.3 or v1.2.3-beta.1`);
-  const [, major, minor, patch, pre] = match.map((part, i) => (i > 0 && i < 4 ? Number(part) : part));
+  const [major, minor, patch] = match.slice(1, 4).map(Number);
+  const pre = match[4];
   if (minor > 99 || patch > 99) throw new Error(`"${tag}": minor and patch must be 99 or less`);
   let last = 99;
   if (pre) {

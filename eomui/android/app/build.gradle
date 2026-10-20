@@ -7,7 +7,8 @@ if (keystorePropertiesFile.exists()) {
 
 // Release signing key. CI passes it in the environment (see .github/workflows/release.yml);
 // local builds read .local/keystore.properties. Without either, release builds use the debug key.
-def releaseStoreFile = System.getenv("ANDROID_KEYSTORE_FILE") ?: keystoreProperties['storeFile']
+def signingValue = { String env, String property -> System.getenv(env) ?: keystoreProperties[property] }
+def releaseStoreFile = signingValue("ANDROID_KEYSTORE_FILE", "storeFile")
 def hasReleaseKey = releaseStoreFile != null
 
 android {
@@ -18,7 +19,8 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         // CI passes these for tags (eomui/scripts/android-version.mjs): -PversionName=3.5.0 -PversionCode=3050099
-        versionCode((project.findProperty("versionCode") ?: "1") as Integer)
+        // Untagged builds keep code 7, the last hand-built APK's, so they still install over it.
+        versionCode((project.findProperty("versionCode") ?: "7") as Integer)
         versionName(project.findProperty("versionName") ?: "0.0.0-dev")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -31,9 +33,9 @@ android {
         release {
             if (hasReleaseKey) {
                 storeFile file(releaseStoreFile)
-                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: keystoreProperties['storePassword']
-                keyAlias System.getenv("ANDROID_KEY_ALIAS") ?: keystoreProperties['keyAlias']
-                keyPassword System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: keystoreProperties['keyPassword']
+                storePassword signingValue("ANDROID_KEYSTORE_PASSWORD", "storePassword")
+                keyAlias signingValue("ANDROID_KEY_ALIAS", "keyAlias")
+                keyPassword signingValue("ANDROID_KEYSTORE_PASSWORD", "keyPassword")
             }
         }
     }
