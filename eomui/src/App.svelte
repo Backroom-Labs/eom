@@ -22,6 +22,7 @@
     toWire,
     type SettingValue,
   } from "./lib/settings";
+  import { ToyList } from "./lib/toyList";
 
   // ---------------------------------------------------------------------------------------------
   // Types and constants
@@ -174,6 +175,7 @@
   let btledComponent: any;
   let ossmComponent: any;
   let deviceComponent: any;
+  const toys = new ToyList(); // every connected Buttplug toy and OSSM
   let ossmDevices = $state([]);
   let deviceList = $state([]);
   let BTLEDconnected = $state(false);
@@ -478,6 +480,7 @@
     sendCommand("setMotor", 0);
     currentPleasure = 0;
     pleasureLockedUntil = Date.now() + 500;
+    toys.stopAll().catch((err) => console.error("Error stopping toys:", err));
   }
 
   // "Apply pressure": everything happens one notch faster.
@@ -705,34 +708,15 @@
   // ---------------------------------------------------------------------------------------------
   // Toys follow the EOM's readings
 
+  // A new safety stop stops every toy instead.
   function updateDevices(r: Reading) {
-    deviceList.forEach((device: any) => updateButtplugDevice(device, r));
-    ossmDevices.forEach((device: any) => updateOssmDevice(device, r));
+    toys.follow(r, maxDenied, performance.now()).catch((err) => console.error("Error stopping toys:", err));
   }
 
-  function toyValue(mode: string, r: Reading, scale: number) {
-    switch (mode) {
-      case "arousal": return r.arousal / MAX_Y * scale;
-      case "pressure": return r.pressure / MAX_Y * scale;
-      case "denied": return (r.denied ?? 0) / maxDenied * scale;
-      default: return r.motor / 256 * scale;
-    }
-  }
-
-  function updateButtplugDevice(device: any, r: Reading) {
-    device.controls.forEach((control: any) => deviceComponent?.followReading(device, control, r, maxDenied));
-  }
-
-  function updateOssmDevice(device: any, r: Reading) {
-    Object.entries(device.controls).forEach(([name, control]: [string, any]) => {
-      if (control.mode === "manual") return;
-      let value = toyValue(control.mode, r, 1);
-      if (control.invert) value = 1 - value;
-      const min = control.limitMin ?? control.min;
-      const max = control.limitMax ?? control.max;
-      device.setControl(name, Math.round(value * (max - min) + min));
-    });
-  }
+  // Losing the EOM connection stops every toy, so none is left running at its last level.
+  $effect(() => {
+    toys.eomConnected(connected).catch((err) => console.error("Error stopping toys:", err));
+  });
 
   // ---------------------------------------------------------------------------------------------
   // Chart
@@ -1477,8 +1461,8 @@
   </div>
   <div class="sheetBody toys">
     <p class="muted">Connected toys follow the EOM's pleasure, arousal, pressure or denials.</p>
-    <DeviceList bind:this={deviceComponent} bind:deviceList />
-    <OSSM bind:this={ossmComponent} bind:devices={ossmDevices} EOMembedded={true} />
+    <DeviceList bind:this={deviceComponent} bind:deviceList {toys} />
+    <OSSM bind:this={ossmComponent} bind:devices={ossmDevices} EOMembedded={true} {toys} />
     <BTLED bind:this={btledComponent} bind:BTLEDconnected />
   </div>
 </dialog>

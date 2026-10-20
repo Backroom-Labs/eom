@@ -8,6 +8,7 @@
   type ButtplugClientDeviceFeature = { [key: string]: any };
 import { BleClient } from "@capacitor-community/bluetooth-le";
   import { ToyFollower, DEFAULT_MIN, DEFAULT_MAX, percentFor, setToyPercent, disconnectToy, type ToyFeature } from "./lib/toyOutput";
+  import { buttplugToy, type ToyList } from "./lib/toyList";
 
   const isCapacitorNative =
     typeof window !== "undefined" &&
@@ -396,6 +397,7 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
     min?: number;
     max?: number;
     sliderElement?: HTMLInputElement;
+    modeElement?: HTMLSelectElement;
     follower?: ToyFollower;
   }
 
@@ -406,9 +408,10 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
   
   interface Props {
     deviceList?: EOMButtplugClientDevice[];
+    toys?: ToyList; // the app's list of every connected toy, which follows readings and stops them
   }
 
-  let { deviceList = $bindable([]) }: Props = $props();
+  let { deviceList = $bindable([]), toys }: Props = $props();
 
   let client = new ButtplugClient("EOM Client");
   let bluetoothReady = false;
@@ -433,12 +436,14 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
       console.log(`Device added: ${device.name}`, device);
       let eomDevice = device as EOMButtplugClientDevice;
       eomDevice.controls = await initDeviceControls(eomDevice);
+      toys?.add(buttplugToy(eomDevice));
       deviceList = [...deviceList, eomDevice];
     });
 
 
     client.addListener("deviceremoved", (device: ButtplugClientDevice) => {
       console.log(`Device removed: ${device.name}`,device);
+      toys?.remove(device);
       // device.emitDisconnected(); 
       //client.disconnect();
       deviceList = deviceList.filter(d => d !== device);
@@ -558,14 +563,6 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
     sendPercent(device, control, percentFor(control, value));
   }
 
-  // Follow an EOM reading, sending the toy a command only when its level changes.
-  export function followReading(device: ButtplugClientDevice, control: EOMButtplugClientDeviceControl, reading: any, maxDenied: number) {
-    const percent = control.follower?.onReading(reading, maxDenied, performance.now());
-    if (percent === null || percent === undefined) return;
-    if (control.sliderElement) control.sliderElement.value = String(control.follower!.sliderValue);
-    sendPercent(device, control, percent);
-  }
-
   function sendPercent(device: ButtplugClientDevice, control: EOMButtplugClientDeviceControl, percent: number) {
     console.log(`Setting device ${device.name} (${control.type}) feature ${control.index} to ${percent} (min: ${control.min}, max: ${control.max}, invert: ${control.invert})`);
     setToyPercent(control.feature, control.type, percent)
@@ -594,6 +591,7 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
               style="color: red; float:right; padding: 0 .25em 0 .25em; font-size: 1.25em; background: #444; cursor: pointer; line-height: .05em; display: flex; align-items: center; justify-content: center;"
               aria-label="Close settings"
               onclick={async () => {
+                toys?.remove(device);
                 await disconnectToy(device);
                 device.removeAllListeners();
                 deviceList = deviceList.filter(d => d !== device);
@@ -612,7 +610,8 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
               </div>
 
               <div>
-                <select id={device.index + "-" + control.type + "-" + control.index + "-mode"} onchange={async (e) => {
+                <!-- svelte-ignore binding_property_non_reactive -->
+                <select id={device.index + "-" + control.type + "-" + control.index + "-mode"} bind:this={control.modeElement} onchange={async (e) => {
                   const mode = (e.target as HTMLSelectElement).value;
                   console.log(`Setting mode for ${device.name} ${control.type} to ${mode}`);
                   control.mode = mode;
