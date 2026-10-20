@@ -11,6 +11,7 @@ function recordingToy() {
   const calls: string[] = [];
   const toy: Toy = {
     key: {},
+    status: () => ({ name: "Toy", level: 0, follows: "Manual" }),
     follow: () => { calls.push("follow"); },
     stop: async () => { calls.push("stop"); },
   };
@@ -279,4 +280,46 @@ test("changing a following control's range leaves it to the next reading", () =>
   setRangeEnd(t.control, "max", 128);
   toyControlChanged(t.toy, t.control, 0);
   assert.equal(t.control.toyLevel, undefined);
+});
+
+// The toy strip on the main screen.
+
+test("the toy strip has nothing when no toy is connected", () => {
+  assert.deepEqual(new ToyList().strip(), []);
+});
+
+test("the toy strip shows each toy's name, live level and what its toy controls follow", async () => {
+  const { toys, bp, ossm } = listOfBoth();
+  assert.deepEqual(toys.strip(), [
+    { key: bp.toy.key, name: "Domi", level: 100, follows: "Arousal" },
+    { key: ossm.ossm, name: "OSSM", level: 100, follows: "Pleasure, Arousal" },
+  ]);
+  await toys.follow(AROUSAL_HALF, 20);
+  assert.equal(toys.strip()[0].level, 50);
+});
+
+test("the screen is told when a toy connects or leaves, so the strip shows and hides", () => {
+  const toys = new ToyList();
+  const shown: string[][] = [];
+  toys.onChange(() => shown.push(toys.strip().map((t) => t.name)));
+  const a = recordingToy();
+  toys.add(a.toy);
+  toys.remove(a.toy.key);
+  assert.deepEqual(shown, [["Toy"], []]);
+});
+
+// To resume, the user picks what it follows in the Toys drawer.
+test("stopping one toy from the strip stops just that toy, and it stays stopped through later readings", async () => {
+  const { toys, bp, ossm } = listOfBoth();
+  await toys.stop(bp.toy.key);
+  assert.equal(bp.stops(), 1);
+  const sent = bp.sent().length;
+  await toys.follow(PLEASURE_FULL, 20);
+  await settle();
+  assert.deepEqual(toys.strip().map(({ name, level, follows }) => ({ name, level, follows })), [
+    { name: "Domi", level: 0, follows: "Manual" },
+    { name: "OSSM", level: 100, follows: "Pleasure, Arousal" },
+  ]);
+  assert.equal(bp.sent().length, sent, "nothing sent after the stop");
+  assert.equal(ossm.ossm.controls.stroke.value, 100, "the OSSM still follows");
 });

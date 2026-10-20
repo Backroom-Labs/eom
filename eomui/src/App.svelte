@@ -177,6 +177,14 @@
   // Every connected Buttplug toy and OSSM. A stop switches them to Manual, which is easy to miss.
   const toys = new ToyList(() => showToast("Toys stopped and switched to Manual"));
   const logToyError = (err: unknown) => console.error("Error driving toys:", err);
+  // The toy strip on the main screen. Toys coming and going bump the version; live levels and
+  // modes update by themselves, as each toy's controls are reactive.
+  let toysVersion = $state(0);
+  toys.onChange(() => toysVersion++);
+  const toyStrip = $derived.by(() => {
+    void toysVersion;
+    return toys.strip();
+  });
   let ossmDevices = $state([]);
   let deviceList = $state([]);
   let BTLEDconnected = $state(false);
@@ -1124,6 +1132,38 @@
       {/if}
     </section>
 
+    <!-- Toy strip: every connected toy at a glance, while any is connected -->
+    {#if toyStrip.length > 0}
+      <section class="card toyStrip" aria-label="Connected toys">
+        <div class="cardHead">
+          <h2>Toys</h2>
+          <div class="btnRow">
+            {#if toyStrip.length > 1}
+              <button class="small" onclick={() => toys.stopAll().catch(logToyError)}>Stop all toys</button>
+            {/if}
+            <button class="link" onclick={() => toysDialog?.showModal()}>All toys</button>
+          </div>
+        </div>
+        <ul>
+          {#each toyStrip as toy (toy.key)}
+            <li>
+              <div class="toyInfo">
+                <span class="toyName">{toy.name}</span>
+                <span class="toyFollows">{toy.follows === "Manual" ? "Manual" : `Follows ${toy.follows.toLowerCase()}`}</span>
+              </div>
+              <span class="pill">{toy.level}%</span>
+              <button
+                class="iconBtn toyStop"
+                aria-label="Stop {toy.name}"
+                title="Stop {toy.name} and switch it to Manual"
+                onclick={() => toys.stop(toy.key).catch(logToyError)}>{@render icon("stop")}</button
+              >
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
+
     <!-- Controls -->
     <section class="card controls">
       <div class="field">
@@ -1768,6 +1808,48 @@
 
   .quick {
     padding-bottom: 6px;
+  }
+
+  /* Toy strip */
+  .toyStrip ul {
+    list-style: none;
+    margin: 10px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .toyStrip li {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 6px 6px 6px 12px;
+    border-radius: 12px;
+    background: var(--surface-2);
+  }
+  .toyInfo {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.25;
+  }
+  .toyName,
+  .toyFollows {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .toyName {
+    font-weight: 600;
+  }
+  .toyFollows {
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .toyStop {
+    flex: none;
+    color: var(--arousal);
   }
   .iconBtn.rec {
     position: relative;
