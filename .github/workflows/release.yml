@@ -30,7 +30,7 @@ jobs:
     outputs:
       envs: ${{ steps.list.outputs.envs }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: list
         run: |
           # native is the host test env, not firmware (see the test job).
@@ -41,11 +41,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: "3.13"
 
       - run: pip install platformio
 
@@ -59,13 +59,13 @@ jobs:
       matrix:
         env: ${{ fromJSON(needs.envs.outputs.envs) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: "3.13"
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.platformio
           key: pio-${{ matrix.env }}-${{ hashFiles('platformio.ini', 'src/idf_component.yml') }}
@@ -92,7 +92,7 @@ jobs:
           mkdir -p dist
           cp .pio/build/${{ matrix.env }}/firmware.bin dist/firmware-${{ matrix.env }}.bin
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: firmware-${{ matrix.env }}
           path: dist/firmware-${{ matrix.env }}.bin
@@ -104,21 +104,21 @@ jobs:
       run:
         working-directory: eomui
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: eomui/package-lock.json
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
           cache: gradle
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
           packages: platforms;android-36
 
@@ -166,7 +166,7 @@ jobs:
           mkdir -p ../../dist
           cp app/build/outputs/apk/release/eom-*.apk ../../dist/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android-apk
           path: dist/eom-*.apk
@@ -179,15 +179,15 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: firmware-*
           path: dist
           merge-multiple: true
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: android-apk
           path: dist
