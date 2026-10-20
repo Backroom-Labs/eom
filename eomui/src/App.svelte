@@ -985,6 +985,28 @@
         {/if}
       </button>
     </div>
+    {#if toyStrip.length > 0}
+      <ul class="toyStrip" aria-label="Connected toys">
+        {#each toyStrip as toy (toy.key)}
+          <li class="toyPill">
+            <button class="toyInfo" onclick={() => toysDialog?.showModal()} title="Open Toys">
+              <span class="toyName">{toy.name}</span>
+              <span class="toyFollows">{followsText(toy.follows)}</span>
+            </button>
+            <span class="toyStrength">{toy.strength}%</span>
+            <button
+              class="iconBtn toyStop"
+              aria-label="Stop {toy.name}"
+              title="Stop {toy.name} and switch it to Manual"
+              onclick={() => toys.stop(toy.key).catch(logToyError)}>{@render icon("stop")}</button
+            >
+          </li>
+        {/each}
+        {#if toyStrip.length > 1}
+          <li><button class="small stopAllToys" onclick={() => toys.stopAll().catch(logToyError)}>Stop all toys</button></li>
+        {/if}
+      </ul>
+    {/if}
     <nav class="actions">
       <button class="iconBtn" class:rec={recording} onclick={() => { refreshSessions(); historyDialog?.showModal(); }} aria-label="History" title={recording ? "History (recording)" : "History"}>
         {@render icon("history")}
@@ -1132,37 +1154,6 @@
     </section>
 
     <!-- Toy strip: every connected toy at a glance, while any is connected -->
-    {#if toyStrip.length > 0}
-      <section class="card toyStrip" aria-label="Connected toys">
-        <div class="cardHead">
-          <h2>Toys</h2>
-          <div class="btnRow">
-            {#if toyStrip.length > 1}
-              <button class="small" onclick={() => toys.stopAll().catch(logToyError)}>Stop all toys</button>
-            {/if}
-            <button class="link" onclick={() => toysDialog?.showModal()}>All toys</button>
-          </div>
-        </div>
-        <ul>
-          {#each toyStrip as toy (toy.key)}
-            <li>
-              <div class="toyInfo">
-                <span class="toyName">{toy.name}</span>
-                <span class="toyFollows">{followsText(toy.follows)}</span>
-              </div>
-              <span class="pill">{toy.strength}%</span>
-              <button
-                class="iconBtn toyStop"
-                aria-label="Stop {toy.name}"
-                title="Stop {toy.name} and switch it to Manual"
-                onclick={() => toys.stop(toy.key).catch(logToyError)}>{@render icon("stop")}</button
-              >
-            </li>
-          {/each}
-        </ul>
-      </section>
-    {/if}
-
     <!-- Controls -->
     <section class="card controls">
       <div class="field">
@@ -1809,32 +1800,77 @@
     padding-bottom: 6px;
   }
 
-  /* Toy strip */
-  .toyStrip ul {
+  /* Toy strip: compact pills in the header, so toys stay in view while scrolling.
+     On a phone it takes its own row under the logo and buttons. */
+  .topbar:has(.toyStrip) {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .toyStrip {
     list-style: none;
-    margin: 10px 0 0;
+    margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .toyStrip li {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 6px 6px 6px 12px;
-    border-radius: 12px;
-    background: var(--surface-2);
-  }
-  .toyInfo {
     flex: 1;
     min-width: 0;
     display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  @media (max-width: 639px) {
+    .toyStrip {
+      order: 3;
+      flex-basis: 100%;
+      justify-content: flex-start;
+    }
+  }
+  .toyStrip > li {
+    flex: none;
+  }
+  .toyPill {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: 240px;
+    padding: 2px 2px 2px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface-1);
+  }
+  .toyInfo {
+    min-width: 0;
+    display: flex;
     flex-direction: column;
-    line-height: 1.25;
+    align-items: flex-start;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: 0.85rem;
+    line-height: 1.15;
+    text-align: left;
+  }
+  .toyStrength {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .toyStop {
+    flex: none;
+    width: 32px;
+    min-height: 32px;
+    border-radius: 999px;
+    color: var(--arousal);
+  }
+  .toyStrip .stopAllToys {
+    border-radius: 999px;
+    white-space: nowrap;
   }
   .toyName,
   .toyFollows {
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1843,12 +1879,9 @@
     font-weight: 600;
   }
   .toyFollows {
-    font-size: 0.8rem;
+    font-size: 0.7rem;
+    font-weight: 400;
     color: var(--muted);
-  }
-  .toyStop {
-    flex: none;
-    color: var(--arousal);
   }
   .iconBtn.rec {
     position: relative;
