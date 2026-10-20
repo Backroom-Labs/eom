@@ -26,12 +26,15 @@
   ];
   
   let { BTLEDconnected = $bindable(false) }: Props = $props();
-  let BTLEDstatus = $state("No lights connected");
+  let connecting = $state(false);
+  let lightName = $state("");
+  let error = $state<string | null>(null);
   let keepAliveInterval: NodeJS.Timeout | null = null;
 
   async function connectBluetooth() {
     try {
-      BTLEDstatus = "Connecting...";
+      connecting = true;
+      error = null;
       
       // Initialize BLE client
       await BleClient.initialize();
@@ -60,7 +63,6 @@
         (deviceId) => {
           console.log(`Device ${deviceId} disconnected`);
           BTLEDconnected = false;
-          BTLEDstatus = "No lights connected";
           BTLEDdeviceId = null;
           if (keepAliveInterval) {
             clearInterval(keepAliveInterval);
@@ -72,7 +74,7 @@
       
       console.log("Connected successfully");
       BTLEDconnected = true;
-      BTLEDstatus = "Connected";
+      lightName = deviceName || deviceConfig.name;
 
       console.log(deviceConfig.keepalive);
       if (deviceConfig.keepalive) {
@@ -107,11 +109,15 @@
         }
       }
 
-    } catch (error) {
-      console.error("Bluetooth connection failed:", error);
-      BTLEDstatus = `Error: ${error instanceof Error ? error.message : String(error)}`;
+    } catch (err) {
+      console.error("Bluetooth connection failed:", err);
+      const text = err instanceof Error ? err.message : String(err);
+      // Closing the device picker isn't an error worth showing.
+      if (!/cancel/i.test(text)) error = `Couldn't connect to the light: ${text}`;
       BTLEDconnected = false;
       BTLEDdeviceId = null;
+    } finally {
+      connecting = false;
     }
   }
 
@@ -130,7 +136,6 @@
       clearInterval(keepAliveInterval);
       keepAliveInterval = null;
     }
-    BTLEDstatus = "No lights connected";
   }
 
   function RGBdata(brand: string | null, r: number, g: number, b: number): Uint8Array<ArrayBuffer> {
@@ -185,33 +190,53 @@
   }
 </script>
 
-<div class="bluetooth-led-control">
-  <div>
-    <button onclick={() => BTLEDconnected ? disconnect() : connectBluetooth()}>
-      {BTLEDconnected ? 'Disconnect' : 'Connect to a light'}
-    </button>
-    <span class={"bluetooth-led-status" + (BTLEDconnected ? ' connected' : '')}>{BTLEDstatus}</span>
-  </div>
-  {#if !BTLEDconnected}
-    <p style="font-size: small;">Currently this only supports off-brand lights using the LotusLampX app <a target="_blank" href="https://www.amazon.com/dp/B0CCBH8R6K">like this strip.</a></p>
+<div class="lights">
+  {#if error}
+    <div class="banner error" role="alert">
+      <span>{error}</span>
+      <button class="small" onclick={() => (error = null)}>Dismiss</button>
+    </div>
+  {/if}
+  {#if BTLEDconnected}
+    <div class="lightRow">
+      <span class="lightName">{lightName}</span>
+      <button class="small" onclick={disconnect}>Disconnect</button>
+    </div>
+    <p class="muted">Mirrors the EOM's LED colour.</p>
+  {:else}
+    <p class="muted">
+      No light connected. A light mirrors the EOM's LED colour. Works with off-brand lights that use the
+      LotusLampX app, <a target="_blank" href="https://www.amazon.com/dp/B0CCBH8R6K">like this strip</a>.
+    </p>
+    <div>
+      <button class="primary" onclick={connectBluetooth} disabled={connecting}>
+        {connecting ? "Connecting…" : "Connect a light"}
+      </button>
+    </div>
   {/if}
 </div>
 
 <style>
-  .bluetooth-led-control {
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem;
-    border-top: 1px solid #ccc;
-
-    .bluetooth-led-status {
-      color: #666;
-    }
-
-    .bluetooth-led-status.connected {
-      color: #22c55e;
-      font-weight: 600;
-    }
+  .lights {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
-
+  .lights p {
+    margin: 0;
+  }
+  .lights .banner {
+    margin: 0;
+  }
+  .lightRow {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .lightName {
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
 </style>

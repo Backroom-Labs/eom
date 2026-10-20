@@ -167,106 +167,200 @@ input[type="range"].bigSlider::-moz-range-thumb {
   box-shadow: 0 1px 5px rgb(0 0 0 / 0.5);
 }
 
-/* Styles for the toy components (ButtplugConnector, OSSM, BTLED) */
-.buttplug-connector {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    padding: 1rem;
-
-
-  ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    border-top: 1px solid #eee;
-  }
-
-  li {
-    padding: 0.5rem;
-    border-bottom: 1px solid #eee;
-  }
-
-  .device-sliders {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-
-    /* Remove Arrows/Spinners */
-    input::-webkit-outer-spin-button,
-    input::-webkit-inner-spin-button {
-        -webkit-appearance: none;
-        margin: 0;
-    }
-    .slider {
-      width: 100%;
-      height: 2px;
-      position: relative;
-      background: #444;
-      border-radius: 5px;
-    }
-    .slider .range-slider {
-        height: 100%;
-        left: 0%;
-        right: 0%;
-        position: absolute;
-        border-radius: 5px;
-        background: #577291;
-    }    
-    .range-input {
-      position: relative;
-    }
-
-    .range-input input {
-        position: absolute;
-        width: 100%;
-        height: 6px;
-        background: none;
-        top: -14px;
-        pointer-events: none;
-        cursor: pointer;
-        -webkit-appearance: none;
-        appearance: none;
-    }
-
-
-/* Styles for the range thumb in WebKit browsers */
-input[type="range"]::-webkit-slider-thumb {
-    height: 14px;
-    width: 40px;
-    border-radius: 4px;
-    background: #555;
-    pointer-events: auto;
-    -webkit-appearance: none;
-    position: relative;
+/* Shared by the Settings sheet and the Toys drawer */
+.muted {
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
-/* Firefox thumb */
-input[type="range"]::-moz-range-thumb {
-    height: 14px;
-    width: 40px;
-    border-radius: 4px;
-    background: #555;
-    pointer-events: auto;
-    border: none;
+/* A value shown next to a label, e.g. 40% */
+.pill {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--accent);
+  white-space: nowrap;
 }
 
-/* Min range thumb - shows "min" text */
-input[type="range"].min-range::-webkit-slider-thumb {
-    background: #555 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="19"><text x="50%" y="13" font-family="Arial" font-size="10" fill="lightgrey" text-anchor="middle">min</text></svg>') center/contain no-repeat;
+/* A message across the top of a sheet or section */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  justify-content: space-between;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: 0.9rem;
+}
+.banner.warn {
+  justify-content: flex-start;
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+}
+.banner.error {
+  color: var(--arousal);
+  background: var(--danger-tint);
+  border-color: color-mix(in srgb, var(--arousal) 40%, transparent);
 }
 
-input[type="range"].min-range::-moz-range-thumb {
-    background: #555 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="19"><text x="50%" y="13" font-family="Arial" font-size="10" fill="lightgrey" text-anchor="middle">min</text></svg>') center/contain no-repeat;
+/* Settings slider; set --fill to the filled percentage */
+input[type="range"].slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"].slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--fill), var(--surface-3) var(--fill));
+}
+input[type="range"].slider::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--fill), var(--surface-3) var(--fill));
+}
+input[type="range"].slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -8px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
+}
+input[type="range"].slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
+}
+input[type="range"].slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+input[type="range"].slider:disabled {
+  cursor: default;
 }
 
-/* Max range thumb - shows "max" text */
-input[type="range"].max-range::-webkit-slider-thumb {
-    background: #555 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="19"><text x="50%" y="13" font-family="Arial" font-size="10" fill="lightgrey" text-anchor="middle">max</text></svg>') center/contain no-repeat;
+/* Two settings sliders on one track, for a range. Set --lo and --hi to its ends, 0-1. */
+.dualRange {
+  position: relative;
+  height: 28px;
+}
+.dualRange::before {
+  /* The track, from the centre of the first thumb (22px wide) to the centre of the last */
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 11px;
+  height: 6px;
+  border-radius: 999px;
+  --lo-at: calc(11px + (100% - 22px) * var(--lo));
+  --hi-at: calc(11px + (100% - 22px) * var(--hi));
+  background: linear-gradient(
+    to right,
+    var(--surface-3) var(--lo-at),
+    var(--accent) var(--lo-at),
+    var(--accent) var(--hi-at),
+    var(--surface-3) var(--hi-at)
+  );
+}
+.dualRange input[type="range"].slider {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.dualRange input[type="range"].slider::-webkit-slider-runnable-track {
+  background: transparent;
+}
+.dualRange input[type="range"].slider::-moz-range-track {
+  background: transparent;
+}
+.dualRange input[type="range"].slider::-webkit-slider-thumb {
+  pointer-events: auto;
+}
+.dualRange input[type="range"].slider::-moz-range-thumb {
+  pointer-events: auto;
 }
 
-input[type="range"].max-range::-moz-range-thumb {
-    background: #555 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="19"><text x="50%" y="13" font-family="Arial" font-size="10" fill="lightgrey" text-anchor="middle">max</text></svg>') center/contain no-repeat;
+/* Toggle switch: <span class="switch"><input type="checkbox" role="switch" /><span class="track"></span></span> */
+.switch {
+  position: relative;
+  flex: none;
+  width: 46px;
+  height: 28px;
 }
-  }
+.switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.switch .track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--surface-3);
+  transition: background 0.15s;
+  pointer-events: none;
+}
+.switch .track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.switch input:checked + .track {
+  background: var(--accent);
+}
+.switch input:checked + .track::after {
+  transform: translateX(18px);
+}
+.switch input:focus-visible + .track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Chip picker, like the Settings tabs: one of a few choices that wraps on narrow screens */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chips button {
+  min-height: 34px;
+  border-radius: 999px;
+  padding: 0 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border-color: var(--line);
+}
+.chips button.active,
+.chips button.active:hover:not(:disabled) {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
 }
