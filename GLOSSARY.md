@@ -134,6 +134,10 @@ _Avoid_: feature, actuator
 One of the fixed strengths a toy control can produce; a Lovense vibrator has 20.
 _Avoid_: step, speed
 
+**Toy strip**:
+The row of toy pills in the main screen header, shown while any toy is connected, that gives each toy's name, its strength and what its toy controls follow, with a stop button for each toy.
+_Avoid_: toy bar, toy panel
+
 **Light**:
 A Bluetooth light that mirrors the EOM's LED colour. Not a toy: it doesn't follow pleasure or arousal.
 _Avoid_: LED (the EOM's own light)

@@ -1,11 +1,21 @@
 // Every connected toy (Buttplug toys and OSSMs) in one list, which follows EOM readings and can
 // stop them all.
 
-import { followFraction, levelFor, toyLevels, ToyFollower, ToyPacer, type FollowMode, type PacedControl, type ToyControl, type ToyReading } from "./toyOutput.ts";
+import { FOLLOW_MODES, followFraction, levelFor, percentOf, toyLevelPercent, toyLevels, ToyFollower, ToyPacer, type FollowMode, type PacedControl, type ToyControl, type ToyReading } from "./toyOutput.ts";
+
+// What the toy strip on the main screen shows for one toy.
+export type ToyStatus = {
+  name: string;
+  strength: number; // %, of its strongest toy control
+  follows: FollowMode[]; // what its toy controls follow, none if all are on Manual
+};
+
+export type ToyStripEntry = ToyStatus & { key: unknown };
 
 // One connected toy, whatever kind it is.
 export interface Toy {
   key: unknown; // the object the toy was made from, so it can be found again
+  status(): ToyStatus;
   follow(r: ToyReading, maxDenied: number): void;
   // Sets the toy to 0 and switches all its toy controls to Manual.
   stop(): Promise<void>;
@@ -23,20 +33,36 @@ export class ToyList {
   private safety = 0; // the last safety code seen, kept across a lost connection
   private connected = false;
   private onStopped: () => void;
+  private listeners = new Set<() => void>();
 
   // onStopped is told after a stop that switched toys to Manual, so the user can be told.
   constructor(onStopped: () => void = () => {}) {
     this.onStopped = onStopped;
   }
 
+  // listener is told whenever a toy connects or leaves, so the screen can show the strip again.
+  // Returns a function that stops telling it.
+  onChange(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  private changed() {
+    for (const listener of this.listeners) listener();
+  }
+
   add(toy: Toy) {
     this.list.push(toy);
+    this.changed();
   }
 
   // Lets go of the toy made from this object.
   remove(key: unknown) {
-    for (const toy of this.list) if (toy.key === key) toy.release?.();
+    const leaving = this.list.filter((toy) => toy.key === key);
+    if (leaving.length === 0) return;
+    for (const toy of leaving) toy.release?.();
     this.list = this.list.filter((toy) => toy.key !== key);
+    this.changed();
   }
 
   // Passes a reading to every toy. A new safety stop stops them all instead. One still being
@@ -58,11 +84,27 @@ export class ToyList {
     return lost ? this.stopAll() : Promise.resolve();
   }
 
+  // One entry per connected toy, for the toy strip.
+  strip(): ToyStripEntry[] {
+    return this.list.map((toy) => ({ key: toy.key, ...toy.status() }));
+  }
+
+  // Stops the toy made from this object, from its stop button on the strip, which shows it's now
+  // on Manual, so the user isn't told.
+  async stop(key: unknown): Promise<void> {
+    await Promise.all(this.list.filter((toy) => toy.key === key).map((toy) => toy.stop()));
+  }
+
   async stopAll(): Promise<void> {
     if (this.list.length === 0) return;
     await Promise.all(this.list.map((toy) => toy.stop()));
     this.onStopped();
   }
+}
+
+// What a toy's controls follow, each mode once, in the app's usual order. Manual isn't listed.
+function followsOf(modes: (string | undefined)[]): FollowMode[] {
+  return FOLLOW_MODES.filter((mode) => mode !== "manual" && modes.includes(mode));
 }
 
 // A toy control on a Buttplug toy, as ButtplugConnector sets it up.
@@ -97,6 +139,11 @@ export function buttplugToy<C extends ButtplugToyControl>(
   };
   return {
     key: handle,
+    status: () => ({
+      name: handle.name,
+      strength: Math.max(0, ...controls.map(toyLevelPercent)),
+      follows: followsOf(controls.map((c) => c.mode)),
+    }),
     follow(r, maxDenied) {
       for (const control of controls) {
         const follower = followers.get(control)!;
@@ -153,6 +200,15 @@ const OSSM_STOP_TRIES = 100;
 export function ossmToy(ossm: OssmHandle): Toy {
   return {
     key: ossm,
+    // Its strength is its speed, as stroke and depth are positions, not strengths.
+    status() {
+      const speed = ossm.controls.speed;
+      return {
+        name: ossm.name,
+        strength: speed && speed.max > speed.min ? percentOf(speed.value, speed.min, speed.max) : 0,
+        follows: followsOf(Object.values(ossm.controls).map((c) => c.mode)),
+      };
+    },
     follow(r, maxDenied) {
       for (const [name, control] of Object.entries(ossm.controls)) {
         if (!control.mode || control.mode === "manual") continue;

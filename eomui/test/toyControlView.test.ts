@@ -1,7 +1,13 @@
 // Run from eomui/: node --test test/*.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { minThumbOnTop, readToyBattery, setRangeEnd, toyControlHelp, toyLevelPercent } from "../src/lib/toyControlView.ts";
+import { followsText, minThumbOnTop, readToyBattery, setRangeEnd, toyControlHelp } from "../src/lib/toyControlView.ts";
+import { toyLevelPercent } from "../src/lib/toyOutput.ts";
+
+test("a toy on the toy strip says what its toy controls follow, or Manual", () => {
+  assert.equal(followsText(["pleasure", "denied"]), "Follows pleasure, denials");
+  assert.equal(followsText([]), "Manual");
+});
 
 test("help text says what a following toy control follows and its range", () => {
   assert.equal(toyControlHelp({ mode: "pleasure", min: 51, max: 204 }), "Follows pleasure between 20% and 80%.");
