@@ -174,7 +174,8 @@
   // Toy integrations
   let btledComponent: any;
   let ossmComponent: any;
-  const toys = new ToyList(); // every connected Buttplug toy and OSSM
+  // Every connected Buttplug toy and OSSM. A stop switches them to Manual, which is easy to miss.
+  const toys = new ToyList(() => showToast("Toys stopped and switched to Manual"));
   const logToyError = (err: unknown) => console.error("Error driving toys:", err);
   let ossmDevices = $state([]);
   let deviceList = $state([]);

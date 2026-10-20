@@ -22,6 +22,12 @@ export class ToyList {
   private list: Toy[] = [];
   private safety = 0; // the last safety code seen, kept across a lost connection
   private connected = false;
+  private onStopped: () => void;
+
+  // onStopped is told after a stop that switched toys to Manual, so the user can be told.
+  constructor(onStopped: () => void = () => {}) {
+    this.onStopped = onStopped;
+  }
 
   add(toy: Toy) {
     this.list.push(toy);
@@ -53,7 +59,9 @@ export class ToyList {
   }
 
   async stopAll(): Promise<void> {
+    if (this.list.length === 0) return;
     await Promise.all(this.list.map((toy) => toy.stop()));
+    this.onStopped();
   }
 }
 

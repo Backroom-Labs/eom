@@ -236,3 +236,13 @@ test("a toy removed from the list gets nothing still waiting to be sent", async 
   await new Promise((resolve) => setTimeout(resolve, 80));
   assert.equal(t.outputs().length, 1);
 });
+
+test("a stop with toys connected says so, so the user knows they're on Manual", async () => {
+  let told = 0;
+  const toys = new ToyList(() => told++);
+  await toys.stopAll();
+  assert.equal(told, 0, "no toys, nothing to say");
+  toys.add(recordingToy().toy);
+  await toys.stopAll();
+  assert.equal(told, 1);
+});
