@@ -92,14 +92,22 @@ On a wider screen the controls move next to the chart:
 
 <p align="center"><img src="doc/screenshots/desktop.png" width="820" alt="The app on a desktop browser"></p>
 
-The top bar has three more buttons: **History** (with a red dot while a session is being recorded), **Toys**, and **Settings**.
+The top bar has three more buttons: **History** (with a red dot while a session is being recorded), **Toys**, and **Settings**.  While a toy is connected, the top bar also shows each toy's level and what it follows, with a button to stop it (see [Toys](#toys)).
 
 ### Toys
 
-The **Toys** panel connects other toys to the app so they follow the EOM's Pleasure output:
+<img src="doc/screenshots/toys.png" width="240" align="right" alt="Toys panel with a Lovense Lush following pleasure">
+
+The **Toys** panel connects other toys to the app so they follow the EOM:
 - Bluetooth toys through [Buttplug.io](https://buttplug.io/) (vibrators, strokers and many more)
 - An [OSSM](https://github.com/KinkyMakers/OSSM-hardware) stroker
 - A Bluetooth LED strip that shows the EOM's status colour
+
+Each toy control can follow **Pleasure**, **Arousal**, **Pressure** or **Denials**, or be set by hand in **Manual**.  **Range** limits how weak and how strong it goes, and **Invert** runs it from the top of its range down.  A toy starts on Manual when it connects, and gets back the range and invert you last set for it on this phone or browser.
+
+While a toy is connected, the top of the main screen shows it with its level and what it follows.  Its stop button stops it and switches it to Manual; **Stop all toys** appears when more than one is connected.
+
+<br clear="right">
 
 ### Settings
 
