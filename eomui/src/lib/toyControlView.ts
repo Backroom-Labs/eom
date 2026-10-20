@@ -51,13 +51,13 @@ export function toyControlHelp(control: ToyControl): string {
 
 type BatteryToy = { name: string; hasInput(type: InputType): boolean; battery(): Promise<number> };
 
-// The toy's battery level in %, or undefined if it doesn't report one, can't be read, or isn't
+// The toy's battery level in % (Buttplug v5 reports 0-100), or undefined if it doesn't report one, can't be read, or isn't
 // connected, before the read or by the time it finishes.
 export async function readToyBattery(toy: BatteryToy, connected: () => boolean): Promise<number | undefined> {
   if (!connected() || !toy.hasInput(InputType.Battery)) return undefined;
   try {
     const level = await toy.battery();
-    return connected() ? Math.round(level * 100) : undefined;
+    return connected() ? Math.round(Math.min(100, Math.max(0, level))) : undefined;
   } catch (e) {
     if (connected()) console.error(`Couldn't read the battery of toy ${toy.name}:`, e);
     return undefined;

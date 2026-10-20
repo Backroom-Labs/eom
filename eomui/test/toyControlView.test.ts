@@ -70,11 +70,21 @@ function batteryToy(level = 0.8) {
   return { toy, done: () => done(), reads: () => reads };
 }
 
-test("a toy's battery is read in whole %", async () => {
-  const t = batteryToy(0.734);
+// Buttplug v5 reports the battery as a whole % (0-100), not a 0-1 fraction.
+test("a toy's battery is read as the % the toy reports", async () => {
+  const t = batteryToy(92);
   const read = readToyBattery(t.toy, () => true);
   t.done();
-  assert.equal(await read, 73);
+  assert.equal(await read, 92);
+});
+
+test("a battery reading outside 0-100 is kept within it", async () => {
+  for (const [raw, want] of [[140, 100], [-5, 0]]) {
+    const t = batteryToy(raw);
+    const read = readToyBattery(t.toy, () => true);
+    t.done();
+    assert.equal(await read, want);
+  }
 });
 
 test("a toy that's no longer connected isn't asked for its battery", async () => {
