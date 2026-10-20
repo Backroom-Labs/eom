@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build --outDir ./public",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json"
+    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
@@ -17,13 +18,15 @@
     "@types/node": "^24.6.0",
     "@vitejs/plugin-basic-ssl": "^2.1.0",
     "eventemitter3": "^5.0.1",
+    "puppeteer-core": "^25.14.0",
     "svelte": "^5.39.6",
     "svelte-check": "^4.3.2",
     "typescript": "~5.9.3",
     "vite": "^7.1.7",
     "vite-plugin-pwa": "^1.1.0",
     "vite-plugin-singlefile": "^2.3.0",
-    "vite-plugin-wasm": "^3.6.0"
+    "vite-plugin-wasm": "^3.6.0",
+    "ws": "^8.22.0"
   },
   "dependencies": {
     "@capacitor-community/bluetooth-le": "^8.0.2",

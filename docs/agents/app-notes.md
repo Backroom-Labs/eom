@@ -23,4 +23,7 @@ Gotchas that the code doesn't show. Decisions are in `docs/adr/`.
 
 ## Screenshots
 
-The README screenshots in `doc/screenshots/` came from headless Chrome (puppeteer-core with the system Chrome) against `eomui/public`, a mock WebSocket device (Node `ws`, simulated edging) and seeded IndexedDB sessions. Viewport 412x915 at 2x, dark scheme. The script wasn't kept, so rebuild it the same way when retaking them.
+README screenshots in `doc/screenshots/` are 412x915 at 2x in the dark scheme, scaled to 560x1243 (`desktop.png` is 1280x860).
+
+- `gauges.png` and `toys.png` come from `eomui/scripts/screenshots.mjs`. Run `npm run build`, then `npm run screenshots` in `eomui`. It serves `eomui/public`, runs a mock EOM over WebSocket, and gives the page a fake Web Bluetooth with a Lovense Lush (Buttplug identifies it from its `DeviceType;` reply). It drives the system Chrome through puppeteer-core with reduced motion on, so the pleasure gauge isn't caught mid-pulse, and scales the shots with macOS `sips`. Add new shots there.
+- The other shots came from an earlier script that wasn't kept. It worked the same way, and the history shots also used seeded IndexedDB sessions. Move them into the script when you retake them.
