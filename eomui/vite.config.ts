@@ -17,7 +17,7 @@ export default defineConfig({
     }
   },
   optimizeDeps: {
-    include: ['buttplug', 'buffer'],
+    include: ['buffer'],
     esbuildOptions: {
       define: {
         global: 'globalThis'

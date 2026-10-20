@@ -1,9 +1,8 @@
 // Run from eomui/: node --test test/*.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ToyFollower, setToyPercent, disconnectToy, DEFAULT_MIN, DEFAULT_MAX, type ToyControl, type ToyReading } from "../src/lib/toyOutput.ts";
-// @ts-ignore - the vendored v4 bundle has no matching typings
-import { ButtplugClientDevice } from "../buttplug/buttplug.mjs";
+import { ToyFollower, setToyPercent, toyLevels, disconnectToy, DEFAULT_MIN, DEFAULT_MAX, type ToyControl, type ToyReading } from "../src/lib/toyOutput.ts";
+import { ButtplugClientDevice, type ButtplugMessage } from "buttplug";
 
 const READING_HZ = 15; // the EOM's WebSocket readings rate
 const DOMI_STEPS = 20; // Lovense vibrate levels
@@ -88,31 +87,35 @@ test("an inverted control runs full when the motor is off and stops at full moto
 });
 
 // A toy on the real Buttplug client, with the wire to the server replaced by a list of sent messages.
-function fakeToy(output: Record<string, unknown>) {
-  const sent: any[] = [];
+function fakeToy(output: Record<string, { Value: number[]; Duration?: number[] }>) {
+  const sent: ButtplugMessage[] = [];
   const device = ButtplugClientDevice.fromMsg(
-    { DeviceIndex: 3, DeviceName: "Toy", DeviceFeatures: { "0": { FeatureIndex: 0, Output: output } } },
-    async (msg: unknown) => { sent.push(msg); return { Ok: { Id: 1 } }; },
+    {
+      DeviceIndex: 3,
+      DeviceName: "Toy",
+      DeviceFeatures: { 0: { FeatureIndex: 0, FeatureDescriptor: "", Output: output, Input: {} } },
+    },
+    async (msg) => { sent.push(msg); return { Ok: { Id: 1 } }; },
   );
-  return { device, feature: device.features.get(0), sent };
+  return { device, feature: device.features.get(0)!, sent };
 }
 
 test("a vibrator control is set through Buttplug as a percent", async () => {
-  const { feature, sent } = fakeToy({ Vibrate: { Value: DOMI_STEPS } });
+  const { feature, sent } = fakeToy({ Vibrate: { Value: [0, DOMI_STEPS] } });
   await setToyPercent(feature, "Vibrate", 0.45);
-  assert.deepEqual(sent.map((m) => m.ScalarCmd?.Scalars), [[{ Index: 0, Scalar: 0.45, ActuatorType: "Vibrate" }]]);
+  assert.deepEqual(sent.map((m) => m.OutputCmd?.Command), [{ Vibrate: { Value: 9, Duration: undefined } }]);
 });
 
 test("a stroker control is moved through Buttplug to a percent position", async () => {
-  const { feature, sent } = fakeToy({ HwPositionWithDuration: { Value: 100 } });
+  const { feature, sent } = fakeToy({ HwPositionWithDuration: { Value: [0, 100], Duration: [0, 10000] } });
   await setToyPercent(feature, "HwPositionWithDuration", 0.25);
-  assert.deepEqual(sent.map((m) => m.LinearCmd?.Vectors), [[{ Index: 0, Position: 0.25, Duration: 100 }]]);
+  assert.deepEqual(sent.map((m) => m.OutputCmd?.Command), [{ HwPositionWithDuration: { Value: 25, Duration: 100 } }]);
 });
 
 test("disconnecting a toy stops it through Buttplug", async () => {
-  const { device, sent } = fakeToy({ Vibrate: { Value: DOMI_STEPS } });
+  const { device, sent } = fakeToy({ Vibrate: { Value: [0, DOMI_STEPS] } });
   await disconnectToy(device);
-  assert.deepEqual(sent, [{ StopDeviceCmd: { Id: 1, DeviceIndex: 3 } }]);
+  assert.deepEqual(sent.map((m) => m.StopCmd), [{ Id: 1, DeviceIndex: 3, FeatureIndex: undefined, Inputs: true, Outputs: true }]);
 });
 
 test("a toy that can't be reached still disconnects", async () => {
@@ -127,9 +130,19 @@ test("a toy that can't be reached still disconnects", async () => {
 });
 
 test("an output Buttplug can't set fails as a rejected promise, so callers can catch it", async () => {
-  const { feature, sent } = fakeToy({ Position: { Value: 100 } });
+  const { feature, sent } = fakeToy({ Vibrate: { Value: [0, DOMI_STEPS] } });
   let call: Promise<void> | undefined;
-  assert.doesNotThrow(() => { call = setToyPercent(feature, "Position", 0.5); });
+  assert.doesNotThrow(() => { call = setToyPercent(feature, "Rotate", 0.5); });
   await assert.rejects(call!);
   assert.equal(sent.length, 0);
+});
+
+test("a toy control's level count comes from the output range Buttplug reports", () => {
+  const { feature } = fakeToy({ Vibrate: { Value: [0, DOMI_STEPS] } });
+  assert.equal(toyLevels(feature, "Vibrate"), DOMI_STEPS);
+});
+
+test("a toy control Buttplug reports no range for has no level count", () => {
+  const { feature } = fakeToy({ Vibrate: { Value: [0, DOMI_STEPS] } });
+  assert.equal(toyLevels(feature, "Rotate"), undefined);
 });

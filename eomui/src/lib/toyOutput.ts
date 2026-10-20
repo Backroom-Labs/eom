@@ -1,8 +1,7 @@
 // Turns EOM readings into the values sent to a Buttplug toy control, and sends them through
 // Buttplug's own client calls.
 
-// @ts-ignore - the vendored v4 bundle has no matching typings
-import { DeviceOutput } from "../../buttplug/buttplug.mjs";
+import { DeviceOutput, type IButtplugClientDeviceFeature, type OutputType } from "buttplug";
 
 export type ToyReading = { motor: number; arousal: number; pressure: number; denied?: number };
 
@@ -78,14 +77,23 @@ export class ToyFollower {
 }
 
 // One output feature of a Buttplug toy, as the client gives it.
-export type ToyFeature = { runOutput(cmd: unknown): Promise<void> };
+export type ToyFeature = Pick<IButtplugClientDeviceFeature, "runOutput">;
+
+// How many levels the toy has for this output, e.g. 20 for a Lovense vibrator, from the output's
+// value range as Buttplug reports it.
+export function toyLevels(feature: Pick<IButtplugClientDeviceFeature, "output">, type: OutputType | `${OutputType}`): number | undefined {
+  const range = feature.output(type as OutputType)?.valueRange;
+  if (!range) return undefined;
+  const levels = range[1] - range[0];
+  return levels > 0 ? levels : undefined;
+}
 
 // Sets a toy control to a percent (0-1). Buttplug maps the percent to the toy's levels.
 // Position toys move there over MIN_COMMAND_GAP_MS, so they arrive about when the next value can come.
-export async function setToyPercent(feature: ToyFeature, type: string, percent: number): Promise<void> {
+export async function setToyPercent(feature: ToyFeature, type: OutputType | `${OutputType}`, percent: number): Promise<void> {
   const cmd = type === "HwPositionWithDuration"
-    ? DeviceOutput.PositionWithDuration.percent(percent, MIN_COMMAND_GAP_MS)
-    : (DeviceOutput as unknown as Record<string, { percent(p: number): unknown }>)[type].percent(percent);
+    ? DeviceOutput.HwPositionWithDuration.percent(percent, MIN_COMMAND_GAP_MS)
+    : DeviceOutput[type as Exclude<`${OutputType}`, "HwPositionWithDuration" | "Unknown">].percent(percent);
   return feature.runOutput(cmd);
 }
 
