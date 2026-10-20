@@ -10,6 +10,12 @@ Gotchas that the code doesn't show. Decisions are in `docs/adr/`.
 - `tsconfig.app.json` sets `allowImportingTsExtensions` because `node --test` runs the `.ts` files directly and needs the `.ts` on imports between `src/lib` modules (`./toyOutput.ts`). Svelte components import them without it.
 - Toys use the official `buttplug` 5.x, `buttplug-wasm` and `buttplug-wasm-blob` packages, driven only through client calls: ADR 0009.
 
+## Android APK
+
+- CI builds it in the `android` job of `.github/workflows/release.yml`. Locally: `npm run build`, `npx cap sync android`, then `./gradlew assembleRelease` in `eomui/android` (JDK 21, Android platform 36).
+- Release builds sign with `ANDROID_KEYSTORE_FILE` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` from the environment, else `.local/keystore.properties`, else the debug key. Keep the key (alias `eom`) the same, or releases stop installing over each other.
+- `versionName` / `versionCode` come from the tag through `scripts/android-version.mjs` (`-PversionName`, `-PversionCode`). Untagged builds are `0.0.0-dev`, code 1. Number prereleases upwards across labels (beta.1, beta.2, rc.3): the code uses only the trailing number.
+
 ## Settings
 
 - `src/lib/settings.ts` is the single list of device settings. Keys must match `CONFIG_DEFS` in `src/config.c` (firmware).
