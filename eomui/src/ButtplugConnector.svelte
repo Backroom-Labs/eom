@@ -7,7 +7,7 @@
   // Type-only stand-in: the prebuilt bundle has no typings for this
   type ButtplugClientDeviceFeature = { [key: string]: any };
 import { BleClient } from "@capacitor-community/bluetooth-le";
-  import { ToyFollower, DEFAULT_MIN, DEFAULT_MAX, percentFor, setToyPercent, disconnectToy, type ToyFeature } from "./lib/toyOutput";
+  import { ToyFollower, DEFAULT_MIN, DEFAULT_MAX, percentFor, setToyPercent, disconnectToy, commandGapMs, type ToyFeature } from "./lib/toyOutput";
 
   const isCapacitorNative =
     typeof window !== "undefined" &&
@@ -397,6 +397,7 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
     max?: number;
     sliderElement?: HTMLInputElement;
     follower?: ToyFollower;
+    gapMs: number; // the toy's minimum time between commands
   }
 
   export interface EOMButtplugClientDevice extends ButtplugClientDevice {
@@ -468,6 +469,7 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
           index: idx,
           feature,
           //descriptor: feature.FeatureDescriptor || `Vibrate ${idx + 1}`,
+          gapMs: commandGapMs(device),
           mode: "manual",
           invert: false,
           min: DEFAULT_MIN,
@@ -517,7 +519,7 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
           controls.push(control);
         }
 
-        if (control.type) control.follower = new ToyFollower(control, stepCount(feature, control.type));
+        if (control.type) control.follower = new ToyFollower(control, stepCount(feature, control.type), control.gapMs);
         console.log("New feature:",control)
 
   //|| feature.hasOutput(OutputType.Rotate) || feature.hasOutput(OutputType.Oscillate) || ) {
@@ -568,7 +570,7 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
 
   function sendPercent(device: ButtplugClientDevice, control: EOMButtplugClientDeviceControl, percent: number) {
     console.log(`Setting device ${device.name} (${control.type}) feature ${control.index} to ${percent} (min: ${control.min}, max: ${control.max}, invert: ${control.invert})`);
-    setToyPercent(control.feature, control.type, percent)
+    setToyPercent(control.feature, control.type, percent, control.gapMs)
       .catch((err) => console.error(`Error sending command to device ${device.name}:`, err));
   }
 </script>

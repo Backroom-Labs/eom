@@ -1,7 +1,7 @@
 // Run from eomui/: node --test test/*.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ToyFollower, setToyPercent, disconnectToy, DEFAULT_MIN, DEFAULT_MAX, type ToyControl, type ToyReading } from "../src/lib/toyOutput.ts";
+import { ToyFollower, setToyPercent, commandGapMs, disconnectToy, DEFAULT_MIN, DEFAULT_MAX, type ToyControl, type ToyReading } from "../src/lib/toyOutput.ts";
 // @ts-ignore - the vendored v4 bundle has no matching typings
 import { ButtplugClientDevice } from "../buttplug/buttplug.mjs";
 
@@ -11,8 +11,8 @@ const MAX_COMMANDS_PER_S = 10;
 
 type Sent = { t: number; percent: number };
 
-function run(control: ToyControl, readings: ToyReading[]): Sent[] {
-  const follower = new ToyFollower(control, DOMI_STEPS);
+function run(control: ToyControl, readings: ToyReading[], gapMs?: number): Sent[] {
+  const follower = new ToyFollower(control, DOMI_STEPS, gapMs);
   const sent: Sent[] = [];
   readings.forEach((r, i) => {
     const t = (i * 1000) / READING_HZ;
@@ -80,6 +80,25 @@ test("following noisy arousal, the toy gets at most 10 commands a second", () =>
   assert.ok(maxPerSecond(sent) <= MAX_COMMANDS_PER_S, `${maxPerSecond(sent)} commands in one second`);
 });
 
+function minGap(sent: Sent[]): number {
+  let gap = Infinity;
+  for (let i = 1; i < sent.length; i++) gap = Math.min(gap, sent[i].t - sent[i - 1].t);
+  return gap;
+}
+
+test("a toy that reports a 250 ms gap never gets commands closer together than that", () => {
+  const sent = run(newControl("arousal"), noisyArousal(), 250);
+  assert.ok(sent.length > 1);
+  assert.ok(minGap(sent) >= 250, `commands ${minGap(sent)} ms apart`);
+});
+
+test("with a reported gap, the toy is still sent only level changes", () => {
+  const sent = run(newControl("pleasure"), rampSession(), 250);
+  const repeats = sent.filter((s, i) => i > 0 && step(s.percent) === step(sent[i - 1].percent));
+  assert.equal(repeats.length, 0, `${repeats.length} of ${sent.length} commands left the level unchanged`);
+  assert.equal(sent.at(-1)!.percent, 1);
+});
+
 test("an inverted control runs full when the motor is off and stops at full motor", () => {
   const control = { ...newControl("pleasure"), invert: true };
   const follower = new ToyFollower(control, DOMI_STEPS);
@@ -88,14 +107,35 @@ test("an inverted control runs full when the motor is off and stops at full moto
 });
 
 // A toy on the real Buttplug client, with the wire to the server replaced by a list of sent messages.
-function fakeToy(output: Record<string, unknown>) {
+function fakeToy(output: Record<string, unknown>, timingGapMs?: number) {
   const sent: any[] = [];
   const device = ButtplugClientDevice.fromMsg(
-    { DeviceIndex: 3, DeviceName: "Toy", DeviceFeatures: { "0": { FeatureIndex: 0, Output: output } } },
+    {
+      DeviceIndex: 3, DeviceName: "Toy", DeviceFeatures: { "0": { FeatureIndex: 0, Output: output } },
+      DeviceMessageTimingGap: timingGapMs,
+    },
     async (msg: unknown) => { sent.push(msg); return { Ok: { Id: 1 } }; },
   );
   return { device, feature: device.features.get(0), sent };
 }
+
+test("a toy's command gap is the timing gap Buttplug reports for it", () => {
+  const { device } = fakeToy({ Vibrate: { Value: DOMI_STEPS } }, 250);
+  assert.equal(commandGapMs(device), 250);
+});
+
+test("a toy that reports no timing gap gets 100 ms between commands", () => {
+  const { device } = fakeToy({ Vibrate: { Value: DOMI_STEPS } });
+  assert.equal(commandGapMs(device), 100);
+  const sent = run(newControl("arousal"), noisyArousal(), commandGapMs(device));
+  assert.ok(minGap(sent) >= 100, `commands ${minGap(sent)} ms apart`);
+});
+
+test("a stroker moves over the toy's command gap", async () => {
+  const { feature, sent } = fakeToy({ HwPositionWithDuration: { Value: 100 } }, 250);
+  await setToyPercent(feature, "HwPositionWithDuration", 0.25, 250);
+  assert.deepEqual(sent.map((m) => m.LinearCmd?.Vectors), [[{ Index: 0, Position: 0.25, Duration: 250 }]]);
+});
 
 test("a vibrator control is set through Buttplug as a percent", async () => {
   const { feature, sent } = fakeToy({ Vibrate: { Value: DOMI_STEPS } });

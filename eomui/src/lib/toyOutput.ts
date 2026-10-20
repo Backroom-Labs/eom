@@ -18,8 +18,16 @@ const MAX_Y = 4096; // arousal and pressure are 12 bit
 export const DEFAULT_MIN = 0;
 export const DEFAULT_MAX = 255;
 
-// Toys such as Lovense stutter and flash their light when sent commands too often.
-export const MIN_COMMAND_GAP_MS = 100;
+// Toys such as Lovense stutter and flash their light when sent commands too often. Used when the
+// toy doesn't report its own minimum command gap.
+export const DEFAULT_COMMAND_GAP_MS = 100;
+
+// The shortest time to leave between commands to a toy: the timing gap Buttplug reports for it,
+// or DEFAULT_COMMAND_GAP_MS if it reports none.
+export function commandGapMs(device: { messageTimingGap?: number }): number {
+  const gap = device.messageTimingGap;
+  return typeof gap === "number" && gap > 0 ? gap : DEFAULT_COMMAND_GAP_MS;
+}
 
 // Used when the toy doesn't say how many levels it has.
 const DEFAULT_STEPS = 100;
@@ -44,18 +52,20 @@ export function percentFor(control: ToyControl, fraction: number): number {
 }
 
 // Follows readings for one control and decides when to send the toy a new value: only when the
-// toy's level changes, and no more often than MIN_COMMAND_GAP_MS.
+// toy's level changes, and no more often than the toy's command gap.
 export class ToyFollower {
   sliderValue = 0; // 0-255, the on-screen slider position
 
   private control: ToyControl;
   private steps: number;
   private sentLevel: number | null = null;
+  private gapMs: number;
   private sentAt = -Infinity;
 
-  constructor(control: ToyControl, steps?: number) {
+  constructor(control: ToyControl, steps?: number, gapMs = DEFAULT_COMMAND_GAP_MS) {
     this.control = control;
     this.steps = steps && steps > 0 ? steps : DEFAULT_STEPS;
+    this.gapMs = gapMs;
   }
 
   // Returns the percent to send, or null to send nothing.
@@ -65,7 +75,7 @@ export class ToyFollower {
     const fraction = followFraction(control.mode, r, maxDenied);
     this.sliderValue = Math.round(Math.min(1, Math.max(0, fraction)) * 255);
     const level = Math.round(percentFor(control, fraction) * this.steps);
-    if (level === this.sentLevel || nowMs - this.sentAt < MIN_COMMAND_GAP_MS) return null;
+    if (level === this.sentLevel || nowMs - this.sentAt < this.gapMs) return null;
     this.sentLevel = level;
     this.sentAt = nowMs;
     return level / this.steps;
@@ -81,10 +91,10 @@ export class ToyFollower {
 export type ToyFeature = { runOutput(cmd: unknown): Promise<void> };
 
 // Sets a toy control to a percent (0-1). Buttplug maps the percent to the toy's levels.
-// Position toys move there over MIN_COMMAND_GAP_MS, so they arrive about when the next value can come.
-export async function setToyPercent(feature: ToyFeature, type: string, percent: number): Promise<void> {
+// Position toys move there over the toy's command gap, so they arrive about when the next value can come.
+export async function setToyPercent(feature: ToyFeature, type: string, percent: number, gapMs = DEFAULT_COMMAND_GAP_MS): Promise<void> {
   const cmd = type === "HwPositionWithDuration"
-    ? DeviceOutput.PositionWithDuration.percent(percent, MIN_COMMAND_GAP_MS)
+    ? DeviceOutput.PositionWithDuration.percent(percent, gapMs)
     : (DeviceOutput as unknown as Record<string, { percent(p: number): unknown }>)[type].percent(percent);
   return feature.runOutput(cmd);
 }
