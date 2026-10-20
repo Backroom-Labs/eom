@@ -1,13 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  // @ts-ignore - local prebuilt module does not expose complete TS typings for this path
-  import { ButtplugWasmClientConnector } from "../buttplug/wasm/buttplug-wasm.mjs";
-  // @ts-ignore - local prebuilt buttplug v4 bundle does not ship matching TS typings
-  import { ButtplugClient, ButtplugClientDevice, DeviceOutput, OutputType, InputType, DeviceOutputCommand } from "../buttplug/buttplug.mjs";
-  // Type-only stand-in: the prebuilt bundle has no typings for this
-  type ButtplugClientDeviceFeature = { [key: string]: any };
-import { BleClient } from "@capacitor-community/bluetooth-le";
-  import { ToyFollower, DEFAULT_MIN, DEFAULT_MAX, percentFor, setToyPercent, disconnectToy, type ToyFeature } from "./lib/toyOutput";
+  import { ButtplugWasmClientConnector } from "buttplug-wasm";
+  import { ButtplugClient, ButtplugClientDevice, OutputType, InputType } from "buttplug";
+  import { BleClient } from "@capacitor-community/bluetooth-le";
+  import { DEFAULT_MIN, DEFAULT_MAX, disconnectToy, type ToyFeature } from "./lib/toyOutput";
+  import { buttplugToy, type ButtplugToy, type ToyList } from "./lib/toyList";
 
   const isCapacitorNative =
     typeof window !== "undefined" &&
@@ -384,31 +381,31 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
 
 
   // Extend the ButtplugClientDevice type with custom properties
-  export interface EOMButtplugClientDeviceControl extends ButtplugClientDeviceFeature {
-    type: OutputType;
-    // attributes: any[];
+  export interface EOMButtplugClientDeviceControl {
+    type?: OutputType;
     index: number;
-    feature: ToyFeature; // kept because spreading the client's feature drops its methods
-    // descriptor: string;
-    
+    feature: ToyFeature;
+
     mode?: string;
     invert?: boolean;
     min?: number;
     max?: number;
     sliderElement?: HTMLInputElement;
-    follower?: ToyFollower;
+    modeElement?: HTMLSelectElement;
   }
 
   export interface EOMButtplugClientDevice extends ButtplugClientDevice {
     controls?: EOMButtplugClientDeviceControl[];
+    toy?: ButtplugToy<EOMButtplugClientDeviceControl>; // every command to the toy goes through here
   }
 
   
   interface Props {
     deviceList?: EOMButtplugClientDevice[];
+    toys?: ToyList; // the app's list of every connected toy, which follows readings and stops them
   }
 
-  let { deviceList = $bindable([]) }: Props = $props();
+  let { deviceList = $bindable([]), toys }: Props = $props();
 
   let client = new ButtplugClient("EOM Client");
   let bluetoothReady = false;
@@ -433,17 +430,19 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
       console.log(`Device added: ${device.name}`, device);
       let eomDevice = device as EOMButtplugClientDevice;
       eomDevice.controls = await initDeviceControls(eomDevice);
+      eomDevice.toy = buttplugToy(eomDevice, showControl);
+      toys?.add(eomDevice.toy);
       deviceList = [...deviceList, eomDevice];
     });
 
 
     client.addListener("deviceremoved", (device: ButtplugClientDevice) => {
       console.log(`Device removed: ${device.name}`,device);
+      toys?.remove(device);
       // device.emitDisconnected(); 
       //client.disconnect();
       deviceList = deviceList.filter(d => d !== device);
     });
-    // @ts-ignore
     const connector = new ButtplugWasmClientConnector();
     await client.connect(connector);
   }
@@ -463,16 +462,14 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
   export async function initDeviceControls(device: ButtplugClientDevice): Promise<EOMButtplugClientDeviceControl[]> {
     const controls: EOMButtplugClientDeviceControl[] = [];
     for (const [idx, feature] of device.features) {
-        const control = {
-          ...feature,
+        const control: EOMButtplugClientDeviceControl = {
           index: idx,
           feature,
-          //descriptor: feature.FeatureDescriptor || `Vibrate ${idx + 1}`,
           mode: "manual",
           invert: false,
           min: DEFAULT_MIN,
           max: DEFAULT_MAX,
-        } as EOMButtplugClientDeviceControl;
+        };
 
         // Vibrate = 'Vibrate',
         // Rotate = 'Rotate',
@@ -517,7 +514,6 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
           controls.push(control);
         }
 
-        if (control.type) control.follower = new ToyFollower(control, stepCount(feature, control.type));
         console.log("New feature:",control)
 
   //|| feature.hasOutput(OutputType.Rotate) || feature.hasOutput(OutputType.Oscillate) || ) {
@@ -545,31 +541,15 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
     return controls;
   }
 
-  // How many levels the toy has for this output, e.g. 20 for a Lovense vibrator.
-  function stepCount(feature: ButtplugClientDeviceFeature, type: string): number | undefined {
-    const value = feature?._feature?.Output?.[type]?.Value;
-    const steps = Array.isArray(value) ? value[value.length - 1] : value;
-    return typeof steps === "number" && steps > 0 ? steps : undefined;
+  // The slider was moved by hand. value is 0-1. The toy gets it once its command gap allows.
+  export function handleDeviceChange(device: EOMButtplugClientDevice, control: EOMButtplugClientDeviceControl, value: number) {
+    device.toy?.setByHand(control, value);
   }
 
-  // The slider was moved by hand. value is 0-1.
-  export function handleDeviceChange(device: ButtplugClientDevice, control: EOMButtplugClientDeviceControl, value: number) {
-    control.follower?.forget();
-    sendPercent(device, control, percentFor(control, value));
-  }
-
-  // Follow an EOM reading, sending the toy a command only when its level changes.
-  export function followReading(device: ButtplugClientDevice, control: EOMButtplugClientDeviceControl, reading: any, maxDenied: number) {
-    const percent = control.follower?.onReading(reading, maxDenied, performance.now());
-    if (percent === null || percent === undefined) return;
-    if (control.sliderElement) control.sliderElement.value = String(control.follower!.sliderValue);
-    sendPercent(device, control, percent);
-  }
-
-  function sendPercent(device: ButtplugClientDevice, control: EOMButtplugClientDeviceControl, percent: number) {
-    console.log(`Setting device ${device.name} (${control.type}) feature ${control.index} to ${percent} (min: ${control.min}, max: ${control.max}, invert: ${control.invert})`);
-    setToyPercent(control.feature, control.type, percent)
-      .catch((err) => console.error(`Error sending command to device ${device.name}:`, err));
+  // Shows a toy control's mode and slider position after the toy changed them (following, or stopped).
+  function showControl(control: EOMButtplugClientDeviceControl, sliderValue: number) {
+    if (control.modeElement) control.modeElement.value = control.mode ?? "manual";
+    if (control.sliderElement) control.sliderElement.value = String(sliderValue);
   }
 </script>
 
@@ -594,6 +574,7 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
               style="color: red; float:right; padding: 0 .25em 0 .25em; font-size: 1.25em; background: #444; cursor: pointer; line-height: .05em; display: flex; align-items: center; justify-content: center;"
               aria-label="Close settings"
               onclick={async () => {
+                toys?.remove(device);
                 await disconnectToy(device);
                 device.removeAllListeners();
                 deviceList = deviceList.filter(d => d !== device);
@@ -612,7 +593,8 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
               </div>
 
               <div>
-                <select id={device.index + "-" + control.type + "-" + control.index + "-mode"} onchange={async (e) => {
+                <!-- svelte-ignore binding_property_non_reactive -->
+                <select id={device.index + "-" + control.type + "-" + control.index + "-mode"} bind:this={control.modeElement} onchange={async (e) => {
                   const mode = (e.target as HTMLSelectElement).value;
                   console.log(`Setting mode for ${device.name} ${control.type} to ${mode}`);
                   control.mode = mode;

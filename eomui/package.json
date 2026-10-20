@@ -7,8 +7,7 @@
     "dev": "vite",
     "build": "vite build --outDir ./public",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-    "postinstall": "patch-package"
+    "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
@@ -18,7 +17,6 @@
     "@types/node": "^24.6.0",
     "@vitejs/plugin-basic-ssl": "^2.1.0",
     "eventemitter3": "^5.0.1",
-    "patch-package": "^8.0.1",
     "svelte": "^5.39.6",
     "svelte-check": "^4.3.2",
     "typescript": "~5.9.3",
@@ -33,7 +31,14 @@
     "@capacitor/core": "^8.0.2",
     "@capacitor/ios": "^8.0.2",
     "buffer": "^6.0.3",
-    "buttplug": "0.13.2",
+    "buttplug": "^5.0.2",
+    "buttplug-wasm": "^3.0.0",
+    "buttplug-wasm-blob": "^3.0.0",
     "events": "^3.3.0"
+  },
+  "overrides": {
+    "buttplug-wasm": {
+      "buttplug": "$buttplug"
+    }
   }
 }

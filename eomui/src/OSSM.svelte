@@ -1,6 +1,7 @@
 <script lang="ts">
   import { BleClient } from '@capacitor-community/bluetooth-le';
   import pkg from '../package.json';
+  import { ossmToy, type ToyList } from './lib/toyList';
 
   let isWriting = false;
 
@@ -168,14 +169,16 @@
   interface Props {
     devices: OSSMdevice[];
     EOMembedded?: boolean;
+    toys?: ToyList; // the app's list of every connected toy, which follows readings and stops them
   }
-  
-  let { devices = $bindable([]), EOMembedded = false  }: Props = $props();
+
+  let { devices = $bindable([]), EOMembedded = false, toys }: Props = $props();
   
   let connectionError = $state<string | null>(null);
 
   function disconnectDevice(device: OSSMdevice) {
     devices = devices.filter(d => d.deviceId !== device.deviceId);
+    toys?.remove(device);
     device.deviceId = null;
     device.conn_status = "Disconnected";
     device.resetControls();
@@ -275,6 +278,7 @@
       }
 
       devices.push(newOSSM);
+      toys?.add(ossmToy(newOSSM));
 
     } catch (error) {
       console.error("Bluetooth connection failed:", error);
@@ -321,7 +325,8 @@
         </div>
       </div>
 
-      {#each Object.entries($state.snapshot(ossm.controls)) as control, controlIndex}
+      <!-- The live controls, not a snapshot: mode, invert and limits set here must reach the OSSM's state. -->
+      {#each Object.entries(ossm.controls) as control, controlIndex}
         {#if (!(control[0] === "depth" && ossm.strokerMode) && 
               !(control[0] === "sensation" && ossm.patterns[ossm.controls["pattern"].value].name === "Simple Stroke"))}
 
