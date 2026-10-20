@@ -3,8 +3,8 @@
   import { ButtplugWasmClientConnector } from "buttplug-wasm";
   import { ButtplugClient, ButtplugClientDevice, OutputType, InputType } from "buttplug";
   import { BleClient } from "@capacitor-community/bluetooth-le";
-  import { ToyFollower, DEFAULT_MIN, DEFAULT_MAX, percentFor, setToyPercent, disconnectToy, toyLevels, commandGapMs, type ToyFeature } from "./lib/toyOutput";
-  import { buttplugToy, type ToyList } from "./lib/toyList";
+  import { DEFAULT_MIN, DEFAULT_MAX, disconnectToy, type ToyFeature } from "./lib/toyOutput";
+  import { buttplugToy, type ButtplugToy, type ToyList } from "./lib/toyList";
 
   const isCapacitorNative =
     typeof window !== "undefined" &&
@@ -392,12 +392,11 @@
     max?: number;
     sliderElement?: HTMLInputElement;
     modeElement?: HTMLSelectElement;
-    follower?: ToyFollower;
-    gapMs: number; // the toy's minimum time between commands
   }
 
   export interface EOMButtplugClientDevice extends ButtplugClientDevice {
     controls?: EOMButtplugClientDeviceControl[];
+    toy?: ButtplugToy<EOMButtplugClientDeviceControl>; // every command to the toy goes through here
   }
 
   
@@ -431,7 +430,8 @@
       console.log(`Device added: ${device.name}`, device);
       let eomDevice = device as EOMButtplugClientDevice;
       eomDevice.controls = await initDeviceControls(eomDevice);
-      toys?.add(buttplugToy(eomDevice));
+      eomDevice.toy = buttplugToy(eomDevice, showControl);
+      toys?.add(eomDevice.toy);
       deviceList = [...deviceList, eomDevice];
     });
 
@@ -465,7 +465,6 @@
         const control: EOMButtplugClientDeviceControl = {
           index: idx,
           feature,
-          gapMs: commandGapMs(device),
           mode: "manual",
           invert: false,
           min: DEFAULT_MIN,
@@ -515,7 +514,6 @@
           controls.push(control);
         }
 
-        if (control.type) control.follower = new ToyFollower(control, toyLevels(feature, control.type), control.gapMs);
         console.log("New feature:",control)
 
   //|| feature.hasOutput(OutputType.Rotate) || feature.hasOutput(OutputType.Oscillate) || ) {
@@ -543,17 +541,15 @@
     return controls;
   }
 
-  // The slider was moved by hand. value is 0-1.
-  export function handleDeviceChange(device: ButtplugClientDevice, control: EOMButtplugClientDeviceControl, value: number) {
-    control.follower?.forget();
-    sendPercent(device, control, percentFor(control, value));
+  // The slider was moved by hand. value is 0-1. The toy gets it once its command gap allows.
+  export function handleDeviceChange(device: EOMButtplugClientDevice, control: EOMButtplugClientDeviceControl, value: number) {
+    device.toy?.setByHand(control, value);
   }
 
-  function sendPercent(device: ButtplugClientDevice, control: EOMButtplugClientDeviceControl, percent: number) {
-    console.log(`Setting device ${device.name} (${control.type}) feature ${control.index} to ${percent} (min: ${control.min}, max: ${control.max}, invert: ${control.invert})`);
-    if (!control.type) return;
-    setToyPercent(control.feature, control.type, percent, control.gapMs)
-      .catch((err) => console.error(`Error sending command to device ${device.name}:`, err));
+  // Shows a toy control's mode and slider position after the toy changed them (following, or stopped).
+  function showControl(control: EOMButtplugClientDeviceControl, sliderValue: number) {
+    if (control.modeElement) control.modeElement.value = control.mode ?? "manual";
+    if (control.sliderElement) control.sliderElement.value = String(sliderValue);
   }
 </script>
 

@@ -7,6 +7,7 @@ Gotchas that the code doesn't show. Decisions are in `docs/adr/`.
 - Run `npm run build` in `eomui` after UI changes, so `eomui/public/index.html` is up to date. Testing against a stale build has hidden fixes twice.
 - `npm run check` is clean apart from old type errors in `BTLED.svelte` and `main.ts`; ignore those.
 - `package.json` overrides `buttplug-wasm`'s own `buttplug` 4.x dependency with our 5.x, so the connector and client share one set of types. Both speak message spec 4.0.
+- `tsconfig.app.json` sets `allowImportingTsExtensions` because `node --test` runs the `.ts` files directly and needs the `.ts` on imports between `src/lib` modules (`./toyOutput.ts`). Svelte components import them without it.
 - Toys use the official `buttplug` 5.x, `buttplug-wasm` and `buttplug-wasm-blob` packages, driven only through client calls: ADR 0009.
 
 ## Settings

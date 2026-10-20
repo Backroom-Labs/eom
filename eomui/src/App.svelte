@@ -174,8 +174,8 @@
   // Toy integrations
   let btledComponent: any;
   let ossmComponent: any;
-  let deviceComponent: any;
   const toys = new ToyList(); // every connected Buttplug toy and OSSM
+  const logToyError = (err: unknown) => console.error("Error driving toys:", err);
   let ossmDevices = $state([]);
   let deviceList = $state([]);
   let BTLEDconnected = $state(false);
@@ -480,7 +480,7 @@
     sendCommand("setMotor", 0);
     currentPleasure = 0;
     pleasureLockedUntil = Date.now() + 500;
-    toys.stopAll().catch((err) => console.error("Error stopping toys:", err));
+    toys.stopAll().catch(logToyError);
   }
 
   // "Apply pressure": everything happens one notch faster.
@@ -710,12 +710,12 @@
 
   // A new safety stop stops every toy instead.
   function updateDevices(r: Reading) {
-    toys.follow(r, maxDenied, performance.now()).catch((err) => console.error("Error stopping toys:", err));
+    toys.follow(r, maxDenied).catch(logToyError);
   }
 
   // Losing the EOM connection stops every toy, so none is left running at its last level.
   $effect(() => {
-    toys.eomConnected(connected).catch((err) => console.error("Error stopping toys:", err));
+    toys.eomConnected(connected).catch(logToyError);
   });
 
   // ---------------------------------------------------------------------------------------------
@@ -1461,7 +1461,7 @@
   </div>
   <div class="sheetBody toys">
     <p class="muted">Connected toys follow the EOM's pleasure, arousal, pressure or denials.</p>
-    <DeviceList bind:this={deviceComponent} bind:deviceList {toys} />
+    <DeviceList bind:deviceList {toys} />
     <OSSM bind:this={ossmComponent} bind:devices={ossmDevices} EOMembedded={true} {toys} />
     <BTLED bind:this={btledComponent} bind:BTLEDconnected />
   </div>

@@ -325,7 +325,8 @@
         </div>
       </div>
 
-      {#each Object.entries($state.snapshot(ossm.controls)) as control, controlIndex}
+      <!-- The live controls, not a snapshot: mode, invert and limits set here must reach the OSSM's state. -->
+      {#each Object.entries(ossm.controls) as control, controlIndex}
         {#if (!(control[0] === "depth" && ossm.strokerMode) && 
               !(control[0] === "sensation" && ossm.patterns[ossm.controls["pattern"].value].name === "Simple Stroke"))}
 
