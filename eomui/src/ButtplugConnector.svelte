@@ -1,13 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  // @ts-ignore - local prebuilt module does not expose complete TS typings for this path
-  import { ButtplugWasmClientConnector } from "../buttplug/wasm/buttplug-wasm.mjs";
-  // @ts-ignore - local prebuilt buttplug v4 bundle does not ship matching TS typings
-  import { ButtplugClient, ButtplugClientDevice, DeviceOutput, OutputType, InputType, DeviceOutputCommand } from "../buttplug/buttplug.mjs";
-  // Type-only stand-in: the prebuilt bundle has no typings for this
-  type ButtplugClientDeviceFeature = { [key: string]: any };
-import { BleClient } from "@capacitor-community/bluetooth-le";
-  import { ToyFollower, DEFAULT_MIN, DEFAULT_MAX, percentFor, setToyPercent, disconnectToy, type ToyFeature } from "./lib/toyOutput";
+  import { ButtplugWasmClientConnector } from "buttplug-wasm";
+  import { ButtplugClient, ButtplugClientDevice, OutputType, InputType } from "buttplug";
+  import { BleClient } from "@capacitor-community/bluetooth-le";
+  import { ToyFollower, DEFAULT_MIN, DEFAULT_MAX, percentFor, setToyPercent, disconnectToy, toyLevels, commandGapMs, type ToyFeature } from "./lib/toyOutput";
   import { buttplugToy, type ToyList } from "./lib/toyList";
 
   const isCapacitorNative =
@@ -385,13 +381,11 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
 
 
   // Extend the ButtplugClientDevice type with custom properties
-  export interface EOMButtplugClientDeviceControl extends ButtplugClientDeviceFeature {
-    type: OutputType;
-    // attributes: any[];
+  export interface EOMButtplugClientDeviceControl {
+    type?: OutputType;
     index: number;
-    feature: ToyFeature; // kept because spreading the client's feature drops its methods
-    // descriptor: string;
-    
+    feature: ToyFeature;
+
     mode?: string;
     invert?: boolean;
     min?: number;
@@ -399,6 +393,7 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
     sliderElement?: HTMLInputElement;
     modeElement?: HTMLSelectElement;
     follower?: ToyFollower;
+    gapMs: number; // the toy's minimum time between commands
   }
 
   export interface EOMButtplugClientDevice extends ButtplugClientDevice {
@@ -448,7 +443,6 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
       //client.disconnect();
       deviceList = deviceList.filter(d => d !== device);
     });
-    // @ts-ignore
     const connector = new ButtplugWasmClientConnector();
     await client.connect(connector);
   }
@@ -468,16 +462,15 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
   export async function initDeviceControls(device: ButtplugClientDevice): Promise<EOMButtplugClientDeviceControl[]> {
     const controls: EOMButtplugClientDeviceControl[] = [];
     for (const [idx, feature] of device.features) {
-        const control = {
-          ...feature,
+        const control: EOMButtplugClientDeviceControl = {
           index: idx,
           feature,
-          //descriptor: feature.FeatureDescriptor || `Vibrate ${idx + 1}`,
+          gapMs: commandGapMs(device),
           mode: "manual",
           invert: false,
           min: DEFAULT_MIN,
           max: DEFAULT_MAX,
-        } as EOMButtplugClientDeviceControl;
+        };
 
         // Vibrate = 'Vibrate',
         // Rotate = 'Rotate',
@@ -522,7 +515,7 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
           controls.push(control);
         }
 
-        if (control.type) control.follower = new ToyFollower(control, stepCount(feature, control.type));
+        if (control.type) control.follower = new ToyFollower(control, toyLevels(feature, control.type), control.gapMs);
         console.log("New feature:",control)
 
   //|| feature.hasOutput(OutputType.Rotate) || feature.hasOutput(OutputType.Oscillate) || ) {
@@ -550,13 +543,6 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
     return controls;
   }
 
-  // How many levels the toy has for this output, e.g. 20 for a Lovense vibrator.
-  function stepCount(feature: ButtplugClientDeviceFeature, type: string): number | undefined {
-    const value = feature?._feature?.Output?.[type]?.Value;
-    const steps = Array.isArray(value) ? value[value.length - 1] : value;
-    return typeof steps === "number" && steps > 0 ? steps : undefined;
-  }
-
   // The slider was moved by hand. value is 0-1.
   export function handleDeviceChange(device: ButtplugClientDevice, control: EOMButtplugClientDeviceControl, value: number) {
     control.follower?.forget();
@@ -565,7 +551,8 @@ import { BleClient } from "@capacitor-community/bluetooth-le";
 
   function sendPercent(device: ButtplugClientDevice, control: EOMButtplugClientDeviceControl, percent: number) {
     console.log(`Setting device ${device.name} (${control.type}) feature ${control.index} to ${percent} (min: ${control.min}, max: ${control.max}, invert: ${control.invert})`);
-    setToyPercent(control.feature, control.type, percent)
+    if (!control.type) return;
+    setToyPercent(control.feature, control.type, percent, control.gapMs)
       .catch((err) => console.error(`Error sending command to device ${device.name}:`, err));
   }
 </script>

@@ -60,10 +60,11 @@ export class ToyList {
 
 // A toy control on a Buttplug toy, as ButtplugConnector sets it up.
 export type ButtplugToyControl = {
-  type: string;
+  type?: Parameters<typeof setToyPercent>[1];
   mode?: string;
   feature: ToyFeature;
   follower?: ToyFollower;
+  gapMs?: number; // the toy's minimum time between commands
   sliderElement?: { value: string };
   modeElement?: { value: string };
 };
@@ -71,9 +72,11 @@ export type ButtplugToyControl = {
 export type ButtplugToyDevice = { name: string; controls?: ButtplugToyControl[]; stop(): Promise<void> };
 
 export function buttplugToy(device: ButtplugToyDevice): Toy {
-  const send = (control: ButtplugToyControl, percent: number) =>
-    setToyPercent(control.feature, control.type, percent)
+  const send = (control: ButtplugToyControl, percent: number) => {
+    if (!control.type) return;
+    setToyPercent(control.feature, control.type, percent, control.gapMs)
       .catch((err) => console.error(`Error sending command to toy ${device.name}:`, err));
+  };
   return {
     device,
     follow(r, maxDenied, nowMs) {
