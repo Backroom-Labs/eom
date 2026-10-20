@@ -1460,11 +1460,20 @@
     <h2>Toys <span class="badge">Beta</span></h2>
     <button class="iconBtn" onclick={() => toysDialog?.close()} aria-label="Close">{@render icon("close")}</button>
   </div>
-  <div class="sheetBody toys">
-    <p class="muted">Connected toys follow the EOM's pleasure, arousal, pressure or denials.</p>
-    <DeviceList bind:deviceList {toys} />
-    <OSSM bind:this={ossmComponent} bind:devices={ossmDevices} EOMembedded={true} {toys} />
-    <BTLED bind:this={btledComponent} bind:BTLEDconnected />
+  <div class="sheetBody">
+    <section class="group">
+      <h3>Toys</h3>
+      <p class="muted">Each toy control follows the EOM's pleasure, arousal, pressure or denials, or is set by hand. Stop stops every toy.</p>
+      <DeviceList bind:deviceList {toys} />
+    </section>
+    <section class="group ossm">
+      <h3>OSSM</h3>
+      <OSSM bind:this={ossmComponent} bind:devices={ossmDevices} EOMembedded={true} {toys} />
+    </section>
+    <section class="group">
+      <h3>Lights</h3>
+      <BTLED bind:this={btledComponent} bind:BTLEDconnected />
+    </section>
   </div>
 </dialog>
 
@@ -1591,29 +1600,6 @@
     gap: 0.5rem;
     flex-wrap: wrap;
   }
-  .muted {
-    color: var(--muted);
-    font-size: 0.85rem;
-  }
-
-  .banner {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    justify-content: space-between;
-    padding: 10px 14px;
-    margin-bottom: 16px;
-    border-radius: 14px;
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    font-size: 0.9rem;
-  }
-  .banner.warn {
-    justify-content: flex-start;
-    color: var(--warn);
-    border-color: color-mix(in srgb, var(--warn) 40%, transparent);
-  }
-
   /* Live status */
   .statusRow {
     display: flex;
@@ -1763,15 +1749,6 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--muted);
-  }
-  .pill {
-    font-variant-numeric: tabular-nums;
-    font-size: 0.85rem;
-    font-weight: 600;
-    padding: 0.15rem 0.6rem;
-    border-radius: 999px;
-    background: var(--surface-3);
-    color: var(--accent);
   }
   .stopBtn {
     display: flex;
@@ -2003,9 +1980,30 @@
     color: var(--muted);
     vertical-align: middle;
   }
-  .toys :global(h2),
-  .toys :global(h3) {
-    font-size: 1rem;
+  /* The OSSM panel is shared with the standalone OSSM-Possum app, so its inside stays as it is.
+     Only its frame, connect button and error are fitted to the drawer here. */
+  .ossm :global(.bluetooth-ossm-control) {
+    width: auto;
+    margin: 52px 0 44px;
+    border-color: var(--line);
+    border-radius: 14px;
+    background: var(--surface-2);
+  }
+  .ossm :global(.bluetooth-ossm-control > div > p) {
+    color: var(--muted);
+  }
+  .ossm :global(.bluetooth-ossm-control > div > button) {
+    background: var(--accent);
+    border-color: transparent;
+    color: #fff;
+  }
+  .ossm :global(.bluetooth-ossm-control > div[style*="#c00"]) {
+    color: var(--arousal) !important;
+    font-weight: 400 !important;
+    background: var(--danger-tint) !important;
+    border-color: color-mix(in srgb, var(--arousal) 40%, transparent) !important;
+    border-radius: 14px !important;
+    font-size: 0.9rem;
   }
 
   .toast {

@@ -1,10 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { ButtplugWasmClientConnector } from "buttplug-wasm";
-  import { ButtplugClient, ButtplugClientDevice, OutputType, InputType } from "buttplug";
+  import { ButtplugClient, ButtplugClientDevice, OutputType } from "buttplug";
   import { BleClient } from "@capacitor-community/bluetooth-le";
-  import { DEFAULT_MIN, DEFAULT_MAX, disconnectToy, type ToyFeature } from "./lib/toyOutput";
+  import { DEFAULT_MIN, DEFAULT_MAX, disconnectToy, rangeOf, type FollowMode, type ToyFeature } from "./lib/toyOutput";
   import { buttplugToy, type ButtplugToy, type ToyList } from "./lib/toyList";
+  import { FOLLOWS, minThumbOnTop, percent255, readToyBattery, setRangeEnd, toyControlChanged, toyControlHelp, toyLevelPercent } from "./lib/toyControlView";
+  import { errorMessage } from "./lib/errors";
+  import SettingControl from "./lib/SettingControl.svelte";
+  import type { SettingDef } from "./lib/settings";
 
   const isCapacitorNative =
     typeof window !== "undefined" &&
@@ -386,12 +390,13 @@
     index: number;
     feature: ToyFeature;
 
-    mode?: string;
+    mode?: FollowMode;
     invert?: boolean;
     min?: number;
     max?: number;
-    sliderElement?: HTMLInputElement;
-    modeElement?: HTMLSelectElement;
+    sliderPosition: number; // 0-255, where the live slider is
+    levels?: number; // how many toy levels the toy has for this output, if it says
+    toyLevel?: number; // the toy level the toy was last set to, for the value pill
   }
 
   export interface EOMButtplugClientDevice extends ButtplugClientDevice {
@@ -399,7 +404,7 @@
     toy?: ButtplugToy<EOMButtplugClientDeviceControl>; // every command to the toy goes through here
   }
 
-  
+
   interface Props {
     deviceList?: EOMButtplugClientDevice[];
     toys?: ToyList; // the app's list of every connected toy, which follows readings and stops them
@@ -409,6 +414,10 @@
 
   let client = new ButtplugClient("EOM Client");
   let bluetoothReady = false;
+  let error = $state<string | null>(null);
+  // Battery level in % for each toy that reports one, by device index
+  let batteries = $state<Record<number, number>>({});
+  const BATTERY_REFRESH_MS = 60_000;
 
   async function initialize_buttplug() {
     // Split transport strategy:
@@ -429,37 +438,68 @@
     client.addListener("deviceadded", async (device: ButtplugClientDevice) => {
       console.log(`Device added: ${device.name}`, device);
       let eomDevice = device as EOMButtplugClientDevice;
-      eomDevice.controls = await initDeviceControls(eomDevice);
+      // Reactive, so the drawer shows each control's mode and live level as the toy changes them.
+      const controls = $state(initDeviceControls(eomDevice));
+      eomDevice.controls = controls;
       eomDevice.toy = buttplugToy(eomDevice, showControl);
       toys?.add(eomDevice.toy);
       deviceList = [...deviceList, eomDevice];
+      readBattery(eomDevice);
     });
 
 
     client.addListener("deviceremoved", (device: ButtplugClientDevice) => {
       console.log(`Device removed: ${device.name}`,device);
       toys?.remove(device);
-      // device.emitDisconnected(); 
+      // device.emitDisconnected();
       //client.disconnect();
       deviceList = deviceList.filter(d => d !== device);
+      delete batteries[device.index];
     });
     const connector = new ButtplugWasmClientConnector();
     await client.connect(connector);
   }
 
   async function connect_to_device() {
+    error = null;
     if (!bluetoothReady) {
       console.error("Bluetooth is not ready");
+      error = "Bluetooth isn't available here. Try Chrome or Edge, or the EOM app.";
       return;
     }
-    await client.startScanning();
+    try {
+      await client.startScanning();
+    } catch (e) {
+      console.error("Couldn't scan for toys:", e);
+      error = `Couldn't look for toys: ${errorMessage(e)}`;
+    }
+  }
+
+  async function disconnect(device: EOMButtplugClientDevice) {
+    toys?.remove(device);
+    await disconnectToy(device);
+    device.removeAllListeners();
+    deviceList = deviceList.filter(d => d !== device);
+    delete batteries[device.index];
+  }
+
+  // Reads the toy's battery level, if it reports one. A toy that's gone by the time the read
+  // finishes isn't shown, and nor is anything for another toy given the same index since.
+  async function readBattery(device: ButtplugClientDevice) {
+    const level = await readToyBattery(device, () => deviceList.includes(device));
+    if (level !== undefined) batteries[device.index] = level;
   }
 
   onMount(() => {
-    initialize_buttplug().catch(err => console.error(err));
+    initialize_buttplug().catch(err => {
+      console.error(err);
+      error = `Couldn't start Buttplug: ${errorMessage(err)}`;
+    });
+    const batteryTimer = setInterval(() => deviceList.forEach(readBattery), BATTERY_REFRESH_MS);
+    return () => clearInterval(batteryTimer);
   });
 
-  export async function initDeviceControls(device: ButtplugClientDevice): Promise<EOMButtplugClientDeviceControl[]> {
+  export function initDeviceControls(device: ButtplugClientDevice): EOMButtplugClientDeviceControl[] {
     const controls: EOMButtplugClientDeviceControl[] = [];
     for (const [idx, feature] of device.features) {
         const control: EOMButtplugClientDeviceControl = {
@@ -469,6 +509,7 @@
           invert: false,
           min: DEFAULT_MIN,
           max: DEFAULT_MAX,
+          sliderPosition: 0,
         };
 
         // Vibrate = 'Vibrate',
@@ -484,60 +525,30 @@
 
         if (feature.hasOutput(OutputType.Vibrate)) {
           control.type = OutputType.Vibrate;
-          controls.push(control);
         } else if (feature.hasOutput(OutputType.Rotate)) {
           control.type = OutputType.Rotate;
-          controls.push(control);
         } else if (feature.hasOutput(OutputType.Oscillate)) {
           control.type = OutputType.Oscillate;
-          controls.push(control);
         } else if (feature.hasOutput(OutputType.Constrict)) {
           control.type = OutputType.Constrict;
-          controls.push(control);
         } else if (feature.hasOutput(OutputType.Inflate)) {
           control.type = OutputType.Inflate;
-          controls.push(control);
         } else if (feature.hasOutput(OutputType.Position)) {
           control.type = OutputType.Position;
-          controls.push(control);
         } else if (feature.hasOutput(OutputType.HwPositionWithDuration)) {
           control.type = OutputType.HwPositionWithDuration;
-          controls.push(control);
         } else if (feature.hasOutput(OutputType.Temperature)) {
           control.type = OutputType.Temperature;
-          controls.push(control);
         } else if (feature.hasOutput(OutputType.Spray)) {
           control.type = OutputType.Spray;
-          controls.push(control);
         } else if (feature.hasOutput(OutputType.Led)) {
           control.type = OutputType.Led;
-          controls.push(control);
         }
 
+        // buttplugToy works out how many toy levels it has.
+        if (control.type) controls.push(control);
         console.log("New feature:",control)
-
-  //|| feature.hasOutput(OutputType.Rotate) || feature.hasOutput(OutputType.Oscillate) || ) {
     }
-    // for (const t of Object.values(OutputType)) {
-    //   if (device.hasOutput(t)) controls.push(t as EOMButtplugClientDeviceControl);
-    // }
-    for (const t of Object.values(InputType)) {
-      //if (device.hasInput(t)) tags.push(`<span class="device-tag input">${t}</span>`);
-    }
-
-    let batteryHtml = '';
-    if (device.hasInput(InputType.Battery)) {
-      try {
-        const level = await device.battery();
-        const pct = Math.round(level * 100);
-        const cls = pct <= 15 ? 'low' : pct <= 40 ? 'mid' : '';
-        batteryHtml = `<span class="device-battery ${cls}">${pct}%</span>`;
-      } catch (e) {
-        batteryHtml = `<span class="device-battery">?%</span>`;
-      }
-    }
-
-    
     return controls;
   }
 
@@ -546,100 +557,217 @@
     device.toy?.setByHand(control, value);
   }
 
-  // Shows a toy control's mode and slider position after the toy changed them (following, or stopped).
+  // Shows a toy control's slider position after the toy changed it (following, or stopped).
+  // A stop also switched its mode to Manual, which shows by itself: the control is reactive.
   function showControl(control: EOMButtplugClientDeviceControl, sliderValue: number) {
-    if (control.modeElement) control.modeElement.value = control.mode ?? "manual";
-    if (control.sliderElement) control.sliderElement.value = String(sliderValue);
+    control.sliderPosition = sliderValue;
   }
+
+  // Moves one end of the control's range, and sets a Manual toy to match. Returns where it ended up.
+  function setRange(device: EOMButtplugClientDevice, control: EOMButtplugClientDeviceControl, end: "min" | "max", value: number): number {
+    const at = setRangeEnd(control, end, value);
+    toyControlChanged(device.toy, control, control.sliderPosition);
+    return at;
+  }
+
+  const invertDef = (id: string): SettingDef => ({
+    key: `${id}-invert`,
+    label: "Invert",
+    description: "Runs the toy from the top of its range down.",
+    kind: "toggle",
+    default: false,
+  });
 </script>
 
-<div class="buttplug-connector">
-  <div style="display: flex;justify-content: space-between; align-items: center">
-    <button onclick={connect_to_device} style="max-width: 250px;">Connect to a {#if deviceList.length > 0}another{/if} toy</button>
-    {#if deviceList.length === 0}
-      <p style="margin-left: 10px;color: orange;">No devices connected</p>
-    {/if}
-    <div style="display: flex;align-items: center;">Powered by: <a href="https://buttplug.io/" target="_blank"><img src="buttplug_logo.png" alt="Buttplug Logo" style="margin-left:10px; max-height: 40px;" /></a></div>
+{#snippet toyControl(device: EOMButtplugClientDevice, control: EOMButtplugClientDeviceControl)}
+  {@const id = `toy-${device.index}-${control.index}`}
+  {@const { min, max } = rangeOf(control)}
+  <div class="toyControl">
+    <div class="row">
+      <label class="title" for="{id}-level">{control.type}</label>
+      <output class="pill" for="{id}-level">{toyLevelPercent(control)}%</output>
+    </div>
+    <p class="desc">{toyControlHelp(control)}</p>
+
+    <div class="field">
+      <span class="label" id="{id}-follows">Follows</span>
+      <div class="chips" role="radiogroup" aria-labelledby="{id}-follows">
+        {#each FOLLOWS as f}
+          <button
+            type="button"
+            role="radio"
+            aria-checked={control.mode === f.mode}
+            class:active={control.mode === f.mode}
+            onclick={() => (control.mode = f.mode)}>{f.label}</button
+          >
+        {/each}
+      </div>
+    </div>
+
+    <input
+      id="{id}-level"
+      type="range"
+      class="slider"
+      min="0"
+      max="255"
+      value={control.sliderPosition}
+      disabled={control.mode !== "manual"}
+      title={control.mode === "manual" ? undefined : "Switch to Manual to set it by hand"}
+      style="--fill: {(control.sliderPosition / 255) * 100}%"
+      oninput={(e) => {
+        control.sliderPosition = Number(e.currentTarget.value);
+        handleDeviceChange(device, control, control.sliderPosition / 255);
+      }}
+    />
+
+    <div class="field">
+      <div class="row">
+        <span class="label">Range</span>
+        <span class="pill">{percent255(min)}% – {percent255(max)}%</span>
+      </div>
+      <div class="dualRange" style="--lo: {min / 255}; --hi: {max / 255}">
+        <!-- Where the thumbs meet only the top one can be grabbed: the one with room to move. -->
+        <input
+          type="range"
+          class="slider"
+          min="0"
+          max="255"
+          value={min}
+          aria-label="{control.type} range minimum"
+          style:z-index={minThumbOnTop(control) ? 2 : 1}
+          oninput={(e) => (e.currentTarget.value = String(setRange(device, control, "min", Number(e.currentTarget.value))))}
+        />
+        <input
+          type="range"
+          class="slider"
+          min="0"
+          max="255"
+          value={max}
+          aria-label="{control.type} range maximum"
+          oninput={(e) => (e.currentTarget.value = String(setRange(device, control, "max", Number(e.currentTarget.value))))}
+        />
+      </div>
+    </div>
+
+    <SettingControl def={invertDef(id)} value={control.invert ?? false} onchange={(_, v) => {
+      control.invert = Boolean(v);
+      toyControlChanged(device.toy, control, control.sliderPosition);
+    }} />
   </div>
-  {#if deviceList.length === 0}
-    <p style="font-size: small;">Currently supported toys are listed <a href="https://iostindex.com/?filter0Availability=Available,DIY&filter1Connection=Bluetooth%204%20LE&filter2ButtplugSupport=4&filter3Features=OutputsVibrators" target="_blank">by IoST Index</a></p>
-  {:else}
-    <ul>
-      {#each deviceList as device}
-        <li>
-          <div style="display: flex;flex-direction: row;justify-content: space-between;">
-            <div>{device.name}</div>
-            <button
-              title="Disconnect toy"
-              style="color: red; float:right; padding: 0 .25em 0 .25em; font-size: 1.25em; background: #444; cursor: pointer; line-height: .05em; display: flex; align-items: center; justify-content: center;"
-              aria-label="Close settings"
-              onclick={async () => {
-                toys?.remove(device);
-                await disconnectToy(device);
-                device.removeAllListeners();
-                deviceList = deviceList.filter(d => d !== device);
-                }}
-            >
-              &times;
-            </button>
+{/snippet}
 
-          </div>
-          {#each device.controls as control}
-          <div class="device-sliders">
-            <div style="display: flex;flex-direction: row;justify-content: space-between;">
-
-              <div style="font-weight: bold; margin-bottom: 5px;">
-                {control.type}
-              </div>
-
-              <div>
-                <!-- svelte-ignore binding_property_non_reactive -->
-                <select id={device.index + "-" + control.type + "-" + control.index + "-mode"} bind:this={control.modeElement} onchange={async (e) => {
-                  const mode = (e.target as HTMLSelectElement).value;
-                  console.log(`Setting mode for ${device.name} ${control.type} to ${mode}`);
-                  control.mode = mode;
-                }}>
-                  <option value="manual" selected={control.mode === "manual"}>Manual control only</option>
-                  <option value="pleasure" selected={control.mode === "pleasure"}>Connect to Pleasure</option>
-                  <option value="arousal" selected={control.mode === "arousal"}>Connect to Arousal</option>
-                  <option value="pressure" selected={control.mode === "pressure"}>Connect to Pressure</option>
-                  <option value="denied" selected={control.mode === "denied"}>Connect to Denials</option>
-                </select>
-              </div>
-              <div>
-                <input type="checkbox" id={device.index + "-" + control.type + "-" + control.index + "-invert"} checked={control.invert} onchange={async (e) => {
-                  control.invert = (e.target as HTMLInputElement).checked;
-                }}/> Invert
-              </div>
-            </div>
-
-            <!-- svelte-ignore binding_property_non_reactive -->
-            <input id={`control-${device.index}-${control.type}-${control.index}-slider`} type="range" min="0" max="255" value="0" bind:this={control.sliderElement} oninput={(e) => {
-              //debounce this
-                handleDeviceChange(device, control, (parseInt((e.target as HTMLInputElement)?.value ?? "0") / 255.0));
-              }}/>
-            <div class="slider">
-                <div id={`control-${device.index}-${control.type}-${control.index}-range-slider`} class="range-slider"></div>
-            </div>
-
-            <div class="range-input">
-                <input id={`control-${device.index}-${control.type}-${control.index}-min`} type="range" class="min-range" min="0" max="255" value="0" step="1" oninput={(e) => {
-                  control.min = parseInt((e.target as HTMLInputElement)?.value ?? "0");
-                  const rangeInput = document.querySelector(`#control-${device.index}-${control.type}-${control.index}-range-slider`) as HTMLInputElement;
-                  rangeInput.style.left = `${control.min / 255 * 100}%`;
-                }} />
-                <input id={`control-${device.index}-${control.type}-${control.index}-max`} type="range" class="max-range" min="0" max="255" value="255" step="1"  oninput={(e) => {
-                  control.max = parseInt((e.target as HTMLInputElement)?.value ?? "255");
-                  const rangeInput = document.querySelector(`#control-${device.index}-${control.type}-${control.index}-range-slider`) as HTMLInputElement;
-                  rangeInput.style.right = `${(255 - control.max) / 255 * 100}%`;
-                }} />
-            </div>
-
-
-          </div>
-          {/each}
-        </li>
-      {/each}
-    </ul>
+<div class="toyList">
+  {#if error}
+    <div class="banner error" role="alert">
+      <span>{error}</span>
+      <button class="small" onclick={() => (error = null)}>Dismiss</button>
+    </div>
   {/if}
+
+  {#each deviceList as device (device)}
+    <div class="toy">
+      <div class="toyHead">
+        <span class="toyName">{device.name}</span>
+        {#if batteries[device.index] !== undefined}
+          <span class="battery" class:low={batteries[device.index] <= 15} title="Battery">{batteries[device.index]}% battery</span>
+        {/if}
+        <button class="small" onclick={() => disconnect(device)}>Disconnect</button>
+      </div>
+      {#each device.controls ?? [] as control (control)}
+        {@render toyControl(device, control)}
+      {/each}
+    </div>
+  {:else}
+    <p class="muted">
+      No toys connected. Supported toys are listed
+      <a href="https://iostindex.com/?filter0Availability=Available,DIY&filter1Connection=Bluetooth%204%20LE&filter2ButtplugSupport=4&filter3Features=OutputsVibrators" target="_blank">by IoST Index</a>.
+    </p>
+  {/each}
+
+  <div class="connectRow">
+    <button class="primary" onclick={connect_to_device}>{deviceList.length > 0 ? "Connect another toy" : "Connect a toy"}</button>
+    <span class="muted">Powered by <a href="https://buttplug.io/" target="_blank">Buttplug</a></span>
+  </div>
 </div>
+
+<style>
+  .toyList {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .toyList > p,
+  .toyList > .banner {
+    margin: 0;
+  }
+  .toy {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .toyHead {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .toyName {
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .battery {
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .battery.low {
+    color: var(--arousal);
+  }
+  .toyControl {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 14px 14px 0;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .title {
+    font-weight: 700;
+    font-size: 1rem;
+  }
+  .label {
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+  /* Following, the live slider can't be moved by hand: it looks disabled, like a locked setting. */
+  .slider:disabled {
+    opacity: 0.5;
+  }
+  .desc {
+    margin: -0.3rem 0 0;
+    font-size: 0.8rem;
+    color: var(--muted);
+    line-height: 1.35;
+  }
+  .connectRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+</style>
