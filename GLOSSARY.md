@@ -119,3 +119,21 @@ One stretch of use recorded by the app, from when a mode starts or pleasure rise
 
 **Detailed recording**:
 An optional session recording of every pressure reading, rather than the usual few samples a second.
+
+### Toys
+
+**Toy**:
+A third-party device the EOM app drives to follow the EOM, connected through Buttplug or directly (such as an OSSM), separate from the vibrator the EOM drives itself.
+_Avoid_: device (the EOM itself is the device)
+
+**Toy control**:
+One output on a toy, such as a vibrator or rotator, driven by hand or by following pleasure, arousal, pressure or denials.
+_Avoid_: feature, actuator
+
+**Toy level**:
+One of the fixed strengths a toy control can produce; a Lovense vibrator has 20.
+_Avoid_: step, speed
+
+**Light**:
+A Bluetooth light that mirrors the EOM's LED colour. Not a toy: it doesn't follow pleasure or arousal.
+_Avoid_: LED (the EOM's own light)

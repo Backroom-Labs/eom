@@ -1,0 +1,3 @@
+# Toys through the official Buttplug v5 packages
+
+The app talks to toys through the npm packages `buttplug` (5.x client), `buttplug-wasm` (connector) and `buttplug-wasm-blob` (in-app server), replacing a vendored v4 bundle that nobody could rebuild. Toy controls are driven only through the client's own calls (`runOutput` with a percent, `stop`), never raw protocol messages, so Buttplug maps percent to toy levels. We still send a command only when the toy level changes, and no more often than the toy's `messageTimingGap` (100 ms if it gives none): flooding a wand with commands made it misbehave, and we haven't confirmed Buttplug filters repeats itself.

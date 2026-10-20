@@ -6,7 +6,7 @@ Gotchas that the code doesn't show. Decisions are in `docs/adr/`.
 
 - Run `npm run build` in `eomui` after UI changes, so `eomui/public/index.html` is up to date. Testing against a stale build has hidden fixes twice.
 - `npm run check` is clean for the 3.x files. The toy components and `node_modules` still have old type errors; ignore those.
-- `buttplug` stays at 0.13.2: ADR 0008.
+- Toys use the official `buttplug` 5.x, `buttplug-wasm` and `buttplug-wasm-blob` packages, driven only through client calls: ADR 0009.
 
 ## Settings
 
