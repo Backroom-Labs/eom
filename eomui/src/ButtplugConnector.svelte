@@ -3,7 +3,7 @@
   import { ButtplugWasmClientConnector } from "buttplug-wasm";
   import { ButtplugClient, ButtplugClientDevice, OutputType, InputType } from "buttplug";
   import { BleClient } from "@capacitor-community/bluetooth-le";
-  import { ToyFollower, DEFAULT_MIN, DEFAULT_MAX, percentFor, setToyPercent, disconnectToy, toyLevels, type ToyFeature } from "./lib/toyOutput";
+  import { ToyFollower, DEFAULT_MIN, DEFAULT_MAX, percentFor, setToyPercent, disconnectToy, toyLevels, commandGapMs, type ToyFeature } from "./lib/toyOutput";
 
   const isCapacitorNative =
     typeof window !== "undefined" &&
@@ -391,6 +391,7 @@
     max?: number;
     sliderElement?: HTMLInputElement;
     follower?: ToyFollower;
+    gapMs: number; // the toy's minimum time between commands
   }
 
   export interface EOMButtplugClientDevice extends ButtplugClientDevice {
@@ -459,6 +460,7 @@
         const control: EOMButtplugClientDeviceControl = {
           index: idx,
           feature,
+          gapMs: commandGapMs(device),
           mode: "manual",
           invert: false,
           min: DEFAULT_MIN,
@@ -508,7 +510,7 @@
           controls.push(control);
         }
 
-        if (control.type) control.follower = new ToyFollower(control, toyLevels(feature, control.type));
+        if (control.type) control.follower = new ToyFollower(control, toyLevels(feature, control.type), control.gapMs);
         console.log("New feature:",control)
 
   //|| feature.hasOutput(OutputType.Rotate) || feature.hasOutput(OutputType.Oscillate) || ) {
@@ -553,7 +555,7 @@
   function sendPercent(device: ButtplugClientDevice, control: EOMButtplugClientDeviceControl, percent: number) {
     console.log(`Setting device ${device.name} (${control.type}) feature ${control.index} to ${percent} (min: ${control.min}, max: ${control.max}, invert: ${control.invert})`);
     if (!control.type) return;
-    setToyPercent(control.feature, control.type, percent)
+    setToyPercent(control.feature, control.type, percent, control.gapMs)
       .catch((err) => console.error(`Error sending command to device ${device.name}:`, err));
   }
 </script>
