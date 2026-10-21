@@ -185,17 +185,17 @@ export type OssmToyControl = {
   limitMax?: number;
 };
 
-// An OSSM as OSSM.svelte connects it.
+// An OSSM as OSSM.svelte connects it. Its writes go through its OssmWriter.
 export type OssmHandle = {
   name: string;
   controls: Record<string, OssmToyControl>;
-  setControl(name: string, value: number): Promise<void>;
+  // Queues a value for a control, sent when the OSSM can take it.
+  setControl(name: string, value: number): void;
+  // Sets speed 0 at once, ahead of anything queued, which is dropped.
+  stop(): Promise<void>;
+  // Drops anything queued.
+  cancel(): void;
 };
-
-// OSSM.svelte drops a write sent while another is in flight, so a stop is retried this often
-// until the OSSM reports speed 0.
-const OSSM_STOP_RETRY_MS = 20;
-const OSSM_STOP_TRIES = 100;
 
 export function ossmToy(ossm: OssmHandle): Toy {
   return {
@@ -216,25 +216,21 @@ export function ossmToy(ossm: OssmHandle): Toy {
         if (control.inverted) value = 1 - value;
         const min = control.limitMin ?? control.min;
         const max = control.limitMax ?? control.max;
-        ossm.setControl(name, Math.round(value * (max - min) + min))
-          .catch((err) => console.error(`Error sending command to OSSM ${ossm.name}:`, err));
+        ossm.setControl(name, Math.round(value * (max - min) + min));
       }
     },
     async stop() {
       for (const control of Object.values(ossm.controls)) control.mode = "manual";
       // Only speed is set to 0. Stroke and depth are positions, not strengths: changing them
       // could move the rod, so at speed 0 they're left where they are.
-      for (let i = 0; i < OSSM_STOP_TRIES; i++) {
-        try {
-          await ossm.setControl("speed", 0);
-        } catch (err) {
-          console.error(`Couldn't stop OSSM ${ossm.name}:`, err);
-          return;
-        }
-        if (ossm.controls.speed?.value === 0) return;
-        await new Promise((resolve) => setTimeout(resolve, OSSM_STOP_RETRY_MS));
+      try {
+        await ossm.stop();
+      } catch (err) {
+        console.error(`Couldn't stop OSSM ${ossm.name}:`, err);
       }
-      console.error(`Couldn't stop OSSM ${ossm.name}: speed 0 was never written`);
+    },
+    release() {
+      ossm.cancel();
     },
   };
 }
