@@ -1,6 +1,5 @@
 <script lang="ts">
   import { BleClient } from '@capacitor-community/bluetooth-le';
-  import pkg from '../package.json';
   import { ossmToy, type ToyList } from './lib/toyList';
 
   let isWriting = false;
@@ -168,11 +167,10 @@
   
   interface Props {
     devices: OSSMdevice[];
-    EOMembedded?: boolean;
     toys?: ToyList; // the app's list of every connected toy, which follows readings and stops them
   }
 
-  let { devices = $bindable([]), EOMembedded = false, toys }: Props = $props();
+  let { devices = $bindable([]), toys }: Props = $props();
   
   let connectionError = $state<string | null>(null);
 
@@ -290,7 +288,7 @@
 
 </script>
 
-<div class="bluetooth-ossm-control" style="--version: '{pkg.version}';">
+<div class="bluetooth-ossm-control">
   {#if devices.length}
     {#each devices as ossm, deviceIndex}
       <div style="display: flex;flex-direction: row;justify-content: space-between;margin-bottom: 10px; ">
@@ -340,7 +338,6 @@
                   {/if}
                 </div>
 
-                {#if (EOMembedded)}
                 <div>
                   <select id={deviceIndex + "-" + control[0] + "-mode"} onchange={async (e) => {
                       const mode = (e.target as HTMLSelectElement).value;
@@ -360,7 +357,6 @@
                           control[1].inverted = (e.target as HTMLInputElement).checked;
                       }}/>
                   </div>
-                {/if}
                           <div class="device-sliders" title={control[1].description ?? ""}>
 
             <div style="display: flex;flex-direction: row;justify-content: space-between" >
@@ -491,20 +487,15 @@
     <div  style="font-size: small;">
       <p>This supports <a target="_blank" href="https://www.researchanddesire.com/pages/ossm">OSSM devices</a> with a stock firmware from 2026 or newer.</p>
       <p>If your OSSM firmware is older or custom you can easily upgrade it using <a href="https://dashboard.researchanddesire.com/app/tools/web-flasher">their web flashing tool</a>.</p>
-      {#if (!EOMembedded)}
-        <p>Coded with love and hedonism by <a href="http://rubberyfun.com/">Claus Macher</a>.  Main repo <a href="https://github.com/rubberyfun/OSSM-Possum">is posted here</a>.  Have fun!</p>
-      {/if}
+      <p>Coded with love and hedonism by <a target="_blank" href="http://rubberyfun.com/">Claus Macher</a>. His original OSSM-Possum app <a target="_blank" href="https://github.com/rubberyfun/OSSM-Possum">is posted here</a>.</p>
       <p></p>
     </div>
  {/if}
- {#if (EOMembedded || devices.length == 0)}
    <div>
     <button onclick={() => connectBluetooth()}>
       Connect to an{#if devices.length}other{:else}{/if} OSSM device
     </button>
-    
   </div>
-  {/if}
   
   {#if connectionError}
     <div style="color: #c00; font-weight: bold; margin-top: 10px; padding: 10px; background-color: #fee; border: 1px solid #faa; border-radius: 4px;">
@@ -530,8 +521,7 @@
         position: relative;
 
       &::before {
-      content: var(--version);
-      color: #666;
+      content: '';
       position: absolute;
       top: -46px;
       left: 40%;
@@ -542,7 +532,6 @@
       background-size: contain;
       background-repeat: no-repeat;
       background-position: center;
-      text-indent: 150px;
     }
 
       &::after {
