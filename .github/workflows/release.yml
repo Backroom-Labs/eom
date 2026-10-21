@@ -1,7 +1,13 @@
-# Builds every PlatformIO environment. On a version tag (v2.0.1) it also publishes a GitHub release
-# with firmware-<env>.bin for each one plus manifest.json (see tools/make_manifest.py), which the
-# OTA paths use to find the right image. The newest release's manifest is always at
-#   https://github.com/<owner>/<repo>/releases/latest/download/manifest.json
+# Builds every PlatformIO environment. On a version tag (v2.0.1) it also publishes firmware-<env>.bin
+# for each one plus manifest.json (see tools/make_manifest.py), which the OTA paths use to find the
+# right image, and the built app. They go to the public Pages site (see tools/publish_pages.sh and
+# docs/adr/0011-releases-served-from-public-pages-site.md):
+#   https://backroom-labs.github.io/eom/                              the app
+#   https://backroom-labs.github.io/eom/firmware/manifest.json        newest stable release
+#   https://backroom-labs.github.io/eom/firmware/manifest-beta.json   newest release of either kind
+# The site is the eom/ folder of the public Backroom-Labs/backroom-labs.github.io repo. The release
+# pushes there with the PAGES_DEPLOY_KEY secret: the private half of an SSH deploy key that has
+# write access to that repo. A GitHub release carries the same files as an archive.
 #
 # Releases are signed with the OTA_SIGNING_KEY repository secret: the contents of
 # keys/ota_signing_key.pem. Devices only accept updates signed with the key their firmware was
@@ -147,6 +153,14 @@ jobs:
 
       - run: npm ci
       - run: npm run build
+
+      - uses: actions/upload-artifact@v7
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: web-app
+          path: eomui/public
+          if-no-files-found: error
+
       - run: npx cap sync android
 
       - name: Build APK
@@ -178,7 +192,19 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      PAGES_REPO: Backroom-Labs/backroom-labs.github.io
+      PAGES_URL: https://backroom-labs.github.io/eom
     steps:
+      - name: Check Pages deploy key
+        env:
+          PAGES_DEPLOY_KEY: ${{ secrets.PAGES_DEPLOY_KEY }}
+        run: |
+          if [ -z "$PAGES_DEPLOY_KEY" ]; then
+            echo "::error::The PAGES_DEPLOY_KEY secret is not set; refusing to release firmware and an app nobody can download."
+            exit 1
+          fi
+
       - uses: actions/checkout@v7
 
       - uses: actions/download-artifact@v8
@@ -192,12 +218,48 @@ jobs:
           name: android-apk
           path: dist
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: web-app
+          path: app
+
       - name: Write manifest.json
         run: |
           tag="${GITHUB_REF_NAME}"
           python3 tools/make_manifest.py dist \
             --version "${tag#v}" \
-            --base-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}"
+            --base-url "${PAGES_URL}/firmware/${tag#v}"
+
+      - name: Publish to Pages
+        env:
+          PAGES_DEPLOY_KEY: ${{ secrets.PAGES_DEPLOY_KEY }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          key="$RUNNER_TEMP/pages_deploy_key"
+          printf '%s\n' "$PAGES_DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          # GitHub's published host key (https://api.github.com/meta), so nothing else can pose as it.
+          known_hosts="$RUNNER_TEMP/known_hosts"
+          echo "github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl" > "$known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o UserKnownHostsFile=$known_hosts"
+
+          # Another release may push meanwhile; then start again from its commit.
+          for attempt in 1 2 3; do
+            rm -rf site
+            git clone -q --depth 1 "git@github.com:${PAGES_REPO}.git" site
+            tools/publish_pages.sh site "$version" dist app
+            git -C site add -A
+            if git -C site diff --cached --quiet; then
+              echo "Pages already has $version"
+              exit 0
+            fi
+            git -C site -c user.name="github-actions[bot]" \
+                -c user.email="41898283+github-actions[bot]@users.noreply.github.com" \
+                commit -q -m "EOM $version"
+            git -C site push -q origin HEAD:main && exit 0
+          done
+          echo "::error::Couldn't push $version to ${PAGES_REPO}."
+          exit 1
 
       - name: Publish release
         env:
