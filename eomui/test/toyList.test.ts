@@ -1,7 +1,7 @@
 // Run from eomui/: node --test test/*.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ToyList, buttplugToy, ossmToy, type Toy, type ButtplugToyControl } from "../src/lib/toyList.ts";
+import { ToyList, buttplugToy, ossmToy, ossmControls, type Toy, type ButtplugToyControl } from "../src/lib/toyList.ts";
 import { type ToyReading } from "../src/lib/toyOutput.ts";
 import { fakeToy, settle } from "./fakeToy.ts";
 import { setRangeEnd, toyControlChanged } from "../src/lib/toyControlView.ts";
@@ -134,6 +134,35 @@ test("an OSSM busy writing when stopped still ends at speed 0", async () => {
   setTimeout(() => (ossm.isWriting = false), 30);
   await ossmToy(ossm).stop();
   assert.equal(ossm.controls.speed.value, 0);
+});
+
+test("a newly connected OSSM has speed, stroke, depth, pattern and sensation all on Manual", () => {
+  const controls = ossmControls();
+  assert.deepEqual(
+    Object.entries(controls).map(([name, c]) => [name, c.mode]),
+    [["speed", "manual"], ["stroke", "manual"], ["depth", "manual"], ["pattern", "manual"], ["sensation", "manual"]],
+  );
+});
+
+test("an OSSM connected mid-session keeps the speed it was already at", async () => {
+  const toys = new ToyList();
+  toys.add(fakeButtplugToy().toy);
+  toys.follow(PLEASURE_FULL, 20);
+  const writes: [string, number][] = [];
+  const ossm = {
+    name: "OSSM",
+    controls: ossmControls(),
+    async setControl(name: string, value: number) {
+      writes.push([name, value]);
+      ossm.controls[name].value = value;
+    },
+  };
+  ossm.controls.speed.value = 30; // as read from the OSSM when it connected
+  toys.add(ossmToy(ossm));
+  await toys.follow(PLEASURE_FULL, 20);
+  await settle();
+  assert.equal(ossm.controls.speed.value, 30);
+  assert.deepEqual(writes, []);
 });
 
 // A list holding a Buttplug toy and an OSSM, both following the EOM.
