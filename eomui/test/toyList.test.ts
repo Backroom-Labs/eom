@@ -102,6 +102,16 @@ test("an OSSM following pleasure gets its speed from the reading", () => {
   assert.equal(ossm.controls.speed.value, 100);
 });
 
+test("an OSSM never follows with its pattern or sensation, even if they're set to follow", () => {
+  const { ossm, writes } = fakeOssm();
+  ossm.controls.pattern = { value: 0, min: 0, max: 10, mode: "pleasure" };
+  ossm.controls.sensation = { value: 50, min: 0, max: 100, mode: "arousal" };
+  const toy = ossmToy(ossm);
+  toy.follow(PLEASURE_FULL, 20);
+  assert.deepEqual(writes.map(([name]) => name), ["speed", "stroke"]);
+  assert.deepEqual(toy.status().follows, ["pleasure", "arousal"]);
+});
+
 test("a stopped OSSM is at speed 0, leaves stroke and depth where they are, has every control on Manual, and ignores new readings", async () => {
   const { ossm, writes } = fakeOssm();
   const toy = ossmToy(ossm);

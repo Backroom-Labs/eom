@@ -197,6 +197,15 @@ export type OssmHandle = {
 const OSSM_STOP_RETRY_MS = 20;
 const OSSM_STOP_TRIES = 100;
 
+// The OSSM controls that can follow the EOM. Pattern and sensation are set by hand only, so the
+// EOM can never pick a pattern that's dangerous with speed, or change the sensation by itself.
+export const OSSM_FOLLOWING_CONTROLS: readonly string[] = ["speed", "stroke", "depth"];
+
+// What an OSSM control follows: "manual" for one that can't follow, whatever its mode says.
+function ossmMode(name: string, control: OssmToyControl): string {
+  return OSSM_FOLLOWING_CONTROLS.includes(name) ? control.mode : "manual";
+}
+
 export function ossmToy(ossm: OssmHandle): Toy {
   return {
     key: ossm,
@@ -206,13 +215,14 @@ export function ossmToy(ossm: OssmHandle): Toy {
       return {
         name: ossm.name,
         strength: speed && speed.max > speed.min ? percentOf(speed.value, speed.min, speed.max) : 0,
-        follows: followsOf(Object.values(ossm.controls).map((c) => c.mode)),
+        follows: followsOf(Object.entries(ossm.controls).map(([name, c]) => ossmMode(name, c))),
       };
     },
     follow(r, maxDenied) {
       for (const [name, control] of Object.entries(ossm.controls)) {
-        if (!control.mode || control.mode === "manual") continue;
-        let value = Math.min(1, Math.max(0, followFraction(control.mode as FollowMode, r, maxDenied)));
+        const mode = ossmMode(name, control);
+        if (!mode || mode === "manual") continue;
+        let value = Math.min(1, Math.max(0, followFraction(mode as FollowMode, r, maxDenied)));
         if (control.inverted) value = 1 - value;
         const min = control.limitMin ?? control.min;
         const max = control.limitMax ?? control.max;
