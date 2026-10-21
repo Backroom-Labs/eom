@@ -1,7 +1,7 @@
 <script lang="ts">
   import { BleClient } from '@capacitor-community/bluetooth-le';
   import pkg from '../package.json';
-  import { ossmToy, type ToyList } from './lib/toyList';
+  import { OSSM_FOLLOWING_CONTROLS, ossmToy, type ToyList } from './lib/toyList';
 
   let isWriting = false;
 
@@ -340,7 +340,8 @@
                   {/if}
                 </div>
 
-                {#if (EOMembedded)}
+                <!-- Pattern and sensation are Manual only: no follow selector. -->
+                {#if (EOMembedded && OSSM_FOLLOWING_CONTROLS.includes(control[0]))}
                 <div>
                   <select id={deviceIndex + "-" + control[0] + "-mode"} onchange={async (e) => {
                       const mode = (e.target as HTMLSelectElement).value;
