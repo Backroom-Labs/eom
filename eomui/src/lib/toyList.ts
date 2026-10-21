@@ -2,6 +2,7 @@
 // stop them all.
 
 import { FOLLOW_MODES, followFraction, levelFor, percentOf, toyLevelPercent, toyLevels, ToyFollower, ToyPacer, type FollowMode, type PacedControl, type ToyControl, type ToyReading } from "./toyOutput.ts";
+import { highest, lowest, OSSM_FOLLOWING_CONTROLS, type OssmHandle, type OssmToyControl } from "./ossmControls.ts";
 
 // What the toy strip on the main screen shows for one toy.
 export type ToyStatus = {
@@ -174,50 +175,8 @@ export function buttplugToy<C extends ButtplugToyControl>(
   };
 }
 
-// A toy control on an OSSM, as OSSM.svelte sets it up.
-export type OssmToyControl = {
-  value: number;
-  min: number;
-  max: number;
-  mode: string;
-  inverted?: boolean;
-  limitMin?: number;
-  limitMax?: number;
-};
-
-// An OSSM control as OSSM.svelte shows it.
-export type OssmControl = OssmToyControl & { default: number; description?: string };
-
-// The controls a newly connected OSSM starts with. Every one is on Manual, so an OSSM never
-// starts moving the moment it connects, as Buttplug toys don't.
-export function ossmControls(): Record<string, OssmControl> {
-  return {
-    speed: { value: 0, default: 0, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust how fast it goes back and forth" },
-    stroke: { value: 50, default: 50, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust the length of each stroke" },
-    depth: { value: 10, default: 10, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust how deep the strokes go" },
-    pattern: { value: 0, default: 0, min: 0, max: 6, mode: "manual", limitMin: 0, limitMax: 6, inverted: false, description: "Choose from preset stroke patterns" },
-    sensation: { value: 50, default: 50, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust features of the current pattern.  50 = no adjustment" },
-  };
-}
-
-// An OSSM as OSSM.svelte connects it. Its writes go through its OssmWriter.
-export type OssmHandle = {
-  name: string;
-  controls: Record<string, OssmToyControl>;
-  // Queues a value for a control, sent when the OSSM can take it.
-  setControl(name: string, value: number): void;
-  // Sets speed 0 at once, ahead of anything queued, which is dropped.
-  stop(): Promise<void>;
-  // Drops anything queued.
-  cancel(): void;
-};
-
-// The OSSM controls that can follow the EOM. Pattern and sensation are set by hand only, so the
-// EOM can never pick a pattern that's dangerous with speed, or change the sensation by itself.
-export const OSSM_FOLLOWING_CONTROLS: readonly string[] = ["speed", "stroke", "depth"];
-
 // What an OSSM control follows: "manual" for one that can't follow, whatever its mode says.
-function ossmMode(name: string, control: OssmToyControl): string {
+function ossmMode(name: string, control: OssmToyControl): FollowMode {
   return OSSM_FOLLOWING_CONTROLS.includes(name) ? control.mode : "manual";
 }
 
@@ -237,10 +196,10 @@ export function ossmToy(ossm: OssmHandle): Toy {
       for (const [name, control] of Object.entries(ossm.controls)) {
         const mode = ossmMode(name, control);
         if (!mode || mode === "manual") continue;
-        let value = Math.min(1, Math.max(0, followFraction(mode as FollowMode, r, maxDenied)));
+        let value = Math.min(1, Math.max(0, followFraction(mode, r, maxDenied)));
         if (control.inverted) value = 1 - value;
-        const min = control.limitMin ?? control.min;
-        const max = control.limitMax ?? control.max;
+        const min = lowest(control);
+        const max = highest(control);
         ossm.setControl(name, Math.round(value * (max - min) + min));
       }
     },

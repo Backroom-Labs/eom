@@ -1,23 +1,13 @@
 <script lang="ts">
   import { BleClient } from '@capacitor-community/bluetooth-le';
-  import { OSSM_FOLLOWING_CONTROLS, ossmControls, ossmToy, type ToyList } from './lib/toyList';
+  import { ossmToy, type ToyList } from './lib/toyList';
+  import { OSSM_FOLLOWING_CONTROLS, highest, lowest, ossmControls, ossmStateValues, sliderPercent, strokerPartner, type OssmControl } from './lib/ossmControls';
   import { readOssmPatterns, type OSSMPattern } from './lib/ossmPatterns';
   import { OssmWriter } from './lib/ossmWriter';
   import { ToyMemory } from './lib/toyMemory';
   import { rememberOssmControl, restoreOssmControls } from './lib/ossmMemory';
   import { savedPreferences } from './lib/savedPreferences';
-
-  interface OSSMcontrol {
-    value: number;
-    default: number;
-    min: number;
-    max: number;
-    mode: string; // "manual", "pleasure", "arousal", "pressure", "denied" corresponding to EOM states
-    inverted?: boolean;  // EOM function: invert the control
-    limitMin?: number;  // EOM function: limit slider control
-    limitMax?: number;  // EOM function: limit slider control
-    description?: string;
-  }
+  import type { FollowMode } from './lib/toyOutput';
 
   interface OSSMdevice {
     name: string;
@@ -32,7 +22,7 @@
     patterns: OSSMPattern[];
     patternDescriptions: string[][];
     strokerMode: boolean;
-    controls: Record<string, OSSMcontrol>;
+    controls: Record<string, OssmControl>;
     setControl(name: string, value: number): void;
     stop(): Promise<void>;
     cancel(): void;
@@ -52,7 +42,7 @@
     strokerMode = $state(false);
     conn_status = $state("Disconnected");
     patterns = $state<OSSMPattern[]>([]);
-    controls = $state<Record<string, OSSMcontrol>>({});
+    controls = $state<Record<string, OssmControl>>({});
     // Every write goes through here: one at a time, 100 ms apart, latest value per control.
     writer = new OssmWriter((name, value) => this.writeControl(name, value));
     unpause_speed = 1;
@@ -102,13 +92,9 @@
     setControl(name: string, value: number, recursiveCommand: boolean = false): void {
       this.writer.set(name, value);
       if (this.strokerMode && !recursiveCommand) {
-        if (name === "depth") {
-          const derivedStroke = Math.round((value - 50) * 2);
-          this.setControl("stroke", derivedStroke, true);
-        } else if (name === "stroke") {
-          const derivedDepth = Math.round((value / 2) + 50);
-          this.setControl("depth", derivedDepth, true);
-        }
+        // Depth and stroke move together, the other kept inside its own range.
+        const partner = strokerPartner(name, value, this.controls);
+        if (partner) this.setControl(partner[0], partner[1], true);
       }
       if (name === "pattern") {
         this.setControl("sensation", 50, true);  //lets just always reset the sensation to 50 on pattern change for safety.
@@ -247,29 +233,18 @@
         const stateString = decoder.decode(stateData);
         const stateObject = JSON.parse(stateString);
         console.log("Initial state:", stateObject);
-        
-        // Update control values from device state
-        if (stateObject.speed !== undefined) {
-          newOSSM.controls.speed.value = stateObject.speed;
-        }
-        if (stateObject.stroke !== undefined) {
-          newOSSM.controls.stroke.value = stateObject.stroke;
-        }
-        if (stateObject.depth !== undefined) {
-          newOSSM.controls.depth.value = stateObject.depth;
-        }
-        if (stateObject.pattern !== undefined) {
-          newOSSM.controls.pattern.value = stateObject.pattern;
-        }
-        if (stateObject.sensation !== undefined) {
-          newOSSM.controls.sensation.value = stateObject.sensation;
+
+        // The controls show what the OSSM has, and the writer won't send it again.
+        for (const [name, value] of Object.entries(ossmStateValues(stateObject, newOSSM.patterns))) {
+          newOSSM.controls[name].value = value;
+          newOSSM.writer.has(name, value);
         }
       } catch (error) {
         console.error("Failed to read state:", error);
       }
 
       // Each control gets back the range and invert last set for it, on Manual. Values outside
-      // a restored range are moved in through the writer.
+      // a restored range are moved in through the writer, apart from speed, which is never changed.
       restoreOssmControls(toyMemory, newOSSM);
 
       devices.push(newOSSM);
@@ -339,7 +314,7 @@
                 {#if OSSM_FOLLOWING_CONTROLS.includes(control[0])}
                 <div>
                   <select id={deviceIndex + "-" + control[0] + "-mode"} onchange={async (e) => {
-                      const mode = (e.target as HTMLSelectElement).value;
+                      const mode = (e.target as HTMLSelectElement).value as FollowMode;
                       console.log(`Setting mode for ${ossm.name} ${control[0]} to ${mode}`);
                       control[1].mode = mode;
                   }}>
@@ -369,8 +344,8 @@
                 id={`control-${deviceIndex}-${control[0]}-slider`} 
                 class="main-slider"
                 type="range" 
-                min={control[1].limitMin ?? control[1].min}
-                max={control[1].limitMax ?? control[1].max} 
+                min={lowest(control[1])}
+                max={highest(control[1])}
                 value={control[1].value}
                 style="background: hsl({controlIndex * (360 / Object.keys(ossm.controls).length)}, 30%, 50%);"
                 onpointerdown={(e) => {
@@ -406,7 +381,7 @@
                   
                   // For touchscreens: prevent jump if not actively dragging and jump is too large
                   if (control[0] !== "pattern" && !input.dataset.dragging && 
-                      Math.abs(newValue - control[1].value) > (control[1].limitMax! - control[1].limitMin!) * 0.1) {
+                      Math.abs(newValue - control[1].value) > (highest(control[1]) - lowest(control[1])) * 0.1) {
                     input.value = control[1].value.toString();
                     return;
                   }
@@ -419,14 +394,14 @@
             {#if control[0] === "pattern"}
               <div class="pattern-numbers">
                 {#each Array.from({ length: control[1].max - control[1].min + 1 }, (_, i) => i + control[1].min) as num}
-                  <span class="pattern-number" style="left: {(num - control[1].min) / (control[1].max - control[1].min) * 100}%;">{num + 1}</span>
+                  <span class="pattern-number" style="left: {sliderPercent(num, control[1].min, control[1].max)}%;">{num + 1}</span>
                 {/each}
               </div>
             {:else}
               <div class="slider">
                   <!-- Follows the range, so a range restored on connecting shows too. -->
                   <div id={`control-${deviceIndex}-${control[0]}-range-slider`} class="range-slider"
-                    style="left: {((control[1].limitMin ?? control[1].min) - control[1].min) / (control[1].max - control[1].min) * 100}%; right: {(control[1].max - (control[1].limitMax ?? control[1].max)) / (control[1].max - control[1].min) * 100}%;"></div>
+                    style="left: {sliderPercent(lowest(control[1]), control[1].min, control[1].max)}%; right: {100 - sliderPercent(highest(control[1]), control[1].min, control[1].max)}%;"></div>
               </div>
               <div class="range-input">
                   <input id={`control-${deviceIndex}-${control[0]}-min`} type="range" class="min-range"  step="1" 
@@ -435,10 +410,11 @@
                     value={control[1].limitMin}
                     onchange={() => rememberRangeAndInvert(ossm, control[0])}
                     oninput={(e) => {
-                      const originalValue = control[1].limitMin ?? control[1].min;
+                      const originalValue = lowest(control[1]);
                       control[1].limitMin = parseInt((e.target as HTMLInputElement)?.value ?? "0");
-                      const newValue = ((control[1].value - originalValue) / ((control[1].limitMax ?? control[1].max ) - originalValue)) *
-                        ((control[1].limitMax ?? control[1].max) - (control[1].limitMin ?? control[1].min)) + (control[1].limitMin ?? control[1].min);
+                      // The value keeps its place in the range as the range changes.
+                      const newValue = sliderPercent(control[1].value, originalValue, highest(control[1])) / 100 *
+                        (highest(control[1]) - lowest(control[1])) + lowest(control[1]);
                       ossm.setControl(control[0], Math.round(newValue));
                     }} 
                   />
@@ -448,10 +424,11 @@
                   value={control[1].limitMax} 
                   onchange={() => rememberRangeAndInvert(ossm, control[0])}
                   oninput={(e) => {
-                      const originalValue = control[1].limitMax ?? control[1].max;
+                      const originalValue = highest(control[1]);
                       control[1].limitMax = parseInt((e.target as HTMLInputElement)?.value ?? "255");
-                      const newValue = ((control[1].value - (control[1].limitMin ?? control[1].min)) / (originalValue - (control[1].limitMin ?? control[1].min))) *
-                        ((control[1].limitMax ?? control[1].max) - (control[1].limitMin ?? control[1].min)) + (control[1].limitMin ?? control[1].min);
+                      // The value keeps its place in the range as the range changes.
+                      const newValue = sliderPercent(control[1].value, lowest(control[1]), originalValue) / 100 *
+                        (highest(control[1]) - lowest(control[1])) + lowest(control[1]);
                       ossm.setControl(control[0], Math.round(newValue));
                     }} 
                   />

@@ -2,7 +2,7 @@
 // OSSM that reconnects gets them back. OSSMs are told apart by their Bluetooth name, so two with
 // the same name share their settings. What a control follows isn't remembered.
 
-import type { OssmHandle, OssmToyControl } from "./toyList.ts";
+import { highest, intoRange, lowest, type OssmHandle, type OssmToyControl } from "./ossmControls.ts";
 import type { RememberedControl, ToyMemory } from "./toyMemory.ts";
 
 // Pattern's range isn't remembered: it's set from the patterns the OSSM has when it connects.
@@ -13,8 +13,8 @@ function remembered(name: string, control: OssmToyControl): RememberedControl {
   return {
     type: name,
     index: 0,
-    min: control.limitMin ?? control.min,
-    max: control.limitMax ?? control.max,
+    min: lowest(control),
+    max: highest(control),
     invert: control.inverted ?? false,
   };
 }
@@ -26,26 +26,26 @@ export function rememberOssmControl(memory: ToyMemory, ossmName: string, name: s
 }
 
 // Gives a newly connected OSSM's controls the range and invert last saved for them, and queues a
-// write for any value outside its range, to move it in. Every one starts on Manual, so an OSSM never starts moving the moment it
-// connects.
+// write for any value outside its range, to move it in. Every one starts on Manual, as ToyMemory
+// restores them, so an OSSM never starts moving the moment it connects. Speed is never changed:
+// an OSSM connected mid-session keeps going as it was.
 export function restoreOssmControls(memory: ToyMemory, ossm: OssmHandle) {
-  for (const [name, control] of Object.entries(ossm.controls)) {
-    control.mode = "manual";
-    if (NOT_REMEMBERED.includes(name)) continue;
-    const r = remembered(name, control);
-    memory.restore(ossm.name, [r]);
+  const controls = Object.entries(ossm.controls);
+  const restored = controls.map(([name, control]) => remembered(name, control));
+  memory.restore(ossm.name, restored);
+  // Every range first, so a value one control's write derives for another (stroker mode) is
+  // kept inside the other's restored range.
+  controls.forEach(([name, control], i) => {
+    const r = restored[i];
+    control.mode = r.mode ?? "manual";
+    if (NOT_REMEMBERED.includes(name)) return;
     control.limitMin = r.min;
     control.limitMax = r.max;
     control.inverted = r.invert;
-    const value = intoRange(name, control);
+  });
+  for (const [name, control] of controls) {
+    if (name === "speed") continue;
+    const value = intoRange(control, control.value);
     if (value !== control.value) ossm.setControl(name, value);
   }
-}
-
-// Where the control's value has to go to be inside its range. Speed is only ever lowered, so a
-// paused OSSM doesn't start moving when it connects.
-function intoRange(name: string, control: OssmToyControl): number {
-  const max = control.limitMax ?? control.max;
-  if (name === "speed") return Math.min(control.value, max);
-  return Math.min(max, Math.max(control.limitMin ?? control.min, control.value));
 }

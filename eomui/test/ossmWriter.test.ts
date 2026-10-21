@@ -133,6 +133,28 @@ test("cancel drops values still waiting", () => withClock(async () => {
   assert.deepEqual(link.sent(), [["speed", 40]]);
 }));
 
+test("a value the OSSM reported having isn't sent", () => withClock(async () => {
+  const link = fakeLink(5);
+  const writer = new OssmWriter(link.write);
+  writer.has("speed", 30);
+  writer.has("stroke", 50);
+  writer.set("speed", 30);
+  writer.set("stroke", 60);
+  await tick(500);
+  assert.deepEqual(link.sent(), [["stroke", 60]]);
+}));
+
+test("a value the OSSM no longer has is sent again, once it reports the change", () => withClock(async () => {
+  const link = fakeLink(5);
+  const writer = new OssmWriter(link.write);
+  writer.set("speed", 40);
+  await tick(200);
+  writer.has("speed", 25); // changed on the OSSM itself
+  writer.set("speed", 40);
+  await tick(200);
+  assert.deepEqual(link.sent(), [["speed", 40], ["speed", 40]]);
+}));
+
 test("a value whose write failed is sent again when set again", () => withClock(async () => {
   let fail = true;
   const sent: number[] = [];
