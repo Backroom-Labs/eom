@@ -463,7 +463,7 @@
     <div  style="font-size: small;">
       <p>This supports <a target="_blank" href="https://www.researchanddesire.com/pages/ossm">OSSM devices</a> with a stock firmware from 2026 or newer.</p>
       <p>If your OSSM firmware is older or custom you can easily upgrade it using <a href="https://dashboard.researchanddesire.com/app/tools/web-flasher">their web flashing tool</a>.</p>
-      <p>Coded with love and hedonism by <a target="_blank" href="http://rubberyfun.com/">Claus Macher</a>. His original OSSM-Possum app <a target="_blank" href="https://github.com/rubberyfun/OSSM-Possum">is posted here</a>.</p>
+      <p>Coded with love and hedonism by <a target="_blank" href="http://rubberyfun.com/">Claus Macher</a>. His original OSSM-Possum app <a target="_blank" href="https://github.com/rubberyfun/OSSM-Possum">is posted here</a>, licensed under <a target="_blank" href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>.</p>
       <p></p>
     </div>
  {/if}
