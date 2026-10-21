@@ -2,6 +2,7 @@
   import { BleClient } from '@capacitor-community/bluetooth-le';
   import pkg from '../package.json';
   import { OSSM_FOLLOWING_CONTROLS, ossmToy, type ToyList } from './lib/toyList';
+  import { readOssmPatterns, type OSSMPattern } from './lib/ossmPatterns';
 
   let isWriting = false;
 
@@ -15,11 +16,6 @@
     limitMin?: number;  // EOM function: limit slider control
     limitMax?: number;  // EOM function: limit slider control
     description?: string;
-  }
-
-  interface OSSMPattern {
-    name: string;
-    idx: number;
   }
 
   interface OSSMdevice {
@@ -232,22 +228,10 @@
         console.error("Failed to send startup sequence:", error);
       }
 
-      // Read patterns from rx_patterns characteristic
-      try {
-        const patternsData = await BleClient.read(device.deviceId, newOSSM.service, newOSSM.rx_patterns);
-        const decoder = new TextDecoder();
-        const patternsString = decoder.decode(patternsData);
-        const patternsObject = JSON.parse(patternsString);
-        let indexFallback = 0;
-        patternsObject.forEach((pattern: any) => {
-          console.log("Pattern:", pattern);
-          newOSSM.patterns.push({ name: pattern.name, idx: pattern.idx ?? indexFallback++ });
-        });
-        newOSSM.controls["pattern"].max = newOSSM.patterns.length - 1;
-        newOSSM.controls["pattern"].limitMax = newOSSM.patterns.length - 1;
-      } catch (error) {
-        console.error("Failed to read patterns:", error);
-      }
+      // Read patterns from rx_patterns characteristic; falls back to Simple Stroke alone if that fails
+      newOSSM.patterns = await readOssmPatterns(() => BleClient.read(device.deviceId, newOSSM.service, newOSSM.rx_patterns));
+      newOSSM.controls["pattern"].max = newOSSM.patterns.length - 1;
+      newOSSM.controls["pattern"].limitMax = newOSSM.patterns.length - 1;
 
       // Read initial state from rx_state characteristic
       try {
@@ -328,11 +312,11 @@
       <!-- The live controls, not a snapshot: mode, invert and limits set here must reach the OSSM's state. -->
       {#each Object.entries(ossm.controls) as control, controlIndex}
         {#if (!(control[0] === "depth" && ossm.strokerMode) && 
-              !(control[0] === "sensation" && ossm.patterns[ossm.controls["pattern"].value].name === "Simple Stroke"))}
+              !(control[0] === "sensation" && ossm.patterns[ossm.controls["pattern"].value]?.name === "Simple Stroke"))}
 
                 <div class="slider-label">
                   {#if (control[0] === "pattern")}
-                    Pattern: <span style="font-weight: normal;">{$state.snapshot(ossm.patterns)[control[1].value].name ?? control[1].value}</span>
+                    Pattern: <span style="font-weight: normal;">{$state.snapshot(ossm.patterns)[control[1].value]?.name ?? control[1].value}</span>
                     <div class="minMaxText"  style="font-weight: normal;">{ossm.patternDescriptions[control[1].value]?.[1] ?? "(EXPERIMENTAL!) A custom pattern"}</div>
                   {:else}
                     {control[0].charAt(0).toUpperCase() + control[0].slice(1)}: {control[1].value} 
