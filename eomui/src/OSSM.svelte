@@ -1,7 +1,7 @@
 <script lang="ts">
   import { BleClient } from '@capacitor-community/bluetooth-le';
   import pkg from '../package.json';
-  import { ossmToy, type ToyList } from './lib/toyList';
+  import { ossmControls, ossmToy, type ToyList } from './lib/toyList';
 
   let isWriting = false;
 
@@ -88,13 +88,7 @@
       this.rx_state = "522b443a-4f53-534d-2000-420badbabe69";
       this.rx_patterns = "522b443a-4f53-534d-3000-420badbabe69";
       this.unpause_speed = 1;
-      this.controls = {
-        speed: { value: 0, default: 0, min: 0, max: 100, mode: "pleasure", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust how fast it goes back and forth" },
-        stroke: { value: 50, default: 50, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust the length of each stroke"  },
-        depth: { value: 10, default: 10, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust how deep the strokes go"  },
-        pattern: { value: 0, default: 0, min: 0, max: 6, mode: "manual", limitMin: 0, limitMax: 6, inverted: false, description: "Choose from preset stroke patterns"  },
-        sensation: { value: 50, default: 50, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust features of the current pattern.  50 = no adjustment"  },
-      };
+      this.controls = ossmControls();
     }
 
     resetControls(): void {

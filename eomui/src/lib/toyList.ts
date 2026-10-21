@@ -185,6 +185,21 @@ export type OssmToyControl = {
   limitMax?: number;
 };
 
+// An OSSM control as OSSM.svelte shows it.
+export type OssmControl = OssmToyControl & { default: number; description?: string };
+
+// The controls a newly connected OSSM starts with. Every one is on Manual, so an OSSM never
+// starts moving the moment it connects, as Buttplug toys don't.
+export function ossmControls(): Record<string, OssmControl> {
+  return {
+    speed: { value: 0, default: 0, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust how fast it goes back and forth" },
+    stroke: { value: 50, default: 50, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust the length of each stroke" },
+    depth: { value: 10, default: 10, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust how deep the strokes go" },
+    pattern: { value: 0, default: 0, min: 0, max: 6, mode: "manual", limitMin: 0, limitMax: 6, inverted: false, description: "Choose from preset stroke patterns" },
+    sensation: { value: 50, default: 50, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust features of the current pattern.  50 = no adjustment" },
+  };
+}
+
 // An OSSM as OSSM.svelte connects it.
 export type OssmHandle = {
   name: string;
