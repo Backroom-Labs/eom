@@ -1498,7 +1498,7 @@
     </section>
     <section class="group ossm">
       <h3>OSSM</h3>
-      <OSSM bind:this={ossmComponent} bind:devices={ossmDevices} EOMembedded={true} {toys} />
+      <OSSM bind:this={ossmComponent} bind:devices={ossmDevices} {toys} />
     </section>
     <section class="group">
       <h3>Lights</h3>
@@ -2094,8 +2094,8 @@
     color: var(--muted);
     vertical-align: middle;
   }
-  /* The OSSM panel is shared with the standalone OSSM-Possum app, so its inside stays as it is.
-     Only its frame, connect button and error are fitted to the drawer here. */
+  /* The OSSM panel is our own code now (ADR 0010). Its frame, connect button and error
+     are fitted to the drawer here; restyle its inside in OSSM.svelte. */
   .ossm :global(.bluetooth-ossm-control) {
     width: auto;
     margin: 52px 0 44px;
