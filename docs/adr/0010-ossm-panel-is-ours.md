@@ -1,0 +1,3 @@
+# The OSSM panel is ours, not kept in sync with OSSM-Possum
+
+`eomui/src/OSSM.svelte` started as Claus Macher's OSSM-Possum panel, which also runs as a standalone app. We treat it as our own code and change it freely, rather than keeping it close to upstream and working around it from `ossmToy` and the drawer CSS. We had already changed it, nobody was syncing it, and the fixes it needs (Manual on connect, paced writes, which controls can follow) belong inside it. The standalone-app branches are removed and Claus Macher stays credited in the panel. Pulling later upstream changes means merging by hand.
