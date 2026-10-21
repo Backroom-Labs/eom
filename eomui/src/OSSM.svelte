@@ -504,7 +504,7 @@
       transform: translateX(-50%);
       width: 30%;
       height: 50px;
-      background-image: url('/possum_head.svg');
+      background-image: url('./assets/possum_head.svg');
       background-size: contain;
       background-repeat: no-repeat;
       background-position: center;
@@ -518,7 +518,7 @@
       transform: translateX(-50%);
       width: 40%;
       height: 60px;
-      background-image: url('/possum_tail.svg');
+      background-image: url('./assets/possum_tail.svg');
       background-size: 100% 60px;
       background-repeat: no-repeat;
       background-position: center;
