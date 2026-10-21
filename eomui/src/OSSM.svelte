@@ -1,7 +1,7 @@
 <script lang="ts">
   import { BleClient } from '@capacitor-community/bluetooth-le';
-  import pkg from '../package.json';
-  import { ossmToy, type ToyList } from './lib/toyList';
+  import { OSSM_FOLLOWING_CONTROLS, ossmControls, ossmToy, type ToyList } from './lib/toyList';
+  import { readOssmPatterns, type OSSMPattern } from './lib/ossmPatterns';
   import { OssmWriter } from './lib/ossmWriter';
 
   interface OSSMcontrol {
@@ -14,11 +14,6 @@
     limitMin?: number;  // EOM function: limit slider control
     limitMax?: number;  // EOM function: limit slider control
     description?: string;
-  }
-
-  interface OSSMPattern {
-    name: string;
-    idx: number;
   }
 
   interface OSSMdevice {
@@ -89,13 +84,7 @@
       this.rx_state = "522b443a-4f53-534d-2000-420badbabe69";
       this.rx_patterns = "522b443a-4f53-534d-3000-420badbabe69";
       this.unpause_speed = 1;
-      this.controls = {
-        speed: { value: 0, default: 0, min: 0, max: 100, mode: "pleasure", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust how fast it goes back and forth" },
-        stroke: { value: 50, default: 50, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust the length of each stroke"  },
-        depth: { value: 10, default: 10, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust how deep the strokes go"  },
-        pattern: { value: 0, default: 0, min: 0, max: 6, mode: "manual", limitMin: 0, limitMax: 6, inverted: false, description: "Choose from preset stroke patterns"  },
-        sensation: { value: 50, default: 50, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust features of the current pattern.  50 = no adjustment"  },
-      };
+      this.controls = ossmControls();
     }
 
     resetControls(): void {
@@ -172,11 +161,10 @@
   
   interface Props {
     devices: OSSMdevice[];
-    EOMembedded?: boolean;
     toys?: ToyList; // the app's list of every connected toy, which follows readings and stops them
   }
 
-  let { devices = $bindable([]), EOMembedded = false, toys }: Props = $props();
+  let { devices = $bindable([]), toys }: Props = $props();
   
   let connectionError = $state<string | null>(null);
 
@@ -236,22 +224,10 @@
         console.error("Failed to send startup sequence:", error);
       }
 
-      // Read patterns from rx_patterns characteristic
-      try {
-        const patternsData = await BleClient.read(device.deviceId, newOSSM.service, newOSSM.rx_patterns);
-        const decoder = new TextDecoder();
-        const patternsString = decoder.decode(patternsData);
-        const patternsObject = JSON.parse(patternsString);
-        let indexFallback = 0;
-        patternsObject.forEach((pattern: any) => {
-          console.log("Pattern:", pattern);
-          newOSSM.patterns.push({ name: pattern.name, idx: pattern.idx ?? indexFallback++ });
-        });
-        newOSSM.controls["pattern"].max = newOSSM.patterns.length - 1;
-        newOSSM.controls["pattern"].limitMax = newOSSM.patterns.length - 1;
-      } catch (error) {
-        console.error("Failed to read patterns:", error);
-      }
+      // Read patterns from rx_patterns characteristic; falls back to Simple Stroke alone if that fails
+      newOSSM.patterns = await readOssmPatterns(() => BleClient.read(device.deviceId, newOSSM.service, newOSSM.rx_patterns));
+      newOSSM.controls["pattern"].max = newOSSM.patterns.length - 1;
+      newOSSM.controls["pattern"].limitMax = newOSSM.patterns.length - 1;
 
       // Read initial state from rx_state characteristic
       try {
@@ -294,7 +270,7 @@
 
 </script>
 
-<div class="bluetooth-ossm-control" style="--version: '{pkg.version}';">
+<div class="bluetooth-ossm-control">
   {#if devices.length}
     {#each devices as ossm, deviceIndex}
       <div style="display: flex;flex-direction: row;justify-content: space-between;margin-bottom: 10px; ">
@@ -332,11 +308,11 @@
       <!-- The live controls, not a snapshot: mode, invert and limits set here must reach the OSSM's state. -->
       {#each Object.entries(ossm.controls) as control, controlIndex}
         {#if (!(control[0] === "depth" && ossm.strokerMode) && 
-              !(control[0] === "sensation" && ossm.patterns[ossm.controls["pattern"].value].name === "Simple Stroke"))}
+              !(control[0] === "sensation" && ossm.patterns[ossm.controls["pattern"].value]?.name === "Simple Stroke"))}
 
                 <div class="slider-label">
                   {#if (control[0] === "pattern")}
-                    Pattern: <span style="font-weight: normal;">{$state.snapshot(ossm.patterns)[control[1].value].name ?? control[1].value}</span>
+                    Pattern: <span style="font-weight: normal;">{$state.snapshot(ossm.patterns)[control[1].value]?.name ?? control[1].value}</span>
                     <div class="minMaxText"  style="font-weight: normal;">{ossm.patternDescriptions[control[1].value]?.[1] ?? "(EXPERIMENTAL!) A custom pattern"}</div>
                   {:else}
                     {control[0].charAt(0).toUpperCase() + control[0].slice(1)}: {control[1].value} 
@@ -344,7 +320,8 @@
                   {/if}
                 </div>
 
-                {#if (EOMembedded)}
+                <!-- Pattern and sensation are Manual only: no follow selector. -->
+                {#if OSSM_FOLLOWING_CONTROLS.includes(control[0])}
                 <div>
                   <select id={deviceIndex + "-" + control[0] + "-mode"} onchange={async (e) => {
                       const mode = (e.target as HTMLSelectElement).value;
@@ -495,20 +472,15 @@
     <div  style="font-size: small;">
       <p>This supports <a target="_blank" href="https://www.researchanddesire.com/pages/ossm">OSSM devices</a> with a stock firmware from 2026 or newer.</p>
       <p>If your OSSM firmware is older or custom you can easily upgrade it using <a href="https://dashboard.researchanddesire.com/app/tools/web-flasher">their web flashing tool</a>.</p>
-      {#if (!EOMembedded)}
-        <p>Coded with love and hedonism by <a href="http://rubberyfun.com/">Claus Macher</a>.  Main repo <a href="https://github.com/rubberyfun/OSSM-Possum">is posted here</a>.  Have fun!</p>
-      {/if}
+      <p>Coded with love and hedonism by <a target="_blank" href="http://rubberyfun.com/">Claus Macher</a>. His original OSSM-Possum app <a target="_blank" href="https://github.com/rubberyfun/OSSM-Possum">is posted here</a>.</p>
       <p></p>
     </div>
  {/if}
- {#if (EOMembedded || devices.length == 0)}
    <div>
     <button onclick={() => connectBluetooth()}>
       Connect to an{#if devices.length}other{:else}{/if} OSSM device
     </button>
-    
   </div>
-  {/if}
   
   {#if connectionError}
     <div style="color: #c00; font-weight: bold; margin-top: 10px; padding: 10px; background-color: #fee; border: 1px solid #faa; border-radius: 4px;">
@@ -534,8 +506,7 @@
         position: relative;
 
       &::before {
-      content: var(--version);
-      color: #666;
+      content: '';
       position: absolute;
       top: -46px;
       left: 40%;
@@ -546,7 +517,6 @@
       background-size: contain;
       background-repeat: no-repeat;
       background-position: center;
-      text-indent: 150px;
     }
 
       &::after {

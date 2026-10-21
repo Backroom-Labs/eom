@@ -1,7 +1,7 @@
 // Run from eomui/: node --test test/*.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ToyList, buttplugToy, ossmToy, type Toy, type ButtplugToyControl } from "../src/lib/toyList.ts";
+import { ToyList, buttplugToy, ossmToy, ossmControls, type Toy, type ButtplugToyControl } from "../src/lib/toyList.ts";
 import { type ToyReading } from "../src/lib/toyOutput.ts";
 import { OssmWriter } from "../src/lib/ossmWriter.ts";
 import { fakeToy, settle } from "./fakeToy.ts";
@@ -108,6 +108,17 @@ test("an OSSM following pleasure gets its speed from the reading", () => {
   assert.equal(ossm.controls.speed.value, 100);
 });
 
+test("an OSSM never follows with its pattern or sensation, even if they're set to follow", async () => {
+  const { ossm, writes } = fakeOssm();
+  ossm.controls.pattern = { value: 0, min: 0, max: 10, mode: "pleasure" };
+  ossm.controls.sensation = { value: 50, min: 0, max: 100, mode: "arousal" };
+  const toy = ossmToy(ossm);
+  toy.follow(PLEASURE_FULL, 20);
+  await writesGoOut();
+  assert.deepEqual(writes.map(([name]) => name), ["speed", "stroke"]);
+  assert.deepEqual(toy.status().follows, ["pleasure", "arousal"]);
+});
+
 test("a stopped OSSM is at speed 0, leaves stroke and depth where they are, has every control on Manual, and ignores new readings", async () => {
   const { ossm, writes } = fakeOssm();
   const toy = ossmToy(ossm);
@@ -157,6 +168,35 @@ test("an OSSM that leaves drops writes still waiting", async () => {
   toy.release!();
   await writesGoOut();
   assert.deepEqual(writes, [["speed", 100]]);
+});
+
+test("a newly connected OSSM has speed, stroke, depth, pattern and sensation all on Manual", () => {
+  const controls = ossmControls();
+  assert.deepEqual(
+    Object.entries(controls).map(([name, c]) => [name, c.mode]),
+    [["speed", "manual"], ["stroke", "manual"], ["depth", "manual"], ["pattern", "manual"], ["sensation", "manual"]],
+  );
+});
+
+test("an OSSM connected mid-session keeps the speed it was already at", async () => {
+  const toys = new ToyList();
+  toys.add(fakeButtplugToy().toy);
+  toys.follow(PLEASURE_FULL, 20);
+  const writes: [string, number][] = [];
+  const ossm = {
+    name: "OSSM",
+    controls: ossmControls(),
+    async setControl(name: string, value: number) {
+      writes.push([name, value]);
+      ossm.controls[name].value = value;
+    },
+  };
+  ossm.controls.speed.value = 30; // as read from the OSSM when it connected
+  toys.add(ossmToy(ossm));
+  await toys.follow(PLEASURE_FULL, 20);
+  await settle();
+  assert.equal(ossm.controls.speed.value, 30);
+  assert.deepEqual(writes, []);
 });
 
 // A list holding a Buttplug toy and an OSSM, both following the EOM.
