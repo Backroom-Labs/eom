@@ -1,7 +1,8 @@
 // Run from eomui/: node --test test/*.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ToyList, buttplugToy, ossmToy, ossmControls, type Toy, type ButtplugToyControl } from "../src/lib/toyList.ts";
+import { ToyList, buttplugToy, ossmToy, type Toy, type ButtplugToyControl } from "../src/lib/toyList.ts";
+import { ossmControls } from "../src/lib/ossmControls.ts";
 import { type ToyReading } from "../src/lib/toyOutput.ts";
 import { OssmWriter } from "../src/lib/ossmWriter.ts";
 import { fakeToy, settle } from "./fakeToy.ts";

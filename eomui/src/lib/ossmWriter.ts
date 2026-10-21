@@ -26,6 +26,12 @@ export class OssmWriter {
     this.sendNext();
   }
 
+  // The OSSM reported having this value, read on connecting or changed on the OSSM itself, so
+  // it isn't sent again, and a value it no longer has is.
+  has(name: string, value: number) {
+    this.sent.set(name, value);
+  }
+
   private sendNext() {
     if (this.inFlight || this.timer !== undefined) return;
     const next = this.waiting.entries().next();

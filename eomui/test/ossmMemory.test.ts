@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ToyMemory } from "../src/lib/toyMemory.ts";
 import { rememberOssmControl, restoreOssmControls } from "../src/lib/ossmMemory.ts";
-import { ossmControls, type OssmHandle } from "../src/lib/toyList.ts";
+import { ossmControls, type OssmHandle } from "../src/lib/ossmControls.ts";
 
 // Saved preferences on this phone or browser, kept across reconnects (and new ToyMemorys).
 function fakeStorage() {
@@ -91,7 +91,7 @@ test("a value outside the restored range is moved into it through the OSSM's wri
   assert.deepEqual(writes, [["stroke", 60], ["depth", 5]]);
 });
 
-test("a speed below the restored range is left, so a paused OSSM doesn't start on connecting", () => {
+test("connecting never changes an OSSM's speed, even outside the restored range", () => {
   const storage = fakeStorage();
   const memory = new ToyMemory(storage);
   const { ossm: before } = fakeOssm();
@@ -106,7 +106,8 @@ test("a speed below the restored range is left, so a paused OSSM doesn't start o
   const { ossm: fast, writes: fastWrites } = fakeOssm();
   fast.controls.speed.value = 90;
   restoreOssmControls(new ToyMemory(storage), fast);
-  assert.deepEqual(fastWrites, [["speed", 70]]);
+  assert.deepEqual(fastWrites, []);
+  assert.equal(fast.controls.speed.value, 90);
 });
 
 test("pattern's range isn't remembered, as it follows the patterns the OSSM has", () => {
