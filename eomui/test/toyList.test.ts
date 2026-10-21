@@ -2,7 +2,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ToyList, buttplugToy, ossmToy, type Toy, type ButtplugToyControl } from "../src/lib/toyList.ts";
+import { ossmControls } from "../src/lib/ossmControls.ts";
 import { type ToyReading } from "../src/lib/toyOutput.ts";
+import { OssmWriter } from "../src/lib/ossmWriter.ts";
 import { fakeToy, settle } from "./fakeToy.ts";
 import { setRangeEnd, toyControlChanged } from "../src/lib/toyControlView.ts";
 
@@ -74,25 +76,30 @@ test("a Buttplug toy driven by hand is stopped too", async () => {
   assert.equal(t.shown.slider, 0);
 });
 
-// An OSSM like OSSM.svelte's: setControl drops a write while another is in flight.
+// An OSSM like OSSM.svelte's: its writes go through an OssmWriter, and each takes a moment.
 function fakeOssm(speedMode = "pleasure") {
   const writes: [string, number][] = [];
   const ossm: any = {
     name: "OSSM",
-    isWriting: false,
     controls: {
       speed: { value: 0, min: 0, max: 100, mode: speedMode },
       stroke: { value: 50, min: 0, max: 100, mode: "arousal" },
       depth: { value: 10, min: 0, max: 100, mode: "manual" },
     },
-    async setControl(name: string, value: number) {
-      if (ossm.isWriting) return;
-      writes.push([name, value]);
-      ossm.controls[name].value = value;
-    },
   };
+  const writer = new OssmWriter(async (name, value) => {
+    writes.push([name, value]);
+    ossm.controls[name].value = value;
+    await settle();
+  });
+  ossm.setControl = (name: string, value: number) => writer.set(name, value);
+  ossm.stop = () => writer.stop();
+  ossm.cancel = () => writer.cancel();
   return { ossm, writes };
 }
+
+// Long enough for an OSSM's waiting writes to go out, 100 ms apart.
+const writesGoOut = () => new Promise((resolve) => setTimeout(resolve, 250));
 
 const PLEASURE_FULL: ToyReading = { motor: 255, arousal: 4096, pressure: 0, denied: 0 };
 
@@ -100,6 +107,17 @@ test("an OSSM following pleasure gets its speed from the reading", () => {
   const { ossm } = fakeOssm();
   ossmToy(ossm).follow(PLEASURE_FULL, 20);
   assert.equal(ossm.controls.speed.value, 100);
+});
+
+test("an OSSM never follows with its pattern or sensation, even if they're set to follow", async () => {
+  const { ossm, writes } = fakeOssm();
+  ossm.controls.pattern = { value: 0, min: 0, max: 10, mode: "pleasure" };
+  ossm.controls.sensation = { value: 50, min: 0, max: 100, mode: "arousal" };
+  const toy = ossmToy(ossm);
+  toy.follow(PLEASURE_FULL, 20);
+  await writesGoOut();
+  assert.deepEqual(writes.map(([name]) => name), ["speed", "stroke"]);
+  assert.deepEqual(toy.status().follows, ["pleasure", "arousal"]);
 });
 
 test("a stopped OSSM is at speed 0, leaves stroke and depth where they are, has every control on Manual, and ignores new readings", async () => {
@@ -117,13 +135,69 @@ test("a stopped OSSM is at speed 0, leaves stroke and depth where they are, has 
   assert.equal(writes.length, before);
 });
 
-test("an OSSM busy writing when stopped still ends at speed 0", async () => {
-  const { ossm } = fakeOssm("manual");
-  ossm.controls.speed.value = 60;
-  ossm.isWriting = true;
-  setTimeout(() => (ossm.isWriting = false), 30);
-  await ossmToy(ossm).stop();
+test("an OSSM with speed and stroke both following gets both", async () => {
+  const { ossm, writes } = fakeOssm();
+  ossmToy(ossm).follow(PLEASURE_FULL, 20);
+  await writesGoOut();
+  assert.deepEqual(writes, [["speed", 100], ["stroke", 100]]);
+});
+
+test("an OSSM isn't sent the same values again on the next reading", async () => {
+  const { ossm, writes } = fakeOssm();
+  const toy = ossmToy(ossm);
+  toy.follow(PLEASURE_FULL, 20);
+  await writesGoOut();
+  toy.follow(PLEASURE_FULL, 20);
+  await writesGoOut();
+  assert.equal(writes.length, 2);
+});
+
+test("stopping an OSSM with writes waiting sets speed 0 at once and drops them", async () => {
+  const { ossm, writes } = fakeOssm();
+  const toy = ossmToy(ossm);
+  toy.follow(PLEASURE_FULL, 20);
+  await toy.stop();
   assert.equal(ossm.controls.speed.value, 0);
+  await writesGoOut();
+  assert.deepEqual(writes, [["speed", 100], ["speed", 0]]);
+});
+
+test("an OSSM that leaves drops writes still waiting", async () => {
+  const { ossm, writes } = fakeOssm();
+  const toy = ossmToy(ossm);
+  toy.follow(PLEASURE_FULL, 20);
+  toy.release!();
+  await writesGoOut();
+  assert.deepEqual(writes, [["speed", 100]]);
+});
+
+test("a newly connected OSSM has speed, stroke, depth, pattern and sensation all on Manual", () => {
+  const controls = ossmControls();
+  assert.deepEqual(
+    Object.entries(controls).map(([name, c]) => [name, c.mode]),
+    [["speed", "manual"], ["stroke", "manual"], ["depth", "manual"], ["pattern", "manual"], ["sensation", "manual"]],
+  );
+});
+
+test("an OSSM connected mid-session keeps the speed it was already at", async () => {
+  const toys = new ToyList();
+  toys.add(fakeButtplugToy().toy);
+  toys.follow(PLEASURE_FULL, 20);
+  const writes: [string, number][] = [];
+  const ossm = {
+    name: "OSSM",
+    controls: ossmControls(),
+    async setControl(name: string, value: number) {
+      writes.push([name, value]);
+      ossm.controls[name].value = value;
+    },
+  };
+  ossm.controls.speed.value = 30; // as read from the OSSM when it connected
+  toys.add(ossmToy(ossm));
+  await toys.follow(PLEASURE_FULL, 20);
+  await settle();
+  assert.equal(ossm.controls.speed.value, 30);
+  assert.deepEqual(writes, []);
 });
 
 // A list holding a Buttplug toy and an OSSM, both following the EOM.
@@ -323,7 +397,7 @@ test("stopping one toy from the strip stops just that toy, and it stays stopped 
   assert.equal(bp.stops(), 1);
   const sent = bp.sent().length;
   await toys.follow(PLEASURE_FULL, 20);
-  await settle();
+  await writesGoOut();
   assert.deepEqual(toys.strip().map(({ name, strength, follows }) => ({ name, strength, follows })), [
     { name: "Domi", strength: 0, follows: [] },
     { name: "OSSM", strength: 100, follows: ["pleasure", "arousal"] },

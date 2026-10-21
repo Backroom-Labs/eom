@@ -1,26 +1,13 @@
 <script lang="ts">
   import { BleClient } from '@capacitor-community/bluetooth-le';
-  import pkg from '../package.json';
   import { ossmToy, type ToyList } from './lib/toyList';
-
-  let isWriting = false;
-
-  interface OSSMcontrol {
-    value: number;
-    default: number;
-    min: number;
-    max: number;
-    mode: string; // "manual", "pleasure", "arousal", "pressure", "denied" corresponding to EOM states
-    inverted?: boolean;  // EOM function: invert the control
-    limitMin?: number;  // EOM function: limit slider control
-    limitMax?: number;  // EOM function: limit slider control
-    description?: string;
-  }
-
-  interface OSSMPattern {
-    name: string;
-    idx: number;
-  }
+  import { OSSM_FOLLOWING_CONTROLS, highest, lowest, ossmControls, ossmStateValues, sliderPercent, strokerPartner, type OssmControl } from './lib/ossmControls';
+  import { readOssmPatterns, type OSSMPattern } from './lib/ossmPatterns';
+  import { OssmWriter } from './lib/ossmWriter';
+  import { ToyMemory } from './lib/toyMemory';
+  import { rememberOssmControl, restoreOssmControls } from './lib/ossmMemory';
+  import { savedPreferences } from './lib/savedPreferences';
+  import type { FollowMode } from './lib/toyOutput';
 
   interface OSSMdevice {
     name: string;
@@ -35,9 +22,10 @@
     patterns: OSSMPattern[];
     patternDescriptions: string[][];
     strokerMode: boolean;
-    controls: Record<string, OSSMcontrol>;
-    isWriting: boolean;
-    setControl(name: string, value: number): Promise<void>;
+    controls: Record<string, OssmControl>;
+    setControl(name: string, value: number): void;
+    stop(): Promise<void>;
+    cancel(): void;
     resetControls(): void;
   }
 
@@ -54,8 +42,9 @@
     strokerMode = $state(false);
     conn_status = $state("Disconnected");
     patterns = $state<OSSMPattern[]>([]);
-    controls = $state<Record<string, OSSMcontrol>>({});
-    isWriting = $state(false);
+    controls = $state<Record<string, OssmControl>>({});
+    // Every write goes through here: one at a time, 100 ms apart, latest value per control.
+    writer = new OssmWriter((name, value) => this.writeControl(name, value));
     unpause_speed = 1;
     patternDescriptions = [
       ["Simple Stroke",     "Acceleration, coasting, & deceleration are evenly balanced"],
@@ -88,13 +77,7 @@
       this.rx_state = "522b443a-4f53-534d-2000-420badbabe69";
       this.rx_patterns = "522b443a-4f53-534d-3000-420badbabe69";
       this.unpause_speed = 1;
-      this.controls = {
-        speed: { value: 0, default: 0, min: 0, max: 100, mode: "pleasure", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust how fast it goes back and forth" },
-        stroke: { value: 50, default: 50, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust the length of each stroke"  },
-        depth: { value: 10, default: 10, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust how deep the strokes go"  },
-        pattern: { value: 0, default: 0, min: 0, max: 6, mode: "manual", limitMin: 0, limitMax: 6, inverted: false, description: "Choose from preset stroke patterns"  },
-        sensation: { value: 50, default: 50, min: 0, max: 100, mode: "manual", limitMin: 0, limitMax: 100, inverted: false, description: "Adjust features of the current pattern.  50 = no adjustment"  },
-      };
+      this.controls = ossmControls();
     }
 
     resetControls(): void {
@@ -105,61 +88,60 @@
       this.controls["sensation"].value = this.controls["sensation"].default;
     }
 
-    async setControl(name: string, value: number, recursiveCommand: boolean = false): Promise<void> {
+    // Queues a value for a control, sent by the writer when the OSSM can take it.
+    setControl(name: string, value: number, recursiveCommand: boolean = false): void {
+      this.writer.set(name, value);
+      if (this.strokerMode && !recursiveCommand) {
+        // Depth and stroke move together, the other kept inside its own range.
+        const partner = strokerPartner(name, value, this.controls);
+        if (partner) this.setControl(partner[0], partner[1], true);
+      }
+      if (name === "pattern") {
+        this.setControl("sensation", 50, true);  //lets just always reset the sensation to 50 on pattern change for safety.
+      }
+    }
+
+    // Sets speed 0 at once, ahead of anything queued, which is dropped.
+    stop(): Promise<void> {
+      return this.writer.stop();
+    }
+
+    // Drops anything queued, for an OSSM that's gone.
+    cancel(): void {
+      this.writer.cancel();
+    }
+
+    // Writes one value to the OSSM. Only the writer calls this. Rejects if it didn't get there.
+    private async writeControl(name: string, value: number): Promise<void> {
       console.log(`Setting OSSM control ${name} to value ${value}`);
       if (!this.deviceId) {
         disconnectDevice(this);
         throw new Error("Not connected to Bluetooth device");
       }
-      
-      if (this.isWriting) {
-        return;
-      }
-  
-      try {
-        const encoder = new TextEncoder();
-        this.isWriting = true;
-        let message = ""
-        if (name !== "pattern") {
-          message = "set:" + name + ":" + value;
+
+      const encoder = new TextEncoder();
+      let message = ""
+      if (name !== "pattern") {
+        message = "set:" + name + ":" + value;
+      } else {
+        //patterns are a special case where we send the idx but also update the pattern control value to the index of the pattern for better UX
+        const pattern = $state.snapshot(this.patterns)[value];
+        if (pattern) {
+          console.log(`Setting pattern to '${pattern.name}' with idx ${pattern.idx}`);
+          message = `set:${name}:${pattern.idx}`;
         } else {
-          //patterns are a special case where we send the idx but also update the pattern control value to the index of the pattern for better UX
-          const pattern = $state.snapshot(this.patterns)[value];
-          if (pattern) {
-            console.log(`Setting pattern to '${pattern.name}' with idx ${pattern.idx}`);
-            message = `set:${name}:${pattern.idx}`;
-          } else {
-            console.warn(`Pattern with idx ${value} not found, sending raw value`);
-            message = `set:${name}:${value}`;
-          }
-        }
-        const dataView = new DataView(encoder.encode(message).buffer);
-        await BleClient.write(this.deviceId, this.service, this.tx, dataView);
-        if (name === "speed" && value === 0) {
-          console.log(`Paused device, storing unpause speed ${this.unpause_speed}`, this.controls["speed"].value);
-          this.unpause_speed = this.controls["speed"].value;
-        }
-        this.controls[name].value = value;
-        console.log(`Wrote control ${name} with value ${value}`);
-      } catch (error) {
-        console.error("Failed writing control value:", error);
-      } finally {
-        this.isWriting = false;
-        if (this.strokerMode && !recursiveCommand) {
-          if (name === "depth") {
-            const derivedStroke = Math.round((value - 50) * 2);
-            this.setControl("stroke", derivedStroke, true);
-          } else if (name === "stroke") {
-            const derivedDepth = Math.round((value / 2) + 50);
-            this.setControl("depth", derivedDepth, true);
-          }
-        }
-        if (name === "pattern") {
-          // if (this.patterns[value] === "Teasing Pounding") {
-            this.setControl("sensation", 50, true);  //lets just always reset the sensation to 50 on pattern change for safety.  
-          // }
+          console.warn(`Pattern with idx ${value} not found, sending raw value`);
+          message = `set:${name}:${value}`;
         }
       }
+      const dataView = new DataView(encoder.encode(message).buffer);
+      await BleClient.write(this.deviceId, this.service, this.tx, dataView);
+      if (name === "speed" && value === 0) {
+        console.log(`Paused device, storing unpause speed ${this.unpause_speed}`, this.controls["speed"].value);
+        this.unpause_speed = this.controls["speed"].value;
+      }
+      this.controls[name].value = value;
+      console.log(`Wrote control ${name} with value ${value}`);
     }
   }
 
@@ -168,13 +150,20 @@
   
   interface Props {
     devices: OSSMdevice[];
-    EOMembedded?: boolean;
     toys?: ToyList; // the app's list of every connected toy, which follows readings and stops them
   }
 
-  let { devices = $bindable([]), EOMembedded = false, toys }: Props = $props();
+  let { devices = $bindable([]), toys }: Props = $props();
   
   let connectionError = $state<string | null>(null);
+
+  // Each control's range and invert, kept in this phone's or browser's saved preferences.
+  const toyMemory = new ToyMemory(savedPreferences);
+
+  // Remembers the range and invert for when an OSSM with this name reconnects.
+  function rememberRangeAndInvert(ossm: OSSMdevice, name: string) {
+    rememberOssmControl(toyMemory, ossm.name, name, ossm.controls[name]);
+  }
 
   function disconnectDevice(device: OSSMdevice) {
     devices = devices.filter(d => d.deviceId !== device.deviceId);
@@ -232,22 +221,10 @@
         console.error("Failed to send startup sequence:", error);
       }
 
-      // Read patterns from rx_patterns characteristic
-      try {
-        const patternsData = await BleClient.read(device.deviceId, newOSSM.service, newOSSM.rx_patterns);
-        const decoder = new TextDecoder();
-        const patternsString = decoder.decode(patternsData);
-        const patternsObject = JSON.parse(patternsString);
-        let indexFallback = 0;
-        patternsObject.forEach((pattern: any) => {
-          console.log("Pattern:", pattern);
-          newOSSM.patterns.push({ name: pattern.name, idx: pattern.idx ?? indexFallback++ });
-        });
-        newOSSM.controls["pattern"].max = newOSSM.patterns.length - 1;
-        newOSSM.controls["pattern"].limitMax = newOSSM.patterns.length - 1;
-      } catch (error) {
-        console.error("Failed to read patterns:", error);
-      }
+      // Read patterns from rx_patterns characteristic; falls back to Simple Stroke alone if that fails
+      newOSSM.patterns = await readOssmPatterns(() => BleClient.read(device.deviceId, newOSSM.service, newOSSM.rx_patterns));
+      newOSSM.controls["pattern"].max = newOSSM.patterns.length - 1;
+      newOSSM.controls["pattern"].limitMax = newOSSM.patterns.length - 1;
 
       // Read initial state from rx_state characteristic
       try {
@@ -256,26 +233,19 @@
         const stateString = decoder.decode(stateData);
         const stateObject = JSON.parse(stateString);
         console.log("Initial state:", stateObject);
-        
-        // Update control values from device state
-        if (stateObject.speed !== undefined) {
-          newOSSM.controls.speed.value = stateObject.speed;
-        }
-        if (stateObject.stroke !== undefined) {
-          newOSSM.controls.stroke.value = stateObject.stroke;
-        }
-        if (stateObject.depth !== undefined) {
-          newOSSM.controls.depth.value = stateObject.depth;
-        }
-        if (stateObject.pattern !== undefined) {
-          newOSSM.controls.pattern.value = stateObject.pattern;
-        }
-        if (stateObject.sensation !== undefined) {
-          newOSSM.controls.sensation.value = stateObject.sensation;
+
+        // The controls show what the OSSM has, and the writer won't send it again.
+        for (const [name, value] of Object.entries(ossmStateValues(stateObject, newOSSM.patterns))) {
+          newOSSM.controls[name].value = value;
+          newOSSM.writer.has(name, value);
         }
       } catch (error) {
         console.error("Failed to read state:", error);
       }
+
+      // Each control gets back the range and invert last set for it, on Manual. Values outside
+      // a restored range are moved in through the writer, apart from speed, which is never changed.
+      restoreOssmControls(toyMemory, newOSSM);
 
       devices.push(newOSSM);
       toys?.add(ossmToy(newOSSM));
@@ -290,7 +260,7 @@
 
 </script>
 
-<div class="bluetooth-ossm-control" style="--version: '{pkg.version}';">
+<div class="bluetooth-ossm-control">
   {#if devices.length}
     {#each devices as ossm, deviceIndex}
       <div style="display: flex;flex-direction: row;justify-content: space-between;margin-bottom: 10px; ">
@@ -328,11 +298,11 @@
       <!-- The live controls, not a snapshot: mode, invert and limits set here must reach the OSSM's state. -->
       {#each Object.entries(ossm.controls) as control, controlIndex}
         {#if (!(control[0] === "depth" && ossm.strokerMode) && 
-              !(control[0] === "sensation" && ossm.patterns[ossm.controls["pattern"].value].name === "Simple Stroke"))}
+              !(control[0] === "sensation" && ossm.patterns[ossm.controls["pattern"].value]?.name === "Simple Stroke"))}
 
                 <div class="slider-label">
                   {#if (control[0] === "pattern")}
-                    Pattern: <span style="font-weight: normal;">{$state.snapshot(ossm.patterns)[control[1].value].name ?? control[1].value}</span>
+                    Pattern: <span style="font-weight: normal;">{$state.snapshot(ossm.patterns)[control[1].value]?.name ?? control[1].value}</span>
                     <div class="minMaxText"  style="font-weight: normal;">{ossm.patternDescriptions[control[1].value]?.[1] ?? "(EXPERIMENTAL!) A custom pattern"}</div>
                   {:else}
                     {control[0].charAt(0).toUpperCase() + control[0].slice(1)}: {control[1].value} 
@@ -340,10 +310,11 @@
                   {/if}
                 </div>
 
-                {#if (EOMembedded)}
+                <!-- Pattern and sensation are Manual only: no follow selector. -->
+                {#if OSSM_FOLLOWING_CONTROLS.includes(control[0])}
                 <div>
                   <select id={deviceIndex + "-" + control[0] + "-mode"} onchange={async (e) => {
-                      const mode = (e.target as HTMLSelectElement).value;
+                      const mode = (e.target as HTMLSelectElement).value as FollowMode;
                       console.log(`Setting mode for ${ossm.name} ${control[0]} to ${mode}`);
                       control[1].mode = mode;
                   }}>
@@ -358,6 +329,7 @@
                     Invert:
                       <input type="checkbox" id={deviceIndex + "-" + control[0] + "-invert"} checked={control[1].inverted} onchange={async (e) => {
                           control[1].inverted = (e.target as HTMLInputElement).checked;
+                          rememberRangeAndInvert(ossm, control[0]);
                       }}/>
                   </div>
                 {/if}
@@ -372,8 +344,8 @@
                 id={`control-${deviceIndex}-${control[0]}-slider`} 
                 class="main-slider"
                 type="range" 
-                min={control[1].limitMin ?? control[1].min}
-                max={control[1].limitMax ?? control[1].max} 
+                min={lowest(control[1])}
+                max={highest(control[1])}
                 value={control[1].value}
                 style="background: hsl({controlIndex * (360 / Object.keys(ossm.controls).length)}, 30%, 50%);"
                 onpointerdown={(e) => {
@@ -409,7 +381,7 @@
                   
                   // For touchscreens: prevent jump if not actively dragging and jump is too large
                   if (control[0] !== "pattern" && !input.dataset.dragging && 
-                      Math.abs(newValue - control[1].value) > (control[1].limitMax! - control[1].limitMin!) * 0.1) {
+                      Math.abs(newValue - control[1].value) > (highest(control[1]) - lowest(control[1])) * 0.1) {
                     input.value = control[1].value.toString();
                     return;
                   }
@@ -422,25 +394,27 @@
             {#if control[0] === "pattern"}
               <div class="pattern-numbers">
                 {#each Array.from({ length: control[1].max - control[1].min + 1 }, (_, i) => i + control[1].min) as num}
-                  <span class="pattern-number" style="left: {(num - control[1].min) / (control[1].max - control[1].min) * 100}%;">{num + 1}</span>
+                  <span class="pattern-number" style="left: {sliderPercent(num, control[1].min, control[1].max)}%;">{num + 1}</span>
                 {/each}
               </div>
             {:else}
               <div class="slider">
-                  <div id={`control-${deviceIndex}-${control[0]}-range-slider`} class="range-slider"></div>
+                  <!-- Follows the range, so a range restored on connecting shows too. -->
+                  <div id={`control-${deviceIndex}-${control[0]}-range-slider`} class="range-slider"
+                    style="left: {sliderPercent(lowest(control[1]), control[1].min, control[1].max)}%; right: {100 - sliderPercent(highest(control[1]), control[1].min, control[1].max)}%;"></div>
               </div>
               <div class="range-input">
                   <input id={`control-${deviceIndex}-${control[0]}-min`} type="range" class="min-range"  step="1" 
                     min={control[1].min} 
                     max={control[1].max} 
                     value={control[1].limitMin}
+                    onchange={() => rememberRangeAndInvert(ossm, control[0])}
                     oninput={(e) => {
-                      const originalValue = control[1].limitMin ?? control[1].min;
+                      const originalValue = lowest(control[1]);
                       control[1].limitMin = parseInt((e.target as HTMLInputElement)?.value ?? "0");
-                      const rangeInput = document.querySelector(`#control-${deviceIndex}-${control[0]}-range-slider`) as HTMLInputElement;
-                      rangeInput.style.left = `${control[1].limitMin / (control[1].max) * 100}%`;
-                      const newValue = ((control[1].value - originalValue) / ((control[1].limitMax ?? control[1].max ) - originalValue)) *
-                        ((control[1].limitMax ?? control[1].max) - (control[1].limitMin ?? control[1].min)) + (control[1].limitMin ?? control[1].min);
+                      // The value keeps its place in the range as the range changes.
+                      const newValue = sliderPercent(control[1].value, originalValue, highest(control[1])) / 100 *
+                        (highest(control[1]) - lowest(control[1])) + lowest(control[1]);
                       ossm.setControl(control[0], Math.round(newValue));
                     }} 
                   />
@@ -448,15 +422,13 @@
                   min={control[1].min} 
                   max={control[1].max} 
                   value={control[1].limitMax} 
+                  onchange={() => rememberRangeAndInvert(ossm, control[0])}
                   oninput={(e) => {
-                      const originalValue = control[1].limitMax ?? control[1].max;
+                      const originalValue = highest(control[1]);
                       control[1].limitMax = parseInt((e.target as HTMLInputElement)?.value ?? "255");
-                      const rangeInput = document.querySelector(`#control-${deviceIndex}-${control[0]}-range-slider`) as HTMLInputElement;
-                      if (rangeInput) {
-                        rangeInput.style.right = `${(control[1].max - (control[1].limitMax ?? control[1].max)) / control[1].max * 100}%`;
-                      }
-                      const newValue = ((control[1].value - (control[1].limitMin ?? control[1].min)) / (originalValue - (control[1].limitMin ?? control[1].min))) *
-                        ((control[1].limitMax ?? control[1].max) - (control[1].limitMin ?? control[1].min)) + (control[1].limitMin ?? control[1].min);
+                      // The value keeps its place in the range as the range changes.
+                      const newValue = sliderPercent(control[1].value, lowest(control[1]), originalValue) / 100 *
+                        (highest(control[1]) - lowest(control[1])) + lowest(control[1]);
                       ossm.setControl(control[0], Math.round(newValue));
                     }} 
                   />
@@ -491,20 +463,15 @@
     <div  style="font-size: small;">
       <p>This supports <a target="_blank" href="https://www.researchanddesire.com/pages/ossm">OSSM devices</a> with a stock firmware from 2026 or newer.</p>
       <p>If your OSSM firmware is older or custom you can easily upgrade it using <a href="https://dashboard.researchanddesire.com/app/tools/web-flasher">their web flashing tool</a>.</p>
-      {#if (!EOMembedded)}
-        <p>Coded with love and hedonism by <a href="http://rubberyfun.com/">Claus Macher</a>.  Main repo <a href="https://github.com/rubberyfun/OSSM-Possum">is posted here</a>.  Have fun!</p>
-      {/if}
+      <p>Coded with love and hedonism by <a target="_blank" href="http://rubberyfun.com/">Claus Macher</a>. His original OSSM-Possum app <a target="_blank" href="https://github.com/rubberyfun/OSSM-Possum">is posted here</a>, licensed under <a target="_blank" href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>.</p>
       <p></p>
     </div>
  {/if}
- {#if (EOMembedded || devices.length == 0)}
    <div>
     <button onclick={() => connectBluetooth()}>
       Connect to an{#if devices.length}other{:else}{/if} OSSM device
     </button>
-    
   </div>
-  {/if}
   
   {#if connectionError}
     <div style="color: #c00; font-weight: bold; margin-top: 10px; padding: 10px; background-color: #fee; border: 1px solid #faa; border-radius: 4px;">
@@ -530,19 +497,17 @@
         position: relative;
 
       &::before {
-      content: var(--version);
-      color: #666;
+      content: '';
       position: absolute;
       top: -46px;
       left: 40%;
       transform: translateX(-50%);
       width: 30%;
       height: 50px;
-      background-image: url('/possum_head.svg');
+      background-image: url('./assets/possum_head.svg');
       background-size: contain;
       background-repeat: no-repeat;
       background-position: center;
-      text-indent: 150px;
     }
 
       &::after {
@@ -553,7 +518,7 @@
       transform: translateX(-50%);
       width: 40%;
       height: 60px;
-      background-image: url('/possum_tail.svg');
+      background-image: url('./assets/possum_tail.svg');
       background-size: 100% 60px;
       background-repeat: no-repeat;
       background-position: center;
