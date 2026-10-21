@@ -30,4 +30,4 @@ Gotchas that the code and config don't show. The Bluetooth/WebSocket protocol, f
 - A new image is confirmed after it has run the control loop for 30 s; otherwise it rolls back.
 - The BLE OTA protocol is documented in `src/include/system/ble_ota.h`. The BLE address is derived from the MAC plus a hash of the GATT layout, so changing the GATT table changes the address, and unbonded clients re-read the table.
 - `8mb_spiffs.csv` app slots are 3.9 MB each. 8 MB boards needed a full erase once after OTA phase 0.
-- Wi-Fi OTA (phase 2) isn't built yet: issue #16.
+- Wi-Fi OTA (phase 2) isn't built yet: issue #61 (ADR 0012).

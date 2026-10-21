@@ -141,3 +141,13 @@ _Avoid_: toy bar, toy panel
 **Light**:
 A Bluetooth light that mirrors the EOM's LED colour. Not a toy: it doesn't follow pleasure or arousal.
 _Avoid_: LED (the EOM's own light)
+
+### Firmware updates
+
+**Release**:
+A tagged, signed build of the firmware for every supported board, published together under one version.
+_Avoid_: build (your own builds aren't releases), drop
+
+**Release channel**:
+Which releases an EOM is offered: an EOM on a stable release is offered only stable releases, and one on a beta is offered the newest release of either kind.
+_Avoid_: track, update stream
