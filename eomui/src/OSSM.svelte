@@ -3,6 +3,9 @@
   import { OSSM_FOLLOWING_CONTROLS, ossmControls, ossmToy, type ToyList } from './lib/toyList';
   import { readOssmPatterns, type OSSMPattern } from './lib/ossmPatterns';
   import { OssmWriter } from './lib/ossmWriter';
+  import { ToyMemory } from './lib/toyMemory';
+  import { rememberOssmControl, restoreOssmControls } from './lib/ossmMemory';
+  import { savedPreferences } from './lib/savedPreferences';
 
   interface OSSMcontrol {
     value: number;
@@ -168,6 +171,14 @@
   
   let connectionError = $state<string | null>(null);
 
+  // Each control's range and invert, kept in this phone's or browser's saved preferences.
+  const toyMemory = new ToyMemory(savedPreferences);
+
+  // Remembers the range and invert for when an OSSM with this name reconnects.
+  function rememberRangeAndInvert(ossm: OSSMdevice, name: string) {
+    rememberOssmControl(toyMemory, ossm.name, name, ossm.controls[name]);
+  }
+
   function disconnectDevice(device: OSSMdevice) {
     devices = devices.filter(d => d.deviceId !== device.deviceId);
     toys?.remove(device);
@@ -257,6 +268,10 @@
         console.error("Failed to read state:", error);
       }
 
+      // Each control gets back the range and invert last set for it, on Manual. Values outside
+      // a restored range are moved in through the writer.
+      restoreOssmControls(toyMemory, newOSSM);
+
       devices.push(newOSSM);
       toys?.add(ossmToy(newOSSM));
 
@@ -339,6 +354,7 @@
                     Invert:
                       <input type="checkbox" id={deviceIndex + "-" + control[0] + "-invert"} checked={control[1].inverted} onchange={async (e) => {
                           control[1].inverted = (e.target as HTMLInputElement).checked;
+                          rememberRangeAndInvert(ossm, control[0]);
                       }}/>
                   </div>
                 {/if}
@@ -408,18 +424,19 @@
               </div>
             {:else}
               <div class="slider">
-                  <div id={`control-${deviceIndex}-${control[0]}-range-slider`} class="range-slider"></div>
+                  <!-- Follows the range, so a range restored on connecting shows too. -->
+                  <div id={`control-${deviceIndex}-${control[0]}-range-slider`} class="range-slider"
+                    style="left: {((control[1].limitMin ?? control[1].min) - control[1].min) / (control[1].max - control[1].min) * 100}%; right: {(control[1].max - (control[1].limitMax ?? control[1].max)) / (control[1].max - control[1].min) * 100}%;"></div>
               </div>
               <div class="range-input">
                   <input id={`control-${deviceIndex}-${control[0]}-min`} type="range" class="min-range"  step="1" 
                     min={control[1].min} 
                     max={control[1].max} 
                     value={control[1].limitMin}
+                    onchange={() => rememberRangeAndInvert(ossm, control[0])}
                     oninput={(e) => {
                       const originalValue = control[1].limitMin ?? control[1].min;
                       control[1].limitMin = parseInt((e.target as HTMLInputElement)?.value ?? "0");
-                      const rangeInput = document.querySelector(`#control-${deviceIndex}-${control[0]}-range-slider`) as HTMLInputElement;
-                      rangeInput.style.left = `${control[1].limitMin / (control[1].max) * 100}%`;
                       const newValue = ((control[1].value - originalValue) / ((control[1].limitMax ?? control[1].max ) - originalValue)) *
                         ((control[1].limitMax ?? control[1].max) - (control[1].limitMin ?? control[1].min)) + (control[1].limitMin ?? control[1].min);
                       ossm.setControl(control[0], Math.round(newValue));
@@ -429,13 +446,10 @@
                   min={control[1].min} 
                   max={control[1].max} 
                   value={control[1].limitMax} 
+                  onchange={() => rememberRangeAndInvert(ossm, control[0])}
                   oninput={(e) => {
                       const originalValue = control[1].limitMax ?? control[1].max;
                       control[1].limitMax = parseInt((e.target as HTMLInputElement)?.value ?? "255");
-                      const rangeInput = document.querySelector(`#control-${deviceIndex}-${control[0]}-range-slider`) as HTMLInputElement;
-                      if (rangeInput) {
-                        rangeInput.style.right = `${(control[1].max - (control[1].limitMax ?? control[1].max)) / control[1].max * 100}%`;
-                      }
                       const newValue = ((control[1].value - (control[1].limitMin ?? control[1].min)) / (originalValue - (control[1].limitMin ?? control[1].min))) *
                         ((control[1].limitMax ?? control[1].max) - (control[1].limitMin ?? control[1].min)) + (control[1].limitMin ?? control[1].min);
                       ossm.setControl(control[0], Math.round(newValue));
