@@ -2,8 +2,7 @@
   import { BleClient } from '@capacitor-community/bluetooth-le';
   import { OSSM_FOLLOWING_CONTROLS, ossmControls, ossmToy, type ToyList } from './lib/toyList';
   import { readOssmPatterns, type OSSMPattern } from './lib/ossmPatterns';
-
-  let isWriting = false;
+  import { OssmWriter } from './lib/ossmWriter';
 
   interface OSSMcontrol {
     value: number;
@@ -31,8 +30,9 @@
     patternDescriptions: string[][];
     strokerMode: boolean;
     controls: Record<string, OSSMcontrol>;
-    isWriting: boolean;
-    setControl(name: string, value: number): Promise<void>;
+    setControl(name: string, value: number): void;
+    stop(): Promise<void>;
+    cancel(): void;
     resetControls(): void;
   }
 
@@ -50,7 +50,8 @@
     conn_status = $state("Disconnected");
     patterns = $state<OSSMPattern[]>([]);
     controls = $state<Record<string, OSSMcontrol>>({});
-    isWriting = $state(false);
+    // Every write goes through here: one at a time, 100 ms apart, latest value per control.
+    writer = new OssmWriter((name, value) => this.writeControl(name, value));
     unpause_speed = 1;
     patternDescriptions = [
       ["Simple Stroke",     "Acceleration, coasting, & deceleration are evenly balanced"],
@@ -94,61 +95,64 @@
       this.controls["sensation"].value = this.controls["sensation"].default;
     }
 
-    async setControl(name: string, value: number, recursiveCommand: boolean = false): Promise<void> {
+    // Queues a value for a control, sent by the writer when the OSSM can take it.
+    setControl(name: string, value: number, recursiveCommand: boolean = false): void {
+      this.writer.set(name, value);
+      if (this.strokerMode && !recursiveCommand) {
+        if (name === "depth") {
+          const derivedStroke = Math.round((value - 50) * 2);
+          this.setControl("stroke", derivedStroke, true);
+        } else if (name === "stroke") {
+          const derivedDepth = Math.round((value / 2) + 50);
+          this.setControl("depth", derivedDepth, true);
+        }
+      }
+      if (name === "pattern") {
+        this.setControl("sensation", 50, true);  //lets just always reset the sensation to 50 on pattern change for safety.
+      }
+    }
+
+    // Sets speed 0 at once, ahead of anything queued, which is dropped.
+    stop(): Promise<void> {
+      return this.writer.stop();
+    }
+
+    // Drops anything queued, for an OSSM that's gone.
+    cancel(): void {
+      this.writer.cancel();
+    }
+
+    // Writes one value to the OSSM. Only the writer calls this. Rejects if it didn't get there.
+    private async writeControl(name: string, value: number): Promise<void> {
       console.log(`Setting OSSM control ${name} to value ${value}`);
       if (!this.deviceId) {
         disconnectDevice(this);
         throw new Error("Not connected to Bluetooth device");
       }
-      
-      if (this.isWriting) {
-        return;
-      }
-  
-      try {
-        const encoder = new TextEncoder();
-        this.isWriting = true;
-        let message = ""
-        if (name !== "pattern") {
-          message = "set:" + name + ":" + value;
+
+      const encoder = new TextEncoder();
+      let message = ""
+      if (name !== "pattern") {
+        message = "set:" + name + ":" + value;
+      } else {
+        //patterns are a special case where we send the idx but also update the pattern control value to the index of the pattern for better UX
+        const pattern = $state.snapshot(this.patterns)[value];
+        if (pattern) {
+          console.log(`Setting pattern to '${pattern.name}' with idx ${pattern.idx}`);
+          message = `set:${name}:${pattern.idx}`;
         } else {
-          //patterns are a special case where we send the idx but also update the pattern control value to the index of the pattern for better UX
-          const pattern = $state.snapshot(this.patterns)[value];
-          if (pattern) {
-            console.log(`Setting pattern to '${pattern.name}' with idx ${pattern.idx}`);
-            message = `set:${name}:${pattern.idx}`;
-          } else {
-            console.warn(`Pattern with idx ${value} not found, sending raw value`);
-            message = `set:${name}:${value}`;
-          }
-        }
-        const dataView = new DataView(encoder.encode(message).buffer);
-        await BleClient.write(this.deviceId, this.service, this.tx, dataView);
-        if (name === "speed" && value === 0) {
-          console.log(`Paused device, storing unpause speed ${this.unpause_speed}`, this.controls["speed"].value);
-          this.unpause_speed = this.controls["speed"].value;
-        }
-        this.controls[name].value = value;
-        console.log(`Wrote control ${name} with value ${value}`);
-      } catch (error) {
-        console.error("Failed writing control value:", error);
-      } finally {
-        this.isWriting = false;
-        if (this.strokerMode && !recursiveCommand) {
-          if (name === "depth") {
-            const derivedStroke = Math.round((value - 50) * 2);
-            this.setControl("stroke", derivedStroke, true);
-          } else if (name === "stroke") {
-            const derivedDepth = Math.round((value / 2) + 50);
-            this.setControl("depth", derivedDepth, true);
-          }
-        }
-        if (name === "pattern") {
-          // if (this.patterns[value] === "Teasing Pounding") {
-            this.setControl("sensation", 50, true);  //lets just always reset the sensation to 50 on pattern change for safety.  
-          // }
+          console.warn(`Pattern with idx ${value} not found, sending raw value`);
+          message = `set:${name}:${value}`;
         }
       }
+      const dataView = new DataView(encoder.encode(message).buffer);
+      await BleClient.write(this.deviceId, this.service, this.tx, dataView);
+      if (name === "speed" && value === 0) {
+        console.log(`Paused device, storing unpause speed ${this.unpause_speed}`, this.controls["speed"].value);
+        this.unpause_speed = this.controls["speed"].value;
+      }
+      this.controls[name].value = value;
+      console.log(`Wrote control ${name} with value ${value}`);
     }
   }
 
