@@ -170,10 +170,12 @@ The **Orgasms** counter shows how many were detected this session (for example "
 </p>
 
 The app records every session while it's connected and keeps it **in that browser only**; nothing is stored on the device.  Open **History** in the top bar to see your past sessions.  Each one has:
-- a chart of pleasure, arousal, edge threshold, pressure and resting pressure, with denials and orgasms marked
-- duration, edges, denials, orgasms, peak arousal, average pleasure, edge threshold and resting-pressure drift
+- a chart of pleasure, arousal, edge threshold, pressure and resting pressure, with denials and detected orgasms as solid lines and the orgasms you marked as dashed ones
+- duration, edges, denials, orgasms detected and marked, peak arousal, average pleasure, edge threshold and resting-pressure drift
 - **Export CSV** to keep or analyse the readings elsewhere
 - **Export detailed CSV**, if **Settings > App > Detailed recording** was on: the raw pressure at the EOM's full update rate (50 times a second) with the other readings alongside, for studying contraction patterns.  Needs firmware 3.6.0, and it takes more storage in the browser.
+
+While a session is recording, the main screen shows **Mark orgasm**.  Tap it the moment you have an orgasm: it records the real time with the session, so you can compare it with what the EOM detected.  It works while settings are locked, and taps within 5 seconds of the last one count once.  Both CSV exports have an `orgasm_marked` column at the end, with `1` on the row nearest each mark.
 
 A session starts when a mode runs or the intensity goes above 0, and ends 30 seconds after the EOM stops.  Sessions shorter than 15 seconds aren't kept, and the last 200 are saved.  Turn recording off under **Settings > App > Record sessions**.
 

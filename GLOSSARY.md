@@ -123,6 +123,9 @@ One stretch of use recorded by the app, from when a mode starts or pleasure rise
 **Detailed recording**:
 An optional session recording of every pressure reading, rather than the usual few samples a second.
 
+**Marked orgasm**:
+An orgasm the user marks in the app at the moment it happens, recorded with the session as the real time, unlike the orgasms the EOM detects.
+
 ### Toys
 
 **Toy**:

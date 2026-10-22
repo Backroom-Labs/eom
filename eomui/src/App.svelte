@@ -241,6 +241,9 @@
       .then((list) => (sessions = list))
       .catch((err) => console.error("Couldn't read session history:", err));
   }
+  function markOrgasm() {
+    if (recorder.markOrgasm()) showToast("Orgasm marked");
+  }
   recorder.onSessionEnd = (summary) => {
     if (summary) showToast("Session saved to History");
     refreshSessions();
@@ -1120,6 +1123,9 @@
           <button role="tab" aria-selected={view === "chart"} class:active={view === "chart"} onclick={() => { view = "chart"; scheduleChartUpdate(); }} aria-label="Chart">{@render icon("chart")}</button>
         </div>
       </div>
+      {#if recording}
+        <button class="markOrgasm" onclick={markOrgasm} title="Record that you're having an orgasm now">Mark orgasm</button>
+      {/if}
 
       {#if view === "gauges"}
         <div class="gauges">
@@ -1737,6 +1743,10 @@
   }
   .viewSwitch {
     flex: none;
+  }
+  .markOrgasm {
+    width: 100%;
+    margin-bottom: 8px;
   }
   .viewSwitch button {
     min-width: 44px;
