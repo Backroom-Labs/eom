@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Lays out one release in a checkout of the Pages repo (run by .github/workflows/release.yml).
+# Lays out one release in a checkout of the gh-pages branch (run by .github/workflows/release.yml).
 #
 #     tools/publish_pages.sh <site dir> <version> <dist dir> <app dir>
 #
 # <dist dir> holds firmware-<env>.bin for each board and the manifest.json that make_manifest.py
 # wrote for them, with URLs already pointing at the Pages copy. <app dir> is the built eomui/public.
-# Everything goes under <site dir>/eom/, which Pages serves at https://backroom-labs.github.io/eom/:
+# Pages serves the branch root at https://backroom-labs.github.io/eom/:
 #
-#     eom/                               the app, replaced by every release
-#     eom/firmware/<version>/*.bin       every release's images, never pruned
-#     eom/firmware/manifest.json         newest stable release (only stable versions rewrite it)
-#     eom/firmware/manifest-beta.json    newest release of either kind
+#     /                              the app, replaced by every release
+#     firmware/<version>/*.bin       every release's images, never pruned
+#     firmware/manifest.json         newest stable release (only stable versions rewrite it)
+#     firmware/manifest-beta.json    newest release of either kind
 #
 # See docs/adr/0011-releases-served-from-public-pages-site.md.
 
@@ -21,7 +21,6 @@ if [ $# -ne 4 ]; then
   exit 2
 fi
 site=$1 version=$2 dist=$3 app=$4
-root="$site/eom"
 
 for f in "$dist/manifest.json" "$app/index.html"; do
   if [ ! -f "$f" ]; then
@@ -36,22 +35,22 @@ if [ ${#bins[@]} -eq 0 ]; then
   exit 1
 fi
 
-mkdir -p "$root/firmware/$version"
+mkdir -p "$site/firmware/$version"
 
-# The app replaces the last one, leaving firmware/ alone.
-rsync -a --checksum --delete --exclude /firmware/ "$app/" "$root/"
+# The app replaces the last one, leaving firmware/, the checkout's .git and .nojekyll alone.
+rsync -a --checksum --delete --exclude /firmware/ --exclude /.git --exclude /.nojekyll "$app/" "$site/"
 
 # A re-run of the same tag replaces that version's images rather than mixing old and new ones.
-rm -f "$root/firmware/$version"/firmware-*.bin
-cp "${bins[@]}" "$root/firmware/$version/"
+rm -f "$site/firmware/$version"/firmware-*.bin
+cp "${bins[@]}" "$site/firmware/$version/"
 
-cp "$dist/manifest.json" "$root/firmware/manifest-beta.json"
+cp "$dist/manifest.json" "$site/firmware/manifest-beta.json"
 case "$version" in
   *-*) echo "publish_pages: $version is a prerelease; manifest.json left as it was" ;;
-  *) cp "$dist/manifest.json" "$root/firmware/manifest.json" ;;
+  *) cp "$dist/manifest.json" "$site/firmware/manifest.json" ;;
 esac
 
 # Serve files as they are, without Jekyll.
 touch "$site/.nojekyll"
 
-echo "publish_pages: laid out $version (${#bins[@]} images) in $root"
+echo "publish_pages: laid out $version (${#bins[@]} images) in $site"
