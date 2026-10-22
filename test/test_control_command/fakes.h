@@ -10,5 +10,7 @@ extern char fake_log[];
 extern orgasm_output_mode_t fake_mode;
 // What set_config_value() returns.
 extern bool fake_config_accepts;
+// What status_snapshot_settings_locked() returns: the Settings lock as the tick last published it.
+extern bool fake_settings_locked;
 
 void fake_reset(void);

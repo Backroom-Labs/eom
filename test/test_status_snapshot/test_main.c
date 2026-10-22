@@ -69,6 +69,16 @@ static void test_get_returns_what_was_published(void) {
     TEST_ASSERT_EQUAL_MEMORY(&in, &out, sizeof(in));
 }
 
+static void test_settings_locked_follows_the_latest_snapshot(void) {
+    status_snapshot_t s = fixture();
+    s.menu_locked = true;
+    status_snapshot_publish(&s);
+    TEST_ASSERT_TRUE(status_snapshot_settings_locked());
+    s.menu_locked = false;
+    status_snapshot_publish(&s);
+    TEST_ASSERT_FALSE(status_snapshot_settings_locked());
+}
+
 static void test_json_matches_the_readings_message(void) {
     status_snapshot_t s = fixture();
     char* json = to_json(&s);
@@ -144,6 +154,7 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_get_before_the_first_tick_is_all_zeros);
     RUN_TEST(test_get_returns_what_was_published);
+    RUN_TEST(test_settings_locked_follows_the_latest_snapshot);
     RUN_TEST(test_json_matches_the_readings_message);
     RUN_TEST(test_json_without_a_mode_name);
     RUN_TEST(test_ble_matches_the_status_characteristic);

@@ -101,7 +101,7 @@ _Avoid_: recovery
 The EOM stopping all stimulation by itself because of a sensor fault, a lost connection, a time limit or a heart-rate limit.
 
 **Settings lock**:
-A state where settings and mode changes are refused, either during Orgasm mode or after an orgasm.
+A state where settings and mode changes are refused, either during Orgasm mode or after an orgasm. The firmware refuses them, whichever client sends them. Stopping always works, and switching to Manual ends the lock.
 _Avoid_: menu lock
 
 **Preset**:

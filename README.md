@@ -130,7 +130,7 @@ Every device setting is in the app, grouped into tabs.  Changes are sent to the 
 |**App**|Settings for this app only: start view, keep screen on, record sessions, pressure simulator, Apply pressure step|
 |**Device**|App and firmware versions, [firmware update over Bluetooth](#updating-the-device), restart|
 
-If **Lock settings during Orgasm mode** or **Lock settings after orgasm** is on, settings can't be changed until the Orgasm session ends.  This is useful if someone else sets the rules.
+If **Lock settings during Orgasm mode** or **Lock settings after orgasm** is on, settings can't be changed until the Orgasm session ends.  This is useful if someone else sets the rules.  The EOM itself refuses the changes, whichever app or connection sends them: settings, switching to Endless or Orgasm, and resetting the denied count.  **Stop** always works, and stopping ends the session and the lock.
 
 ## Modes
 
@@ -361,6 +361,8 @@ Newer firmware adds these to the readings, over both WebSocket (`readings`) and 
 |Raw pressure|`rawSeq`, `raw` (last 8)|27-28 reading number (low 16 bits), 29 count, then 16 × 2 bytes|3.6.0|The last raw pressure readings, oldest first; the newest is reading number `rawSeq - 1` since boot|
 
 Bluetooth control commands: `0x02` change a setting (saved), `0x04` save and restart, `0x05` set the simulated pressure (simulator builds only), `0x06 <bpm>` heart rate from an external sensor.  Over WebSocket the heart rate is `{"heartRate": <bpm>}`.
+
+While the settings lock is on (3.8.0), the EOM refuses `configSet`, `setMode` to Endless or Orgasm and `resetDenied`, and the matching Bluetooth writes (a `0x02` setting, or a `0x01` control packet that changes to another mode or resets the denied count).  Over WebSocket the reply is `{"<command>": {"errno": 2, "error": "SETTINGS LOCKED"}}` (a bad argument is `errno` 1); over Bluetooth the write fails with ATT error `0x03` (write not permitted; a bad argument is `0x13`).  Stopping is always accepted: `setMode` to Manual and `setMotor` (Bluetooth: Manual or a motor value), as are `triggerArousal`, `heartRate` and `simPressure`.
 
 Firmware updates use the same commands, events and result codes over both connections, and the app downloads and checks the image itself (the EOM never fetches firmware).  Bluetooth: [src/include/system/ble_ota.h](src/include/system/ble_ota.h).  WebSocket (3.8.0): `{"otaInfo": null}` reports the version, board, largest image and whether the running firmware is confirmed; `{"otaBegin": {"size": <bytes>, "allowDowngrade": false}}` starts an update; the image follows in binary frames of a 4-byte little-endian offset plus up to 4096 bytes; `{"otaAbort": null}` cancels; and the EOM answers with `{"ota": {"event": "ready" | "progress" | "resend" | "result", "error": <code>, "value": <n>}}`.  See [src/include/system/ws_ota.h](src/include/system/ws_ota.h).
 
