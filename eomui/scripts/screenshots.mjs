@@ -6,7 +6,7 @@
 // page a fake Web Bluetooth with one Lovense Lush, so Buttplug finds a toy without hardware.
 // Drives the system Chrome (set CHROME to use another) with puppeteer-core: 412x915 at 2x, dark,
 // reduced motion, then scales each shot to 560x1243 like the other screenshots with macOS `sips`.
-// PRESSURE_SIM=1 makes the mock report the pressure simulator, like firmware that isn't a release.
+// PRESSURE_SIM=1 makes the mock report the pressure simulator, like a beta or your own build.
 
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";

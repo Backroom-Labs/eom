@@ -333,7 +333,7 @@ pio run -e <your board> -t upload
 
 Connect the app and turn on **Settings > App > Pressure simulator**; the app shows it only for firmware that has the simulator.  The Controls card gets a pressure slider and a **Hold to clench** button.  The EOM reads the real sensor until you turn it on, and again when you turn it off.
 
-The simulator is never part of a release.  Releases are built with `EOM_RELEASE=1`, which leaves it out (`tools/pressure_sim.py`); set it yourself for a release-like build: `EOM_RELEASE=1 pio run -e <your board>`.
+Betas have the simulator too (3.8.0-beta.4), so you can install a beta from the app and test with or without the sensor.  The simulator is never part of a stable release: those are built with `EOM_STABLE_RELEASE=1`, which leaves it out (`tools/pressure_sim.py`).  Set it yourself for a build like a stable release: `EOM_STABLE_RELEASE=1 pio run -e <your board>`.
 
 ## Bluetooth and Xtoys
 Wi-Fi is not necessary!  The app works over Bluetooth: no IP address or Wi-Fi setup needed.  Just connect to your EOM directly with the **Bluetooth** button.  Android or PC Chrome/Edge only in the browser; Apple and Firefox don't support Web Bluetooth.

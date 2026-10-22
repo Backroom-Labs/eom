@@ -51,7 +51,7 @@ static const websocket_command_t cmd_edging_trigger_arousal_s = {
     .func = &cmd_edging_trigger_arousal,
 };
 
-// Not in releases (-DEOM_PRESSURE_SIM), which ignore it: value replaces the sensor, -1 for the real one.
+// Not in stable releases (-DEOM_PRESSURE_SIM), which ignore it: value replaces the sensor, -1 for the real one.
 static command_err_t cmd_edging_sim_pressure(cJSON* command, cJSON* response, websocket_client_t* client) {
     return api_cc_result(control_command_from_ws("simPressure", command));
 }
