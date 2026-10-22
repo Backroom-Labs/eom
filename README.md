@@ -297,7 +297,7 @@ PlatformIO rebuilds only what changed, so this is quick.  The filesystem (TLS ce
 
 **Changing settings in `data/config.json`** also only needs a firmware upload.  The file is compiled into the firmware and on boot the device checks whether it has changed since it was last applied.  If it has, every key in the file overrides the value saved on the device; if it hasn't, settings you changed from the app are kept.  An invalid JSON file is ignored (check the monitor for `Built-in config.json is not valid JSON`).
 
-The app is hosted separately (see [eomui/](eomui/)), so app changes never need a device update.  If you change the app, run `npm run build` in `eomui/` to update `eomui/public/`.
+The app is hosted separately (see [eomui/](eomui/)), so app changes never need a device update.  The built app (`eomui/public/index.html`) isn't committed: run `npm run build` in `eomui/` before testing locally, syncing Capacitor or taking screenshots. CI builds it for releases.
 
 ### Full image: filesystem + firmware
 Do a full update (`Build Filesystem Image` -> `Upload Filesystem Image`, then `Upload and Monitor`) when:
