@@ -20,6 +20,8 @@ Gotchas that the code doesn't show. Decisions are in `docs/adr/`.
 
 - `src/lib/settings.ts` is the single list of device settings. Keys must match `CONFIG_DEFS` in `src/config.c` (firmware).
 - A new settings *group* also needs an entry in `SETTINGS_TABS` in `App.svelte`, or its settings never show.
+- While connected, a setting the EOM leaves out of its config dump is hidden, so mocks must report every key.
+- `MIN_FIRMWARE_VERSION` in `src/lib/firmwareRelease.ts` is the oldest firmware the app supports, and older firmware gets a warning banner. Raise it by hand when the app starts relying on newer firmware.
 
 ## Heart rate ring
 
