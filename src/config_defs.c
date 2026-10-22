@@ -1,6 +1,7 @@
 #include "config_defs.h"
 #include "api/broadcast.h"
 #include "config.h"
+#include "config_redact.h"
 #include "eom-hal-esp32.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -369,7 +370,9 @@ esp_err_t config_load_from_sd(const char* path, config_t* cfg) {
         goto cleanup;
     }
 
-    ESP_LOGI(TAG, "Loaded %ld bytes from %s\n%s", fsize, path, buffer);
+    char* logged = config_redact_json(buffer);
+    ESP_LOGI(TAG, "Loaded %ld bytes from %s\n%s", fsize, path, logged ? logged : "(not valid JSON)");
+    cJSON_free(logged);
 
     err = config_deserialize(cfg, buffer);
     if (err != ESP_OK) {
@@ -436,7 +439,11 @@ esp_err_t config_save_to_sd(const char* path, config_t* cfg) {
     long fsize = ftell(f);
     fclose(f);
 
-    ESP_LOGD(TAG, "Wrote %ld bytes:\n%s", fsize, json);
+#if LOG_LOCAL_LEVEL >= ESP_LOG_DEBUG
+    char* logged = config_redact_json(json);
+    ESP_LOGD(TAG, "Wrote %ld bytes:\n%s", fsize, logged ? logged : "(not valid JSON)");
+    cJSON_free(logged);
+#endif
 
     // Update config path:
     if (strcmp(path, cfg->_filename)) {
