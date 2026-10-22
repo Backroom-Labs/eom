@@ -32,6 +32,6 @@ Gotchas that the code and config don't show. The Bluetooth/WebSocket protocol, f
 - The BLE OTA protocol is documented in `src/include/system/ble_ota.h`. The BLE address is derived from the MAC plus a hash of the GATT layout, so changing the GATT table changes the address, and unbonded clients re-read the table.
 - `8mb_spiffs.csv` app slots are 3.9 MB each. 8 MB boards needed a full erase once after OTA phase 0.
 - A change to how chunks are accepted or resent goes in `ota_rx.c` (host-tested), not in `ble_ota.c` or `ws_ota.c`: both transports feed `ota_transfer.c` (ADR 0012).
-- Each update allocates a 20 KB receive buffer and an 8 KB task stack. The log line "Heap after the transfer" shows the headroom.
-- Wi-Fi OTA over `ws://` sends a 1.27 MB image in about 25 s. Binary frames over `WS_OTA_MAX_FRAME` close the connection.
-- With `use_ssl` on, the EOM serves only `wss://` on port 443. If TLS fails you can't reach it over Wi-Fi to turn it back off: use Bluetooth. On the test Echo, `wss://` handshakes fail with `mbedtls_x509_crt_parse ... -0x3D00` (2026-10-22), so Wi-Fi OTA over `wss://` is untested.
+- Each update allocates a 20 KB receive buffer and an 8 KB task stack. The log line "Heap after the transfer" shows the headroom: on the Echo over `ws://` with BLE on, 49 KB free at the end of a transfer and 24 KB the lowest since boot (2026-10-22). `wss://` adds the TLS session on top, so check this again once it works.
+- Wi-Fi OTA over `ws://` sends a 1.27 MB image in 20 to 25 s. Binary frames over `WS_OTA_MAX_FRAME` close the connection.
+- With `use_ssl` on, the EOM serves only `wss://` on port 443. If TLS fails you can't reach it over Wi-Fi to turn it back off: use Bluetooth. On the test Echo, `wss://` handshakes fail with `mbedtls_x509_crt_parse ... -0x3D00` (2026-10-22, issue #38), so Wi-Fi OTA over `wss://` is untested.
