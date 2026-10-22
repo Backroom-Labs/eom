@@ -128,7 +128,7 @@ Every device setting is in the app, grouped into tabs.  Changes are sent to the 
 |**Safety**|Stop on sensor fault, stop when disconnected, session time limit, output limit|
 |**Connectivity**|Wi-Fi (own network or join yours), network name and password, hostname, secure WebSocket, Bluetooth name, Bluetooth and Wi-Fi together|
 |**App**|Settings for this app only: start view, keep screen on, record sessions, pressure simulator, Apply pressure step|
-|**Device**|Firmware version, [firmware update over Bluetooth](#updating-the-device), restart|
+|**Device**|App and firmware versions, [firmware update over Bluetooth](#updating-the-device), restart|
 
 If **Lock settings during Orgasm mode** or **Lock settings after orgasm** is on, settings can't be changed until the Orgasm session ends.  This is useful if someone else sets the rules.
 
