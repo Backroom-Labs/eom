@@ -13,6 +13,7 @@ static inline command_err_t api_cc_result(cc_result_t result) {
     switch (result) {
     case CC_OK: return CMD_OK;
     case CC_BAD_ARG: return CMD_ARG_ERR;
+    case CC_LOCKED: return CMD_LOCKED;
     default: return CMD_FAIL;
     }
 }

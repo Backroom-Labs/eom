@@ -19,8 +19,11 @@ The mode where the EOM raises pleasure and denies at every edge, with no orgasm 
 _Avoid_: automatic (that word covers Orgasm mode too)
 
 **Orgasm mode**:
-The mode that edges and denies like Endless until the edging time or the denial count is reached, then permits an orgasm.
+The mode that edges and denies like Endless until the edging time or the denial count is reached, then permits an orgasm, subject to the orgasm chance.
 _Avoid_: release mode
+
+**Orgasm chance**:
+In Orgasm mode, the chance that an orgasm is permitted when the edging time or denials before orgasm is reached; otherwise it's a denial and another full round starts.
 
 **Automatic mode**:
 Either Endless or Orgasm mode: any mode where the EOM drives stimulation itself.
@@ -101,8 +104,11 @@ _Avoid_: recovery
 The EOM stopping all stimulation by itself because of a sensor fault, a lost connection, a time limit or a heart-rate limit.
 
 **Settings lock**:
-A state where settings and mode changes are refused, either during Orgasm mode or after an orgasm.
+A state where settings and mode changes are refused, either during Orgasm mode or after an orgasm. The firmware refuses them, whichever client sends them. Stopping always works, and switching to Manual ends the lock.
 _Avoid_: menu lock
+
+**Preset**:
+A named set of session settings saved in the app on one phone or browser, which can be loaded to apply them to the EOM.
 
 **Control command**:
 An instruction from the app or a remote to change what the EOM is doing: set the mode, set the motor, trigger arousal, reset the denied count, report a heart rate, or change a setting.
@@ -119,6 +125,9 @@ One stretch of use recorded by the app, from when a mode starts or pleasure rise
 
 **Detailed recording**:
 An optional session recording of every pressure reading, rather than the usual few samples a second.
+
+**Marked orgasm**:
+An orgasm the user marks in the app at the moment it happens, recorded with the session as the real time, unlike the orgasms the EOM detects.
 
 ### Toys
 
@@ -137,10 +146,6 @@ _Avoid_: step, speed
 **Toy strip**:
 The row of toy pills in the main screen header, shown while any toy is connected, that gives each toy's name, its strength and what its toy controls follow, with a stop button for each toy.
 _Avoid_: toy bar, toy panel
-
-**Light**:
-A Bluetooth light that mirrors the EOM's LED colour. Not a toy: it doesn't follow pleasure or arousal.
-_Avoid_: LED (the EOM's own light)
 
 ### Firmware updates
 

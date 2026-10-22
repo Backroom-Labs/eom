@@ -43,6 +43,7 @@ CONFIG_DEFS {
 
     // Orgasm Settings
     CFG_NUMBER(max_denied, 20);
+    CFG_NUMBER_RANGE(orgasm_chance, 100, 0, 100);
     CFG_NUMBER(max_pleasure, 255);
     CFG_NUMBER(initial_pleasure, 10);
     CFG_NUMBER(edge_delay, 10);

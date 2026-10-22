@@ -1,7 +1,7 @@
 ## Configuration
 
 Please see `data/config.json` file.
-If a configuration is changed using the UI it will be saved on the device itself.  There is not currently a way to get the device's config.json back to a computer but most of its contents are transmitted via websocket when the UI first connects.  This is logged by the UI in the browser console.
+If a configuration is changed using the UI it will be saved on the device itself.  There is not currently a way to get the device's config.json back to a computer, but the WebSocket `configList` command returns every setting (see [WebSocket.md](WebSocket.md)), and the Bluetooth config characteristic does the same.
 
 [/data/config.json](/data/config.json) is compiled into the firmware, so to push config changes to the device edit the file and run ```PlatformIO -> Project Tasks -> <your board> -> General -> Upload``` (no filesystem upload needed).  On boot the device compares the built-in file with the one it last applied:
 - If the file changed, every key in it overrides the value saved on the device.  Keys you leave out of the file keep their saved values.
@@ -10,43 +10,127 @@ If a configuration is changed using the UI it will be saved on the device itself
 
 ```Upload Filesystem Image``` also writes ```data/config.json``` to the device, replacing any settings saved from the UI, and ```Erase Flash``` wipes them entirely.  See [Updating the device](../README.md#updating-the-device) in the README for when each kind of update is needed.
 
-Here is a quick summary of config variables:
+## Settings
 
-|Key|Type|Default|Note|
+Every key the firmware loads and saves (`src/config.c`).  **Default** is the firmware's value for a key missing from the file.  The shipped `data/config.json` sets some of them differently (see [below](#shipped-dataconfigjson)), and on a new device those values win.
+
+Types: *Text (n)* holds up to n characters.  *Number (0-255)* and *Number (0-65535)* are stored in 8 and 16 bits: a larger value wraps around, it is not rejected.  *Number* is a signed 32-bit integer.  A boolean sent as text (over Bluetooth, or as a string in `configSet`) is false for `false`, `no`, `off` or `0` and true for anything else.  Settings in the Wi-Fi and Bluetooth table take effect on the next restart.
+
+### Wi-Fi and Bluetooth
+
+|Key|Type|Default|Meaning|
 |---|----|---|---|
-|`wifi_ssid`|String|""|Your WiFi SSID.|
-|`wifi_key`|String|""|Your WiFi Password.|
-|`wifi_on`|Boolean|false|Enable WiFi and the Websocket server. Cannot be enabled if AzureFang is on.|
-|`bt_display_name`|String|"EOM_BT"|BT device name.  Currently emulates MonsterPub device for Xtoys compatibility.|
-|`bt_on`|Boolean|true|Enable BT connectivity.|
-|`force_bt_coex`|Boolean|false|Force BT and WiFi at the same time.|
-|`led_brightness`|Byte|128|Status LED maximum brightness.|
-|`websocket_port`|Int|80|Port to listen for incoming Websocket connections.|
-|`use_ssl`|Boolean|true|Enable the SSL (`wss://`) server on port 443. Required for the hosted (https) UI and xtoys over WiFi. Uses `/spiffs/server.crt` and `/spiffs/server.key`, generated per machine by `tools/gen_cert.py`; falls back to plain `ws://` on `websocket_port` if they are missing. Accept the self-signed certificate once by visiting `https://<device-ip>/`|
-|`hostname`|String|"eom3k"|Local hostname for your device.|
-|`chart_window_s`|Int|5|The number of seconds to display in the chart history.  Higher numbers can cause sluggish behavior on slower devices|
-|`max_denied`|Int|20|Maximum number of denials before forcing an orgasm (in orgasm mode).|
-|`initial_pleasure`|Byte|10|The minimum speed the motor will start at in endless & orgasm mode.|
-|`max_pleasure`|Byte|255|Maximum speed for the motor in auto-ramp mode.|
-|`motor_ramp_time_s`|Int|30|The time it takes for the motor to reach Motor Max Speed in endless & orgasm mode.|
-|`edge_delay`|Int|10|Minimum time (s) after edge detection before resuming stimulation.|
-|`max_additional_delay`|Int|10|Maximum time (s) that can be added to the edge delay before resuming stimulation. A random number will be picked between 0 and this setting each cycle. 0 to disable.|
-|`minimum_on_time`|Int|1|Time (s) after stimulation starts before edge detection is resumed.|
-|`pressure_smoothing`|Byte|5|Number of samples to take an average of. Higher results in lag and lower resolution!|
-|`classic_serial`|Boolean|false|Output continuous stream of arousal data over serial for backwards compatibility with other software.|
-|`sensitivity_threshold`|12 bit Int (4096)|1024|The arousal threshold for orgasm detection. Lower values stop sooner.|
-|`mid_threshold`|12 bit Int (4096)|512| The start of the warning zone for approaching arousal.  Changes lights to yellow.|
-|`update_frequency_hz`|Int|50|Update frequency for pressure readings and arousal steps. Higher = crash your serial monitor.|
-|`sensor_sensitivity`|Byte|128|Pressure sensor prescaling.|
-|`use_average_values`|Boolean|false|Use average values when calculating arousal. This smooths noisy data.|
-|`vibration_mode`|VibrationMode|RampStop|Vibration Mode for main vibrator control.|
-|`use_post_orgasm`|Boolean|true|Use post-orgasm torture mode and functionality.|
-|`clench_pressure_sensitivity`|Int|200|Minimum additional Arousal level to detect clench. See manual.|
-|`clench_time_to_orgasm_ms`|Int|1500|Threshold variable that is milliseconds count of clench to detect orgasm. See manual.|
-|`clench_detector_in_edging`|Boolean|true|Use the clench detector to adjust Arousal. See manual.|
-|`auto_edging_duration_minutes`|Int|30|How long to edge before permiting an orgasm.|
-|`post_orgasm_duration_seconds`|Int|10|How long to stimulate after orgasm detected.|
-|`edge_menu_lock`|Boolean|false|Deny access to menu starting in the edging session.|
-|`post_orgasm_menu_lock`|Boolean|false|Deny access to menu starting after orgasm detected.|
-|`max_clench_duration_ms`|Int|3000|Duration the clench detector can raise arousal if clench detector turned on in edging session.|
-|`clench_time_threshold_ms`|Int|900|Threshold variable that is milliseconds counts to detect the start of clench.|
+|`wifi_ssid`|Text (64)|""|Your Wi-Fi network name (join mode).|
+|`wifi_key`|Text (64)|""|Your Wi-Fi password.|
+|`wifi_on`|Boolean|true|Turn on Wi-Fi and the WebSocket server.  Read at boot.|
+|`wifi_ap_mode`|Boolean|true|Make the EOM its own Wi-Fi network (`ap_ssid`) instead of joining `wifi_ssid`.  If joining fails, the EOM starts its own network anyway.|
+|`ap_ssid`|Text (64)|"EOM"|Name of the EOM's own network.|
+|`ap_password`|Text (64)|""|Password for the EOM's own network; empty for an open network.|
+|`ap_channel`|Number (0-255)|1|Wi-Fi channel of the EOM's own network (1-13).|
+|`ap_max_connections`|Number (0-255)|4|Devices that can join the EOM's own network at once (1-4).|
+|`bt_display_name`|Text (63)|"EOM_BT"|Bluetooth name.  Also the mDNS instance name.  The EOM emulates a MonsterPub device for Xtoys; see the README.|
+|`bt_on`|Boolean|true|Turn on Bluetooth.|
+|`force_bt_coex`|Boolean|true|Allow Bluetooth and Wi-Fi at the same time.  When it's off and both are on, Bluetooth is turned off.|
+|`websocket_port`|Number|80|Port of the plain `ws://` server.|
+|`use_ssl`|Boolean|true|Serve `wss://` on port 443 instead.  Needed for the hosted (https) app and Xtoys over Wi-Fi.  Uses `/spiffs/server.crt` and `/spiffs/server.key`, generated per machine by `tools/gen_cert.py`; falls back to plain `ws://` on `websocket_port` if they are missing.  Accept the self-signed certificate once by visiting `https://<device-ip>/`.|
+|`ssl_servercert_path`|Text|not set|Certificate file to use instead of `/spiffs/server.crt`.  Left out of the saved file while it isn't set.|
+|`ssl_prvtkey_path`|Text|not set|Private key file to use instead of `/spiffs/server.key`.  Left out of the saved file while it isn't set.|
+|`hostname`|Text (63)|"eom"|mDNS hostname (`<hostname>.local`).|
+|`classic_serial`|Boolean|false|Write a continuous stream of arousal data to the serial port, for older software.|
+
+### Session
+
+|Key|Type|Default|Meaning|
+|---|----|---|---|
+|`auto_edging_duration_minutes`|Number|30|Orgasm mode: minutes of edging before an orgasm is permitted.|
+|`max_denied`|Number (0-255)|20|Orgasm mode: an orgasm is permitted once there have been more denials than this in a round, if that comes before the edging time.  0, or 100 and over, turns it off.|
+|`orgasm_chance`|Number (0-100)|100|Orgasm mode: percent chance an orgasm is permitted once the edging time or `max_denied` is reached.  A lost roll is a denial and another full round starts.|
+|`after_orgasm`|Number|1|What happens once an orgasm is detected in Orgasm mode: 0 Ruin, 1 Post-orgasm, 2 Milking.|
+|`post_orgasm_duration_seconds`|Number|10|Post-orgasm and Milking: seconds of full intensity after an orgasm before ramping down.|
+|`milking_rest_seconds`|Number|60|Milking: seconds to rest between an orgasm and the next round of edging.|
+|`milking_max_orgasms`|Number|3|Milking: stop after this many orgasms; the last one ends like Post-orgasm.  0 for no limit.|
+|`edge_menu_lock`|Boolean|false|Turn on the settings lock 2 minutes into an Orgasm mode session.|
+|`post_orgasm_menu_lock`|Boolean|false|Turn on the settings lock when an orgasm is detected.|
+|`vibration_mode`|Number|2|Algorithm: 1 Ramp-Stop, 2 Depletion, 3 Enhancement.  (4 Pattern is unfinished and does nothing; any other value acts as Depletion.)|
+
+### Stimulation
+
+|Key|Type|Default|Meaning|
+|---|----|---|---|
+|`max_pleasure`|Number (0-255)|255|Highest motor speed in Endless and Orgasm mode.|
+|`initial_pleasure`|Number (0-255)|10|Motor speed Endless and Orgasm mode start from.|
+|`motor_ramp_time_s`|Number (0-255)|120|Seconds to ramp from `initial_pleasure` to `max_pleasure`.|
+|`edge_delay`|Number (0-255)|10|Minimum seconds after an edge before stimulation resumes.|
+|`max_additional_delay`|Number (0-255)|10|Up to this many seconds, picked at random each time, are added to `edge_delay`.  0 to turn off.|
+|`minimum_on_time`|Number (0-255)|1|Seconds after stimulation starts before edges are detected again.|
+
+### Detection
+
+|Key|Type|Default|Meaning|
+|---|----|---|---|
+|`sensitivity_threshold`|Number (0-65535)|1024|Edge threshold: arousal above this is an edge (0-4095 scale).  Lower stops sooner.|
+|`mid_threshold`|Number (0-65535)|512|Warning threshold: the start of the yellow zone, approaching an edge.  Also caps arousal memory.|
+|`sensor_sensitivity`|Number (0-255)|50|Sensor gain, 0-100.  On analog sensors it picks the ADC range (75 and up most sensitive); on I2C/SPI sensors it scales the reading.|
+|`pressure_smoothing`|Number (0-255)|10|Number of readings averaged into the smoothed pressure.  Higher lags more.|
+|`use_average_values`|Boolean|true|Calculate arousal from the smoothed pressure instead of single readings.|
+|`update_frequency_hz`|Number (0-255)|50|Pressure readings and control updates per second.|
+|`auto_baseline`|Boolean|true|Follow the resting pressure so slow drift (warming air, a shifted plug) isn't taken for a clench.|
+|`arousal_fade_ms`|Number|1400|Milliseconds for arousal to fall by half once contractions stop.|
+|`arousal_memory_s`|Number|0|Half-life in seconds of a fading copy of recent arousal peaks that arousal won't drop below, capped at `mid_threshold`.  0 for off.|
+
+### Clench
+
+|Key|Type|Default|Meaning|
+|---|----|---|---|
+|`clench_detector_in_edging`|Boolean|true|Let clenches raise arousal while edging.|
+|`clench_pressure_sensitivity`|Number|300|Pressure above the resting level that counts as a clench.  Lower is more sensitive.|
+|`clench_time_threshold_ms`|Number|900|Milliseconds a clench must last before it counts.|
+|`clench_time_to_orgasm_ms`|Number|1500|Milliseconds of clench, once an orgasm is permitted, that count as an orgasm.  (Replaced `clench_threshold_2_orgasm`; old files are converted.)|
+|`max_clench_duration_ms`|Number|3000|Longest a clench can keep raising arousal.  Pressure that stays up longer is treated as drift.|
+
+### Safety
+
+|Key|Type|Default|Meaning|
+|---|----|---|---|
+|`sensor_fault_stop`|Boolean|true|Stop an Endless or Orgasm session when the pressure sensor stops giving a usable signal.|
+|`disconnect_stop_s`|Number (0-255)|10|Stop when no app (Bluetooth or WebSocket) has been connected for this many seconds.  0 to turn off.|
+|`max_session_minutes`|Number (0-65535)|0|Stop any session, Manual included, after this many minutes.  0 to turn off.|
+|`max_motor_output`|Number (0-255)|255|Hard cap on motor output in every mode, including direct motor control.|
+|`hr_max_bpm`|Number (0-255)|0|Stop any session when the heart rate stays above this for 10 seconds.  0 to turn off.|
+
+### Heart rate
+
+All of these need a heart rate from the app (an O2Ring) and are ignored while none is coming in.
+
+|Key|Type|Default|Meaning|
+|---|----|---|---|
+|`hr_recovery_bpm`|Number (0-255)|0|After an edge, keep cooling down until the heart rate has dropped this far below its peak (and `edge_delay` has passed).  0 to turn off.|
+|`hr_recovery_max_s`|Number (0-255)|90|Longest to wait for the heart rate after an edge, in seconds.|
+|`hr_edge_bpm`|Number (0-255)|0|At or above this heart rate, lower the edge threshold by `hr_edge_sensitivity` percent.  0 to turn off.|
+|`hr_edge_sensitivity`|Number (0-255)|20|Percent the edge threshold drops in the heart-rate edge zone.|
+|`hr_orgasm_min_bpm`|Number (0-255)|0|Orgasm mode: a clench only counts as an orgasm with the heart rate at least this high.  0 to turn off.|
+|`hr_orgasm_drop_bpm`|Number (0-255)|0|Orgasm mode, once permitted: also count an orgasm when the heart rate falls this far within 30 seconds of its peak, without a clench.  Experimental.  0 to turn off.|
+
+### Unused
+
+The firmware loads and saves these, but nothing uses them.
+
+|Key|Type|Default|Meaning|
+|---|----|---|---|
+|`chart_window_s`|Number (0-255)|5|Seconds of chart history, from the old UI.|
+|`store_command_history`|Boolean|true|Serial console setting; the console is gone.|
+|`console_basic_mode`|Boolean|false|Serial console setting; the console is gone.|
+
+## Shipped `data/config.json`
+
+The `data/config.json` in this repository sets these differently from the firmware defaults:
+
+|Key|In `data/config.json`|Firmware default|
+|---|---|---|
+|`wifi_ssid`, `wifi_key`|"your_wifi", "your_password"|""|
+|`wifi_on`|false|true|
+|`wifi_ap_mode`|false|true|
+|`max_denied`|5|20|
+|`update_frequency_hz`|30|50|
+
+It also has `use_post_orgasm`, which the firmware no longer reads (see `after_orgasm`).  Keys that aren't settings are ignored.

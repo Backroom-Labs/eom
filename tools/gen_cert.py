@@ -8,6 +8,9 @@ The files are written to data/server.crt and data/server.key so they're included
 image ("Build Filesystem Image" / "Upload Filesystem Image"). They are git-ignored: every build
 machine gets its own key. Delete them to regenerate.
 
+The key names the P-256 curve: mbedTLS rejects explicit curve parameters, which LibreSSL (macOS's
+openssl) writes by default, so a pair that has them is regenerated.
+
 After flashing, visit https://<device-ip>/ once in your browser and accept the certificate so the
 web UI can connect over wss://.
 """
@@ -27,20 +30,36 @@ CERT_PATH = os.path.join(DATA_DIR, "server.crt")
 KEY_PATH = os.path.join(DATA_DIR, "server.key")
 
 
+def uses_explicit_ec_params(cert_path):
+    """True if the cert's EC key spells out the curve (prime, A, B, ...) instead of naming it."""
+    result = subprocess.run(
+        ["openssl", "x509", "-noout", "-text", "-in", cert_path],
+        capture_output=True, text=True,
+    )
+    return result.returncode == 0 and "Field Type: prime-field" in result.stdout
+
+
 def generate():
-    if os.path.exists(CERT_PATH) and os.path.exists(KEY_PATH):
-        return
-
+    have_pair = os.path.exists(CERT_PATH) and os.path.exists(KEY_PATH)
     if shutil.which("openssl") is None:
-        print("gen_cert: openssl not found; skipping certificate generation (wss:// disabled)")
+        if not have_pair:
+            print("gen_cert: openssl not found; skipping certificate generation (wss:// disabled)")
         return
 
-    print("gen_cert: generating self-signed certificate in data/")
-    # EC P-256 keeps the TLS handshake fast and the heap usage low on the ESP32.
+    if have_pair:
+        if not uses_explicit_ec_params(CERT_PATH):
+            return
+        print("gen_cert: data/server.crt uses explicit EC parameters, which mbedTLS can't parse; regenerating")
+    else:
+        print("gen_cert: generating self-signed certificate in data/")
+
+    # EC P-256 keeps the TLS handshake fast and the heap usage low on the ESP32. ec_param_enc
+    # makes LibreSSL name the curve as OpenSSL 3 does by default.
     subprocess.run(
         [
             "openssl", "req", "-x509", "-nodes",
             "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1",
+            "-pkeyopt", "ec_param_enc:named_curve",
             "-days", "3650",
             "-subj", "/CN=eom.local",
             "-addext", "subjectAltName=DNS:eom.local,DNS:eom,IP:192.168.4.1",

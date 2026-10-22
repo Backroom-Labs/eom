@@ -20,14 +20,15 @@ static status_snapshot_t fixture(void) {
         .motor = 200,
         .cooldown = 7,
         .denied = 3,
+        .chance_denials = 2,
         .mode = 1,
         .mode_name = "ENDLESS",
         .vibration_mode = 2,
         .permit_s = 0x1234,
-        .menu_locked = true,
+        .settings_locked = true,
         .safety = 4,
         .phase = 2,
-        .session_orgasms = 5,
+        .orgasms = 5,
         .rest_s = 0x0102,
         .baseline = 0x0456,
         .hr = 72,
@@ -69,6 +70,26 @@ static void test_get_returns_what_was_published(void) {
     TEST_ASSERT_EQUAL_MEMORY(&in, &out, sizeof(in));
 }
 
+static void test_settings_locked_follows_the_latest_snapshot(void) {
+    status_snapshot_t s = fixture();
+    s.settings_locked = true;
+    status_snapshot_publish(&s);
+    TEST_ASSERT_TRUE(status_snapshot_settings_locked());
+    s.settings_locked = false;
+    status_snapshot_publish(&s);
+    TEST_ASSERT_FALSE(status_snapshot_settings_locked());
+}
+
+static void test_mode_follows_the_latest_snapshot(void) {
+    status_snapshot_t s = fixture();
+    s.mode = OC_ORGASM;
+    status_snapshot_publish(&s);
+    TEST_ASSERT_EQUAL(OC_ORGASM, status_snapshot_mode());
+    s.mode = OC_MANUAL;
+    status_snapshot_publish(&s);
+    TEST_ASSERT_EQUAL(OC_MANUAL, status_snapshot_mode());
+}
+
 static void test_json_matches_the_readings_message(void) {
     status_snapshot_t s = fixture();
     char* json = to_json(&s);
@@ -77,7 +98,7 @@ static void test_json_matches_the_readings_message(void) {
         "\"pavg\":1500,\"permit\":4660,\"pressure\":2748,\"runMode\":\"ENDLESS\","
         "\"sensitivity\":128,\"threshold\":4080,\"lock\":true,\"safety\":4,\"phase\":2,"
         "\"orgasms\":5,\"rest\":258,\"baseline\":1110,\"hr\":72,\"hrWait\":true,\"hrZone\":false,"
-        "\"rawSeq\":74565,\"raw\":[1008,1009,1010,1011,1012,1013,1014,1015]}",
+        "\"chanceDenials\":2,\"rawSeq\":74565,\"raw\":[1008,1009,1010,1011,1012,1013,1014,1015]}",
         json
     );
     free(json);
@@ -120,12 +141,13 @@ static void test_ble_matches_the_status_characteristic(void) {
         0x23, 0x45,  // 27-28 raw sequence, low 16 bits
         16,          // 29 raw values that follow
     };
-    TEST_ASSERT_EQUAL(62, STATUS_SNAPSHOT_BLE_LEN);
+    TEST_ASSERT_EQUAL(63, STATUS_SNAPSHOT_BLE_LEN);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(head, out, 30);
     for (int i = 0; i < STATUS_SNAPSHOT_RAW_LEN; i++) {
         TEST_ASSERT_EQUAL_HEX8(0x03, out[30 + 2 * i]);
         TEST_ASSERT_EQUAL_HEX8(0xE8 + i, out[31 + 2 * i]);
     }
+    TEST_ASSERT_EQUAL_MESSAGE(2, out[62], "denials by chance, after the raw values");
 }
 
 static void test_ble_heart_rate_flags(void) {
@@ -144,6 +166,8 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_get_before_the_first_tick_is_all_zeros);
     RUN_TEST(test_get_returns_what_was_published);
+    RUN_TEST(test_settings_locked_follows_the_latest_snapshot);
+    RUN_TEST(test_mode_follows_the_latest_snapshot);
     RUN_TEST(test_json_matches_the_readings_message);
     RUN_TEST(test_json_without_a_mode_name);
     RUN_TEST(test_ble_matches_the_status_characteristic);

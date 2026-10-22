@@ -30,6 +30,22 @@ void status_snapshot_get(status_snapshot_t* out) {
     SNAPSHOT_UNLOCK();
 }
 
+bool status_snapshot_settings_locked(void) {
+    bool locked;
+    SNAPSHOT_LOCK();
+    locked = latest.settings_locked;
+    SNAPSHOT_UNLOCK();
+    return locked;
+}
+
+orgasm_output_mode_t status_snapshot_mode(void) {
+    uint8_t mode;
+    SNAPSHOT_LOCK();
+    mode = latest.mode;
+    SNAPSHOT_UNLOCK();
+    return (orgasm_output_mode_t)mode;
+}
+
 void status_snapshot_to_json(const status_snapshot_t* s, cJSON* r) {
     cJSON_AddNumberToObject(r, "arousal", s->arousal);
     cJSON_AddNumberToObject(r, "cooldown", s->cooldown);
@@ -42,15 +58,16 @@ void status_snapshot_to_json(const status_snapshot_t* s, cJSON* r) {
     cJSON_AddStringToObject(r, "runMode", s->mode_name ? s->mode_name : "");
     cJSON_AddNumberToObject(r, "sensitivity", s->sensitivity);
     cJSON_AddNumberToObject(r, "threshold", s->threshold);
-    cJSON_AddBoolToObject(r, "lock", s->menu_locked);
+    cJSON_AddBoolToObject(r, "lock", s->settings_locked);
     cJSON_AddNumberToObject(r, "safety", s->safety);
     cJSON_AddNumberToObject(r, "phase", s->phase);
-    cJSON_AddNumberToObject(r, "orgasms", s->session_orgasms);
+    cJSON_AddNumberToObject(r, "orgasms", s->orgasms);
     cJSON_AddNumberToObject(r, "rest", s->rest_s);
     cJSON_AddNumberToObject(r, "baseline", s->baseline);
     cJSON_AddNumberToObject(r, "hr", s->hr);
     cJSON_AddBoolToObject(r, "hrWait", s->hr_waiting);
     cJSON_AddBoolToObject(r, "hrZone", s->hr_zone);
+    cJSON_AddNumberToObject(r, "chanceDenials", s->chance_denials);
 
     // Detailed recording: the last WS_RAW_LEN raw readings. rawSeq counts readings since boot; the
     // last one in raw is number rawSeq - 1.
@@ -81,9 +98,9 @@ void status_snapshot_to_ble(const status_snapshot_t* s, uint8_t out[STATUS_SNAPS
         (uint8_t)(time >> 16),
         (uint8_t)(time >> 8),
         (uint8_t)(time & 0xFF),
-        s->menu_locked,
+        s->settings_locked,
         s->safety,
-        s->session_orgasms,
+        s->orgasms,
         s->phase,
         (uint8_t)(s->rest_s >> 8),     // MSB
         (uint8_t)(s->rest_s & 0xFF),   // LSB
@@ -100,4 +117,6 @@ void status_snapshot_to_ble(const status_snapshot_t* s, uint8_t out[STATUS_SNAPS
         out[30 + 2 * i] = s->raw[i] >> 8;
         out[31 + 2 * i] = s->raw[i] & 0xFF;
     }
+    // After the raw values, where apps that predate it don't look.
+    out[30 + 2 * STATUS_SNAPSHOT_RAW_LEN] = s->chance_denials;
 }

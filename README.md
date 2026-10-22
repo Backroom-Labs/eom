@@ -19,7 +19,7 @@ Using an inflatable butt plug to detect pressure changes indicative of pelvic fl
 
 ### But I like orgasms...
 
-Having to wait for it while being right at the edge makes it more intense!  Trying to resist getting close is a turn-on for some.  When you're ready to end the edging, **Orgasm mode** allows you to finish after a chosen number of minutes or denials, and then decides what happens next: ruin it, keep going through it, or rest and start edging again for another one.  If you've had enough, switch to **Manual** and take control of the toys yourself.  It can also be used after orgasms to determine exactly when the refractory period has subsided enough to begin the next round of pleasuring.
+Having to wait for it while being right at the edge makes it more intense!  Trying to resist getting close is a turn-on for some.  When you're ready to end the edging, **Orgasm mode** allows you to finish after a chosen number of minutes or denials, or leaves it to chance: with **Orgasm chance** under 100%, reaching the target rolls the dice, and a lost roll is one more denial and another full round of edging.  Then it decides what happens next: ruin it, keep going through it, or rest and start edging again for another one.  If you've had enough, switch to **Manual** and take control of the toys yourself.  It can also be used after orgasms to determine exactly when the refractory period has subsided enough to begin the next round of pleasuring.
 
 ### Bonus feature:
 You could use the app by itself to control multiple sex toys at once without an EOM being involved.  The app by itself is a versatile and simple control hub.
@@ -102,7 +102,6 @@ The top bar has three more buttons: **History** (with a red dot while a session 
 The **Toys** panel connects other toys to the app so they follow the EOM:
 - Bluetooth toys through [Buttplug.io](https://buttplug.io/) (vibrators, strokers and many more)
 - An [OSSM](https://github.com/KinkyMakers/OSSM-hardware) stroker
-- A Bluetooth LED strip that shows the EOM's status colour
 
 Each toy control can follow **Pleasure**, **Arousal**, **Pressure** or **Denials**, or be set by hand in **Manual**.  **Range** limits how weak and how strong it goes, and **Invert** runs it from the top of its range down.  A toy starts on Manual when it connects, and gets back the range and invert you last set for it on this phone or browser.
 
@@ -118,20 +117,20 @@ While a toy is connected, the top of the main screen shows it with its level and
   <img src="doc/screenshots/settings-calibration.png" width="260" alt="Detection settings and calibration">
 </p>
 
-Every device setting is in the app, grouped into tabs.  Changes are sent to the device straight away and saved there, over Bluetooth or Wi-Fi.  Settings marked as needing a restart can be applied with **Restart device**.
+Every device setting is in the app, grouped into tabs.  Changes are sent to the device straight away and saved there, over Bluetooth or Wi-Fi.  Settings marked as needing a restart can be applied with **Restart device**.  **Presets** at the top of the Session tab save the Session, Stimulation, Detection, Clench and Heart rate settings under a name in this phone or browser, so you can load them again later; Safety and Connectivity settings are left as they are.
 
 |Tab|What's in it|
 |---|---|
-|**Session**|Algorithm, edging time and denials before orgasm, what happens after an orgasm, rest between orgasms, orgasms per session, settings lock during Orgasm mode|
+|**Session**|**Presets**, algorithm, edging time and denials before orgasm, orgasm chance, what happens after an orgasm, rest between orgasms, orgasms per session, settings lock during Orgasm mode|
 |**Stimulation**|Maximum and starting intensity, ramp time, edge cooldown, random extra cooldown, minimum on time|
 |**Detection**|Edge and warning thresholds, sensor gain, pressure smoothing, update rate, **Calibration** (resting pressure, suggested threshold)|
 |**Clench**|Clench detection and orgasm detection, post-orgasm duration, settings lock after an orgasm, **Follow resting pressure**|
 |**Safety**|Stop on sensor fault, stop when disconnected, session time limit, output limit|
 |**Connectivity**|Wi-Fi (own network or join yours), network name and password, hostname, secure WebSocket, Bluetooth name, Bluetooth and Wi-Fi together|
 |**App**|Settings for this app only: start view, keep screen on, record sessions, pressure simulator, Apply pressure step|
-|**Device**|Firmware version, [firmware update over Bluetooth](#updating-the-device), restart|
+|**Device**|App and firmware versions, [firmware update over Bluetooth](#updating-the-device), restart|
 
-If **Lock settings during Orgasm mode** or **Lock settings after orgasm** is on, settings can't be changed until the Orgasm session ends.  This is useful if someone else sets the rules.
+If **Lock settings during Orgasm mode** or **Lock settings after orgasm** is on, settings can't be changed until the Orgasm session ends.  This is useful if someone else sets the rules.  The EOM itself refuses the changes, whichever app or connection sends them: settings, switching to Endless or Orgasm, and resetting the denied count.  **Stop** always works, and stopping ends the session and the lock.
 
 ## Modes
 
@@ -150,6 +149,7 @@ If **Lock settings during Orgasm mode** or **Lock settings after orgasm** is on,
 |1|Ramp-Stop|Pleasure ramps up, stopping abruptly on arousal threshold crossing.  It's very frustrating.|
 |2|Depletion (default)|Pleasure ramps up, but is reduced for even small arousal spikes.  This makes for a constant interaction with your arousal rather than just a sudden cutoff when it's over the limit.|
 |3|Enhancement|This is the opposite of edging, it will make you orgasm faster.  Pleasure ramps up as arousal increases, holding a peak for ramp_time.  Not compatible with Orgasm mode.|
+|4|Pattern|Unfinished: the firmware accepts it but it does nothing yet, and the app doesn't offer it.|
 
 ### After an orgasm
 
@@ -171,10 +171,12 @@ The **Orgasms** counter shows how many were detected this session (for example "
 </p>
 
 The app records every session while it's connected and keeps it **in that browser only**; nothing is stored on the device.  Open **History** in the top bar to see your past sessions.  Each one has:
-- a chart of pleasure, arousal, edge threshold, pressure and resting pressure, with denials and orgasms marked
-- duration, edges, denials, orgasms, peak arousal, average pleasure, edge threshold and resting-pressure drift
+- a chart of pleasure, arousal, edge threshold, pressure and resting pressure, with denials and detected orgasms as solid lines and the orgasms you marked as dashed ones
+- duration, edges, denials, orgasms detected and marked, peak arousal, average pleasure, edge threshold and resting-pressure drift
 - **Export CSV** to keep or analyse the readings elsewhere
 - **Export detailed CSV**, if **Settings > App > Detailed recording** was on: the raw pressure at the EOM's full update rate (50 times a second) with the other readings alongside, for studying contraction patterns.  Needs firmware 3.6.0, and it takes more storage in the browser.
+
+While a session is recording, the main screen shows **Mark orgasm**.  Tap it the moment you have an orgasm: it records the real time with the session, so you can compare it with what the EOM detected.  It works while settings are locked, and taps within 5 seconds of the last one count once.  Both CSV exports have an `orgasm_marked` column at the end, with `1` on the row nearest each mark.
 
 A session starts when a mode runs or the intensity goes above 0, and ends 30 seconds after the EOM stops.  Sessions shorter than 15 seconds aren't kept, and the last 200 are saved.  Turn recording off under **Settings > App > Record sessions**.
 
@@ -204,7 +206,7 @@ While it's connected, the app shows a **Heart rate** gauge and chart line, recor
 |Setting|What it does|
 |---|---|
 |**Wait for heart rate to settle**|After an edge, the cooldown continues until your heart rate has dropped this many bpm from its peak, after **Edge delay** and for at most **Longest wait for heart rate**.  The app shows "Waiting for your heart rate to settle".|
-|**Edge zone heart rate**|At or above this heart rate the edge threshold is lowered by **Edge zone threshold drop**, so edges are caught earlier when you're close.  The arousal gauge shows the lowered threshold.|
+|**Edge zone heart rate**|At or above this heart rate the edge threshold is lowered by **Edge zone threshold drop**, so edges are caught earlier when you're close.  The arousal gauge then marks the lowered threshold next to the edge threshold; the chart and the reported threshold stay at the edge threshold.|
 |**Orgasm heart rate**|In Orgasm mode, a clench only counts as an orgasm if your heart rate is at least this high.|
 |**Detect orgasm from heart rate drop**|Experimental.  Once an orgasm is permitted, also count one when your heart rate falls this far within 30 seconds of its peak, without a clench.|
 
@@ -232,7 +234,7 @@ On boards with an RGB LED (WS2812/SK6812), while no automatic mode is running:
 |Solid green|App connected|
 |Flashing red|Stopped by a sensor fault|
 
-In Endless and Orgasm mode the LED shows the EOM's arousal colour instead.  This colour is also sent to the app and to a connected Bluetooth LED strip.
+In Endless and Orgasm mode the LED shows the EOM's arousal colour instead.  This colour is also sent to the app.
 
 ## Hardware
 #### [Build examples here](doc/building/building.md)
@@ -297,7 +299,7 @@ PlatformIO rebuilds only what changed, so this is quick.  The filesystem (TLS ce
 
 **Changing settings in `data/config.json`** also only needs a firmware upload.  The file is compiled into the firmware and on boot the device checks whether it has changed since it was last applied.  If it has, every key in the file overrides the value saved on the device; if it hasn't, settings you changed from the app are kept.  An invalid JSON file is ignored (check the monitor for `Built-in config.json is not valid JSON`).
 
-The app is hosted separately (see [eomui/](eomui/)), so app changes never need a device update.  If you change the app, run `npm run build` in `eomui/` to update `eomui/public/`.
+The app is hosted separately (see [eomui/](eomui/)), so app changes never need a device update.  The built app (`eomui/public/index.html`) isn't committed: run `npm run build` in `eomui/` before testing locally, syncing Capacitor or taking screenshots. CI builds it for releases.
 
 ### Full image: filesystem + firmware
 Do a full update (`Build Filesystem Image` -> `Upload Filesystem Image`, then `Upload and Monitor`) when:
@@ -345,7 +347,7 @@ Using Xtoys you can connect to the EOM and let it control your other Xtoys devic
 
 WebSockets are supported for backwards compatibility with nogasm and edge-o-matic devices, but not necessary for Bluetooth.  Documentation for the WebSocket API is in [doc/WebSocket.md](doc/WebSocket.md) and the config keys are in [doc/Config.json.md](doc/Config.json.md).
 
-Newer firmware adds these to the readings, over both WebSocket (`readings`) and Bluetooth (status characteristic, now 62 bytes, multi-byte values MSB first):
+Newer firmware adds these to the readings, over both WebSocket (`readings`) and Bluetooth (status characteristic, now 63 bytes, multi-byte values MSB first):
 
 |Field|WebSocket|Bluetooth byte|Since|Meaning|
 |---|---|---|---|---|
@@ -358,8 +360,11 @@ Newer firmware adds these to the readings, over both WebSocket (`readings`) and 
 |Heart rate|`hr`|25|3.5.0|Heart rate the EOM is using, in bpm (0 = none)|
 |Heart-rate state|`hrWait`, `hrZone`|26 (bit 0, bit 1)|3.5.0|Cooldown waiting for the heart rate to settle; heart rate in the edge zone|
 |Raw pressure|`rawSeq`, `raw` (last 8)|27-28 reading number (low 16 bits), 29 count, then 16 × 2 bytes|3.6.0|The last raw pressure readings, oldest first; the newest is reading number `rawSeq - 1` since boot|
+|Denied by chance|`chanceDenials`|62, after the raw values|3.8.0|Orgasm chance rolls lost since Orgasm mode started; each is also counted in `denied`|
 
 Bluetooth control commands: `0x02` change a setting (saved), `0x04` save and restart, `0x05` set the simulated pressure (simulator builds only), `0x06 <bpm>` heart rate from an external sensor.  Over WebSocket the heart rate is `{"heartRate": <bpm>}`.
+
+While the settings lock is on (3.8.0), the EOM refuses `configSet`, `setMode` to Endless or Orgasm and `resetDenied`, and the matching Bluetooth writes (a `0x02` setting, or a `0x01` control packet that changes to another mode or resets the denied count).  Over WebSocket the reply is `{"<command>": {"errno": 2, "error": "SETTINGS LOCKED"}}` (a bad argument is `errno` 1); over Bluetooth the write fails with ATT error `0x03` (write not permitted; a bad argument is `0x13`).  Stopping is always accepted: `setMode` to Manual and `setMotor` (Bluetooth: Manual or a motor value), as are `triggerArousal`, `heartRate` and `simPressure`.
 
 Firmware updates use the same commands, events and result codes over both connections, and the app downloads and checks the image itself (the EOM never fetches firmware).  Bluetooth: [src/include/system/ble_ota.h](src/include/system/ble_ota.h).  WebSocket (3.8.0): `{"otaInfo": null}` reports the version, board, largest image and whether the running firmware is confirmed; `{"otaBegin": {"size": <bytes>, "allowDowngrade": false}}` starts an update; the image follows in binary frames of a 4-byte little-endian offset plus up to 4096 bytes; `{"otaAbort": null}` cancels; and the EOM answers with `{"ota": {"event": "ready" | "progress" | "resend" | "result", "error": <code>, "value": <n>}}`.  See [src/include/system/ws_ota.h](src/include/system/ws_ota.h).
 
@@ -385,6 +390,7 @@ New settings since 3.0.0:
 |`hr_edge_sensitivity`|20|Edge zone threshold drop (%)|
 |`hr_orgasm_min_bpm`|0|Orgasm heart rate (0 = off)|
 |`hr_orgasm_drop_bpm`|0|Detect orgasm from heart rate drop (0 = off)|
+|`orgasm_chance`|100|Orgasm chance (%)|
 
 ## Building tips
 
@@ -447,13 +453,11 @@ This is a product of the open source community.  This will always be open source
 Planned:
 - "Check for updates" in the app, and firmware updates over Wi-Fi
 - Atom Echo button (stop/start, change mode, unlock settings)
-- Presets: save and load your settings under a name
-- Timed programs, e.g. 20 minutes of edging then a random chance of an orgasm, or a denial lottery
+- Timed programs that chain modes or settings over time (a random chance of an orgasm is **Orgasm chance**)
 - Keyholder mode: a PIN for settings and mode changes, and a view-only second connection
 
 Older ideas:
 - connect to DG Labs Coyote
-- support for more bluetooth LED types
 - add build walkthrough to docs and more examples, pinouts and schematics
 - audio buzzer in the app for cooldown!
 - add a config save button so setting changes aren't immediately permanent (save toy settings also/separately?)

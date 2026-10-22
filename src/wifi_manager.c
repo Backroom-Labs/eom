@@ -193,7 +193,6 @@ esp_err_t wifi_manager_connect_to_ap(const char* ssid, const char* key) {
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(TAG, "Connecting to WiFi: \"%s\"", wifi_config.sta.ssid);
-    ESP_LOGI(TAG, "    Using Password: \"%s\"", wifi_config.sta.password);
 
     EventBits_t bits = xEventGroupWaitBits(
         s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE, portMAX_DELAY

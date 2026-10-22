@@ -2,7 +2,10 @@
 
 This is a browser-based UI for the Endless Orgasm Machine system for ESP32.
 
-![Screenshot](../doc/Screenshot3.png)
+<p align="center">
+  <img src="../doc/screenshots/gauges.png" width="260" alt="Gauges view">
+  <img src="../doc/screenshots/chart.png" width="260" alt="Chart view">
+</p>
 
 It runs over bluetooth!  Just connect to your EOM directly by clicking the bluetooth icon.  No ip address, wifi setup, or websockets needed.  For now it is Android or PC Chrome or Edge only! Sorry Apple and Firefox enthusiasts but they have deemed web bluetooth an unacceptable risk and it will never be available.  I'm working on a native wrapper to get past this and into the app stores.
 
@@ -12,7 +15,8 @@ It was meant to be stored in spiffs memory on an ESP32 but has outgrown that wit
 
 It can be run locally if you prefer.  It should be backwards compatible with the Edge-o-Matic & nogasm though missing some features like denial count and Orgasm Mode.
 
-![Screenshot](../doc/Screenshot.png)
+<p align="center"><img src="../doc/screenshots/toys.png" width="260" alt="Toys panel"></p>
+
 ## Use
 - Click the bluetooth icon to connect to the EOM (it should be visible as "EOM_BT", or whatever `bt_display_name` is set to).  The UI will now respond to the pressure applied to the EOM
 - Click the duck icon to connect to a toy such as a vibrator.  The toy will now increase in intensity along with the "pleasure" meter of the app.
@@ -21,9 +25,8 @@ It can be run locally if you prefer.  It should be backwards compatible with the
 
 ## Building 
 - from the eomui directory run ```npm install``` then ```npm run build```
-- the output ```index.html``` will automatically overwrite the version in the /data directory of the EOM project.
-- using platformIO tools ```build filesystem``` then ```upload filesystem``` to update your device
-- the EOM code itself doesn't need to be built/uploaded again
+- the output is ```eomui/public/index.html```, which isn't committed; CI builds it for releases
+- the app is hosted separately from the EOM, so app changes never need a device update
 
 ## Development
 - run ```vite```

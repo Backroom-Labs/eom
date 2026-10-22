@@ -216,6 +216,109 @@ static void test_ws_unknown_name(void) {
     TEST_ASSERT_EQUAL(CC_UNKNOWN, ws("restart", NULL));
 }
 
+// --- Settings lock: settings and mode choices are refused, stopping and data are not ----------
+
+static void test_locked_ws_config_set_changes_nothing(void) {
+    fake_mode = OC_ORGASM;
+    fake_settings_locked = true;
+    TEST_ASSERT_EQUAL(CC_LOCKED, ws("configSet", "{\"max_pleasure\":255}"));
+    apply();
+    TEST_ASSERT_EQUAL_STRING("", fake_log);
+}
+
+static void test_locked_ws_set_mode_refuses_endless_and_orgasm(void) {
+    fake_mode = OC_ORGASM;
+    fake_settings_locked = true;
+    TEST_ASSERT_EQUAL(CC_LOCKED, ws("setMode", "\"endless\""));
+    TEST_ASSERT_EQUAL(CC_LOCKED, ws("setMode", "\"orgasm\""));  // would restart it
+    apply();
+    TEST_ASSERT_EQUAL_STRING("", fake_log);
+}
+
+static void test_locked_ws_stop_is_accepted(void) {
+    // The app's Stop: Manual, then motor 0. Switching to Manual is what ends the lock.
+    fake_mode = OC_ORGASM;
+    fake_settings_locked = true;
+    TEST_ASSERT_EQUAL(CC_OK, ws("setMode", "\"manual\""));
+    TEST_ASSERT_EQUAL(CC_OK, ws("setMotor", "0"));
+    apply();
+    TEST_ASSERT_EQUAL_STRING("mode:0 pleasure:0 ", fake_log);
+}
+
+static void test_locked_ws_reset_denied_is_refused(void) {
+    fake_mode = OC_ORGASM;
+    fake_settings_locked = true;
+    TEST_ASSERT_EQUAL(CC_LOCKED, ws("resetDenied", NULL));
+    apply();
+    TEST_ASSERT_EQUAL_STRING("", fake_log);
+}
+
+static void test_locked_ws_trigger_heart_rate_and_sim_pressure_are_accepted(void) {
+    fake_mode = OC_ORGASM;
+    fake_settings_locked = true;
+    TEST_ASSERT_EQUAL(CC_OK, ws("triggerArousal", NULL));
+    TEST_ASSERT_EQUAL(CC_OK, ws("heartRate", "72"));
+    TEST_ASSERT_EQUAL(CC_OK, ws("simPressure", "1200"));
+    apply();
+    TEST_ASSERT_EQUAL_STRING("trigger hr:72 sim:1200 ", fake_log);
+}
+
+static void test_locked_ble_setting_is_refused(void) {
+    fake_mode = OC_ORGASM;
+    fake_settings_locked = true;
+    TEST_ASSERT_EQUAL(CC_LOCKED, BLE(0x02, 'a', ':', '1'));
+    TEST_ASSERT_EQUAL_STRING("", fake_log);
+}
+
+static void test_locked_ble_control_refuses_endless_and_reset(void) {
+    fake_mode = OC_ORGASM;
+    fake_settings_locked = true;
+    TEST_ASSERT_EQUAL(CC_LOCKED, BLE(0x01, OC_AUTOMATIC, 0, 0));
+    TEST_ASSERT_EQUAL(CC_LOCKED, BLE(0x01, OC_ORGASM, 0, 1));
+    // The whole packet is refused, including the trigger next to the reset.
+    TEST_ASSERT_EQUAL(CC_LOCKED, BLE(0x01, OC_ORGASM, 1, 1));
+    apply();
+    TEST_ASSERT_EQUAL_STRING("", fake_log);
+}
+
+static void test_locked_ble_control_refuses_orgasm_from_another_mode(void) {
+    // The lock only ends in Manual, but don't rely on that: choosing a mode is refused.
+    fake_mode = OC_AUTOMATIC;
+    fake_settings_locked = true;
+    TEST_ASSERT_EQUAL(CC_LOCKED, BLE(0x01, OC_ORGASM, 0, 0));
+}
+
+static void test_locked_ble_trigger_repeating_the_mode_is_accepted(void) {
+    // The app's Bluetooth "trigger edge" repeats the current mode, which changes nothing.
+    fake_mode = OC_ORGASM;
+    fake_settings_locked = true;
+    TEST_ASSERT_EQUAL(CC_OK, BLE(0x01, OC_ORGASM, 1, 0));
+    apply();
+    TEST_ASSERT_EQUAL_STRING("trigger ", fake_log);
+}
+
+static void test_locked_ble_stop_heart_rate_and_sim_pressure_are_accepted(void) {
+    fake_mode = OC_ORGASM;
+    fake_settings_locked = true;
+    TEST_ASSERT_EQUAL(CC_OK, BLE(0x01, OC_MANUAL, 0, 0));
+    TEST_ASSERT_EQUAL(CC_OK, BLE(0x01, OC_MANUAL, 0, 0, 0));
+    TEST_ASSERT_EQUAL(CC_OK, BLE(0x06, 72));
+    TEST_ASSERT_EQUAL(CC_OK, BLE(0x05, 0x04, 0xB0));
+    apply();
+    TEST_ASSERT_EQUAL_STRING("mode:0 pleasure:0 hr:72 sim:1200 ", fake_log);
+}
+
+static void test_unlocked_everything_is_accepted(void) {
+    fake_mode = OC_ORGASM;
+    TEST_ASSERT_EQUAL(CC_OK, ws("configSet", "{\"a\":1}"));
+    TEST_ASSERT_EQUAL(CC_OK, BLE(0x02, 'b', ':', '2'));
+    TEST_ASSERT_EQUAL(CC_OK, ws("resetDenied", NULL));
+    TEST_ASSERT_EQUAL(CC_OK, BLE(0x01, OC_AUTOMATIC, 0, 1));
+    TEST_ASSERT_EQUAL(CC_OK, ws("setMode", "\"orgasm\""));
+    apply();
+    TEST_ASSERT_EQUAL_STRING("cfg:a=1 save cfg:b=2 save reset mode:1 reset mode:2 ", fake_log);
+}
+
 // --- Queue ------------------------------------------------------------------------------------
 
 static void test_full_queue_drops_new_commands(void) {
@@ -276,6 +379,17 @@ int main(void) {
     RUN_TEST(test_ws_set_motor_rejects_out_of_range);
     RUN_TEST(test_ws_trigger_reset_heart_rate_and_sim_pressure);
     RUN_TEST(test_ws_unknown_name);
+    RUN_TEST(test_locked_ws_config_set_changes_nothing);
+    RUN_TEST(test_locked_ws_set_mode_refuses_endless_and_orgasm);
+    RUN_TEST(test_locked_ws_stop_is_accepted);
+    RUN_TEST(test_locked_ws_reset_denied_is_refused);
+    RUN_TEST(test_locked_ws_trigger_heart_rate_and_sim_pressure_are_accepted);
+    RUN_TEST(test_locked_ble_setting_is_refused);
+    RUN_TEST(test_locked_ble_control_refuses_endless_and_reset);
+    RUN_TEST(test_locked_ble_control_refuses_orgasm_from_another_mode);
+    RUN_TEST(test_locked_ble_trigger_repeating_the_mode_is_accepted);
+    RUN_TEST(test_locked_ble_stop_heart_rate_and_sim_pressure_are_accepted);
+    RUN_TEST(test_unlocked_everything_is_accepted);
     RUN_TEST(test_full_queue_drops_new_commands);
     RUN_TEST(test_a_packet_is_queued_whole_or_not_at_all);
     RUN_TEST(test_the_queue_works_after_wrapping_around);

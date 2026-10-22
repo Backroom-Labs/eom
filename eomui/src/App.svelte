@@ -1,15 +1,16 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { Capacitor } from "@capacitor/core";
   import { BleClient } from "@capacitor-community/bluetooth-le";
-  import BTLED from "./BTLED.svelte";
   import OSSM from "./OSSM.svelte";
   import DeviceList from "./ButtplugConnector.svelte";
   import FirmwareUpdate, { type UpdateLink } from "./FirmwareUpdate.svelte";
   import Gauge from "./lib/Gauge.svelte";
   import SettingControl from "./lib/SettingControl.svelte";
+  import PresetPicker from "./lib/PresetPicker.svelte";
   import SessionHistory from "./lib/SessionHistory.svelte";
   import { Recorder, listSessions, suggestHeartRate, suggestThreshold, type SessionSummary } from "./lib/history";
+  import { deniedByChance, denialsUntilPermitted, nextRoundStart } from "./lib/orgasmChance";
   import { O2Ring, type RingReading } from "./lib/o2ring";
   import {
     QUICK_SETTINGS,
@@ -19,12 +20,16 @@
     coerce,
     defaultConfig,
     formatSetting,
+    reportedSettings,
     toWire,
     type SettingValue,
   } from "./lib/settings";
+  import { firmwareWarning } from "./lib/firmwareRelease";
+  import { readBleDeviceInfo } from "./lib/bleUpload";
   import { ToyList } from "./lib/toyList";
   import { followsText } from "./lib/toyControlView";
   import { savedPreferences } from "./lib/savedPreferences";
+  import { lockedCommands, WsSettings } from "./lib/wsSettings";
 
   // ---------------------------------------------------------------------------------------------
   // Types and constants
@@ -44,12 +49,13 @@
     lock?: boolean; // settings locked by edge_menu_lock
     safety?: number; // why the safety checks last stopped the session, see SAFETY_MESSAGES
     phase?: number; // after-orgasm phase, see PHASE_*
-    orgasms?: number; // orgasms detected this session
+    orgasms?: number; // orgasms detected since the mode started
     rest?: number; // seconds left of a Milking rest
     baseline?: number; // resting pressure followed by the firmware (after 3.3.0)
     hr?: number; // bpm from the O2Ring, added by the app
     hrWait?: boolean; // cooldown waiting for the heart rate to settle (firmware 3.5.0)
     hrZone?: boolean; // heart rate in the edge zone, edge threshold lowered
+    chanceDenials?: number; // rolls lost since Orgasm mode started (firmware 3.8.0)
     raw?: { end: number; p: number[]; hz: number }; // raw pressure batch (firmware 3.6.0), see history.ts
   };
 
@@ -90,6 +96,8 @@
   const BT_CMD_RESTART = 0x04;
   const BT_CMD_SIM_PRESSURE = 0x05;
   const BT_CMD_HEART_RATE = 0x06;
+  // Status bytes: [29] counts the raw values that start here, 2 bytes each.
+  const BT_STATUS_RAW_START = 30;
 
   const isNativeMobile = Capacitor.getPlatform() === "ios" || Capacitor.getPlatform() === "android";
 
@@ -141,6 +149,9 @@
   let configLoaded = $state(false);
   let restartNeeded = $state(false);
   let fwVersion = $state<string | null>(null);
+  let fwVersionRead = $state(false); // this connection's version answer arrived (fwVersion null: unknown)
+  let fwWarningDismissed = $state(false);
+  let reportedKeys = $state<Set<string> | null>(null); // keys in this connection's config dump
 
   // Chart history is a plain array: it changes 50 times a second and only the canvas reads it.
   let history: Reading[] = [];
@@ -158,6 +169,7 @@
   let lastConnection: "bt" | "ws" = "bt";
   let btDeviceId = $state<string | null>(null);
   let socket: WebSocket | undefined;
+  const wsSettings = new WsSettings((frame) => socket?.send(frame));
   let syncDelta = 0;
   let toast = $state<{ text: string; tone: "info" | "error" } | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -171,7 +183,6 @@
   let wsUrlDraft = $state(prefs.wsUrl);
 
   // Toy integrations
-  let btledComponent: any;
   let ossmComponent: any;
   // Every connected Buttplug toy and OSSM. A stop switches them to Manual, which is easy to miss.
   const toys = new ToyList(() => showToast("Toys stopped and switched to Manual"));
@@ -186,7 +197,6 @@
   });
   let ossmDevices = $state([]);
   let deviceList = $state([]);
-  let BTLEDconnected = $state(false);
 
   // Heart rate from an O2Ring, connected alongside the EOM
   const ring = new O2Ring();
@@ -237,6 +247,9 @@
       .then((list) => (sessions = list))
       .catch((err) => console.error("Couldn't read session history:", err));
   }
+  function markOrgasm() {
+    if (recorder.markOrgasm()) showToast("Orgasm marked");
+  }
   recorder.onSessionEnd = (summary) => {
     if (summary) showToast("Session saved to History");
     refreshSessions();
@@ -281,13 +294,16 @@
     return isMilking && max > 0 ? `${count} of ${max}` : String(count);
   });
 
-  // Orgasms detected this session; Milking keeps counting across rounds.
+  // Orgasms detected since the mode started; Milking keeps counting across rounds.
   let showOrgasms = $derived(runMode === "ORGASM" || (latest.orgasms ?? 0) > 0);
   // Enhancement counts orgasms as denials; once the real count shows, keep calling them denials.
   let deniedLabel = $derived(isEnhancement && !showOrgasms ? "Orgasms" : "Denied");
   let orgasmScale = $derived(
     isMilking && Number(config.milking_max_orgasms) > 0 ? Number(config.milking_max_orgasms) : Math.max(5, latest.orgasms ?? 0),
   );
+
+  // The denied count when this Orgasm mode round started (orgasmChance.ts), null if unknown.
+  let roundStart = $state<number | null>(0);
 
   let status = $derived.by(() => {
     if (latest.phase === PHASE_RUINED && runMode === "MANUAL" && latest.motor === 0) {
@@ -317,9 +333,8 @@
     }
     if (runMode === "ORGASM") {
       const permit = latest.permit ?? 0;
-      const limit = Number(config.max_denied);
-      const remaining = limit > 0 && limit < 100 ? limit - (latest.denied ?? 0) : null;
-      if (permit <= 0 || (remaining !== null && remaining <= 0)) {
+      const remaining = denialsUntilPermitted(Number(config.max_denied), latest.denied ?? 0, roundStart);
+      if (permit <= 0) {
         return { title: "Orgasm permitted", detail: "Let go.", tone: "success" };
       }
       const time = permit > 60 ? `${Math.ceil(permit / 60)} min` : `${permit}s`;
@@ -350,6 +365,8 @@
     // Only against a recent reading, so (re)connecting mid-session doesn't toast.
     const recent = r.localTime - latest.localTime < 5000;
     if (recent && (r.orgasms ?? 0) > (latest.orgasms ?? 0)) showToast("Orgasm detected");
+    if (recent && deniedByChance(latest, r)) showToast("Denied by chance");
+    roundStart = nextRoundStart(roundStart, latest, r, recent);
     history.push(r);
     const windowMs = Math.max(1, Number(config.chart_window_s)) * 1000;
     let drop = 0;
@@ -371,7 +388,17 @@
       const def = SETTINGS_BY_KEY[key];
       if (def) config[key] = coerce(def, raw);
     }
+    // Bluetooth sends the dump in slices, so the keys add up.
+    reportedKeys = new Set([...(reportedKeys ?? []), ...Object.keys(values)]);
     configLoaded = true;
+  }
+
+  // Called as each connection opens, so nothing carries over from the last EOM.
+  function forgetPreviousEom() {
+    fwVersion = null;
+    fwVersionRead = false;
+    fwWarningDismissed = false;
+    reportedKeys = null;
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -382,24 +409,31 @@
     await BleClient.write(btDeviceId, BT_SERVICE_UUID, BT_CONTROL_CHAR, new DataView(bytes.buffer));
   }
 
-  function changeSetting(key: string, value: SettingValue) {
+  // Resolves to false if the EOM refused it or a Bluetooth write failed. Loading a preset reports failures together, so it passes quiet.
+  async function changeSetting(key: string, value: SettingValue, quiet = false): Promise<boolean> {
     const def = SETTINGS_BY_KEY[key];
     const previous = config[key];
     config[key] = value;
     if (def?.restart) restartNeeded = true;
 
+    let sent = true;
     if (isWsConnected && socket) {
       // The firmware reads booleans with cJSON valueint, so send them as 1/0.
-      const wire = typeof value === "boolean" ? (value ? 1 : 0) : value;
-      socket.send(JSON.stringify({ configSet: { [key]: wire } }));
+      // A Settings lock refusal is shown by handleWsMessage.
+      sent = await wsSettings.set(key, typeof value === "boolean" ? (value ? 1 : 0) : value);
     } else if (isBtConnected) {
       const enc = new TextEncoder();
-      btWrite(new Uint8Array([BT_CMD_SET_CONFIG, ...enc.encode(key), 0x3a, ...enc.encode(toWire(value))])).catch((err) => {
+      try {
+        await btWrite(new Uint8Array([BT_CMD_SET_CONFIG, ...enc.encode(key), 0x3a, ...enc.encode(toWire(value))]));
+      } catch (err) {
         console.error("Error sending setting via Bluetooth:", err);
-        config[key] = previous;
-        showToast(`Couldn't change ${def?.label ?? key}`, "error");
-      });
+        sent = false;
+        if (!quiet) showToast(`Couldn't change ${def?.label ?? key}`, "error");
+      }
     }
+    // Unless the user has changed it again since.
+    if (!sent && config[key] === value) config[key] = previous;
+    return sent;
   }
 
   function sendCommand(command: "setMode" | "setMotor" | "triggerArousal" | "resetDenied", value: number | string | null = null) {
@@ -559,6 +593,7 @@
     isWsConnected = true;
     connecting = null;
     syncDelta = 0;
+    forgetPreviousEom();
     socket?.send(JSON.stringify({ configList: null }));
     socket?.send(JSON.stringify({ streamReadings: null }));
     socket?.send(JSON.stringify({ info: null }));
@@ -575,8 +610,13 @@
       return;
     }
     if (!msg) return;
+    wsSettings.receive(msg);
+    if (lockedCommands(msg).length) showToast("Settings are locked", "error");
     if (msg.configList) applyConfig(msg.configList);
-    if (msg.info?.fwVersion) fwVersion = msg.info.fwVersion;
+    if (msg.info?.fwVersion) {
+      fwVersion = msg.info.fwVersion;
+      fwVersionRead = true;
+    }
     const r = msg.readings;
     if (!r || !r.millis || r.pressure === undefined || r.arousal === undefined || r.motor === undefined) return;
     pushReading({
@@ -597,6 +637,7 @@
       baseline: r.baseline,
       hrWait: r.hrWait,
       hrZone: r.hrZone,
+      chanceDenials: r.chanceDenials,
       raw: Array.isArray(r.raw) && typeof r.rawSeq === "number" ? { end: r.rawSeq, p: r.raw, hz: rawHz() } : undefined,
       localTime: Date.now(),
     });
@@ -634,6 +675,7 @@
 
   function handleBtReading(value: DataView) {
     const data = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    const rawEnd = data.length > 29 ? BT_STATUS_RAW_START + 2 * data[29] : Infinity;
     const r: Reading = {
       pressure: data[0] * 16, // scale to 0-4096
       arousal: data[1] * 16,
@@ -655,11 +697,13 @@
       // added in 3.5.0: [25] heart rate the EOM is using, [26] flags
       hrWait: data.length > 26 ? (data[26] & 0x01) !== 0 : false,
       hrZone: data.length > 26 ? (data[26] & 0x02) !== 0 : false,
+      // added in 3.8.0: rolls lost since Orgasm mode started, after the raw values
+      chanceDenials: data.length > rawEnd ? data[rawEnd] : 0,
       // added in 3.6.0: [27-28] raw reading number (low 16 bits), [29] count, then that many u16
-      raw: data.length > 29 && data.length >= 30 + 2 * data[29]
+      raw: data.length >= rawEnd
         ? {
             end: unwrapRawSeq((data[27] << 8) | data[28]),
-            p: Array.from({ length: data[29] }, (_, i) => (data[30 + 2 * i] << 8) | data[31 + 2 * i]),
+            p: Array.from({ length: data[29] }, (_, i) => (data[BT_STATUS_RAW_START + 2 * i] << 8) | data[BT_STATUS_RAW_START + 2 * i + 1]),
             hz: rawHz(),
           }
         : undefined,
@@ -670,9 +714,6 @@
     // dump hasn't arrived yet.
     if (configLoaded && data[7] !== Number(config.vibration_mode) && [1, 2, 3].includes(data[7])) {
       config.vibration_mode = data[7];
-    }
-    if (BTLEDconnected && btledComponent) {
-      btledComponent.writeRGB(data[10], data[11], data[12]).catch((err: any) => console.error("Failed to write RGB:", err));
     }
     pushReading(r);
   }
@@ -690,6 +731,16 @@
     }
   }
 
+  // The version is in the firmware update info; firmware from before Bluetooth updates has none,
+  // so its version stays unknown. Not awaited, so a slow read doesn't hold up connecting.
+  function readBtFirmwareVersion(deviceId: string) {
+    readBleDeviceInfo(deviceId).then((info) => {
+      if (btDeviceId !== deviceId) return;
+      fwVersion = typeof info?.version === "string" ? info.version : null;
+      fwVersionRead = true;
+    });
+  }
+
   async function btConnect() {
     connecting = "bt";
     try {
@@ -702,8 +753,10 @@
       socket?.close();
       isWsConnected = false;
       isBtConnected = true;
+      forgetPreviousEom();
       await BleClient.startNotifications(device.deviceId, BT_SERVICE_UUID, BT_CONFIG_CHAR, handleBtConfig);
       await btWrite(new Uint8Array([BT_CMD_GET_CONFIG]));
+      readBtFirmwareVersion(device.deviceId);
       connectDialog?.close();
       showToast(`Connected to ${device.name ?? "EOM"}`);
     } catch (error: any) {
@@ -926,13 +979,31 @@
     { id: "device", label: "Device", groups: [] },
   ];
 
+  let fwWarning = $derived(connected && fwVersionRead && !fwWarningDismissed ? firmwareWarning(fwVersion) : null);
+
+  // Offline, every setting shows with its default.
+  const shownKeys = (keys: string[]) => reportedSettings(keys, connected ? reportedKeys : null);
+  const groupKeys = (groupId: string) => shownKeys(SETTING_GROUPS.find((g) => g.id === groupId)?.keys ?? []);
+  // The App and Device tabs hold more than device settings, so they always show.
+  let shownTabs = $derived(SETTINGS_TABS.filter((tab) => !tab.groups.length || tab.groups.some((id) => groupKeys(id).length)));
+  $effect(() => {
+    if (!shownTabs.some((tab) => tab.id === settingsTab)) settingsTab = shownTabs[0].id;
+  });
+
+  async function openFirmwareUpdate() {
+    settingsTab = "device";
+    settingsDialog?.showModal();
+    await tick();
+    document.getElementById("firmware-update")?.scrollIntoView({ block: "start" });
+  }
+
   let quickKeys = $derived(
-    runMode === "ORGASM" ? ["auto_edging_duration_minutes", "max_denied", "after_orgasm", ...QUICK_SETTINGS] : QUICK_SETTINGS,
+    runMode === "ORGASM" ? ["auto_edging_duration_minutes", "max_denied", "orgasm_chance", "after_orgasm", ...QUICK_SETTINGS] : QUICK_SETTINGS,
   );
 </script>
 
 {#snippet settingList(keys: string[])}
-  {#each keys as key (key)}
+  {#each shownKeys(keys) as key (key)}
     {@const def = SETTINGS_BY_KEY[key]}
     {#if def && (!def.visible || def.visible(config))}
       <SettingControl {def} value={config[key]} disabled={locked} onchange={changeSetting} />
@@ -1043,6 +1114,13 @@
   {#if safetyMessage && connected}
     <div class="banner warn">{safetyMessage}</div>
   {/if}
+  {#if fwWarning}
+    <div class="banner warn">
+      {fwWarning}
+      <button class="small" onclick={openFirmwareUpdate}>Update</button>
+      <button class="small" onclick={() => (fwWarningDismissed = true)}>Dismiss</button>
+    </div>
+  {/if}
   {#if restartNeeded && connected}
     <div class="banner">
       Restart the EOM to apply connectivity changes.
@@ -1063,6 +1141,9 @@
           <button role="tab" aria-selected={view === "chart"} class:active={view === "chart"} onclick={() => { view = "chart"; scheduleChartUpdate(); }} aria-label="Chart">{@render icon("chart")}</button>
         </div>
       </div>
+      {#if recording}
+        <button class="markOrgasm" onclick={markOrgasm} title="Record that you're having an orgasm now">Mark orgasm</button>
+      {/if}
 
       {#if view === "gauges"}
         <div class="gauges">
@@ -1319,7 +1400,7 @@
     <button class="iconBtn" onclick={() => settingsDialog?.close()} aria-label="Close">{@render icon("close")}</button>
   </div>
   <div class="tabs" role="tablist">
-    {#each SETTINGS_TABS as tab}
+    {#each shownTabs as tab}
       <button role="tab" aria-selected={settingsTab === tab.id} class:active={settingsTab === tab.id} onclick={(e) => {
         settingsTab = tab.id;
         e.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest" });
@@ -1339,9 +1420,23 @@
     {#each SETTINGS_TABS as tab}
       <!-- Inactive tabs stay mounted (hidden) so a firmware update keeps running when switching. -->
       <div role="tabpanel" hidden={settingsTab !== tab.id}>
+        {#if tab.id === "session"}
+          <section class="group">
+            <h3>Presets</h3>
+            <p class="muted">Save the Session, Stimulation, Detection, Clench and Heart rate settings under a name, and load them later. Saved in this browser only.</p>
+            <PresetPicker
+              {config}
+              reported={reportedKeys}
+              canSave={configLoaded}
+              canLoad={connected && configLoaded && !locked}
+              change={(key, value) => changeSetting(key, value, true)}
+              notify={showToast}
+            />
+          </section>
+        {/if}
         {#each tab.groups as groupId}
           {@const group = SETTING_GROUPS.find((g) => g.id === groupId)}
-          {#if group}
+          {#if group && groupKeys(groupId).length}
             <section class="group">
               <h3>{group.title}</h3>
               {#if group.description}<p class="muted">{group.description}</p>{/if}
@@ -1459,7 +1554,8 @@
             <h3>About</h3>
             <dl class="facts">
               <dt>Connection</dt><dd>{isBtConnected ? "Bluetooth" : isWsConnected ? `Wi-Fi (${prefs.wsUrl})` : "None"}</dd>
-              {#if fwVersion}<dt>Firmware</dt><dd>{fwVersion}</dd>{/if}
+              <dt>App</dt><dd>{__APP_VERSION__}</dd>
+              {#if fwVersionRead}<dt>Firmware</dt><dd>{fwVersion ?? "Unknown"}</dd>{/if}
               <dt>Algorithm</dt><dd>{formatSetting(SETTINGS_BY_KEY.vibration_mode, config.vibration_mode)}</dd>
             </dl>
             <button onclick={restartDevice} disabled={!connected}>Restart device</button>
@@ -1468,7 +1564,7 @@
             <h3>Advanced</h3>
             {@render settingList(SETTING_GROUPS.find((g) => g.id === "advanced")?.keys ?? [])}
           </section>
-          <section class="group">
+          <section class="group" id="firmware-update">
             <FirmwareUpdate link={updateLink} />
           </section>
         {/if}
@@ -1503,10 +1599,6 @@
     <section class="group ossm">
       <h3>OSSM</h3>
       <OSSM bind:this={ossmComponent} bind:devices={ossmDevices} {toys} />
-    </section>
-    <section class="group">
-      <h3>Lights</h3>
-      <BTLED bind:this={btledComponent} bind:BTLEDconnected />
     </section>
   </div>
 </dialog>
@@ -1670,6 +1762,10 @@
   }
   .viewSwitch {
     flex: none;
+  }
+  .markOrgasm {
+    width: 100%;
+    margin-bottom: 8px;
   }
   .viewSwitch button {
     min-width: 44px;

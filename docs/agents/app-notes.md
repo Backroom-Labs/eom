@@ -4,7 +4,7 @@ Gotchas that the code doesn't show. Decisions are in `docs/adr/`.
 
 ## Building and checking
 
-- Run `npm run build` in `eomui` after UI changes, so `eomui/public/index.html` is up to date. Testing against a stale build has hidden fixes twice.
+- The built app (`eomui/public/index.html`) isn't committed. Run `npm run build` in `eomui` before testing locally, syncing Capacitor or taking screenshots; testing against a stale build has hidden fixes twice. CI builds it for releases.
 - `npm run check` type-checks the app, `vite.config.ts` and the tests in `test/` (`tsconfig.test.json`); `node --test` alone doesn't check types. CI runs both.
 - `package.json` overrides `buttplug-wasm`'s own `buttplug` 4.x dependency with our 5.x, so the connector and client share one set of types. Both speak message spec 4.0.
 - `tsconfig.app.json` sets `allowImportingTsExtensions` because `node --test` runs the `.ts` files directly and needs the `.ts` on imports between `src/lib` modules (`./toyOutput.ts`). Svelte components import them without it.
@@ -20,6 +20,8 @@ Gotchas that the code doesn't show. Decisions are in `docs/adr/`.
 
 - `src/lib/settings.ts` is the single list of device settings. Keys must match `CONFIG_DEFS` in `src/config.c` (firmware).
 - A new settings *group* also needs an entry in `SETTINGS_TABS` in `App.svelte`, or its settings never show.
+- While connected, a setting the EOM leaves out of its config dump is hidden, so mocks must report every key.
+- `MIN_FIRMWARE_VERSION` in `src/lib/firmwareRelease.ts` is the oldest firmware the app supports, and older firmware gets a warning banner. Raise it by hand when the app starts relying on newer firmware.
 
 ## Heart rate ring
 

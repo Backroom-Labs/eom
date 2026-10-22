@@ -1,6 +1,7 @@
 #include "api/index.h"
 #include "control_command.h"
 #include "orgasm_control.h"
+#include "status_snapshot.h"
 #include "system/websocket_handler.h"
 
 // Edging commands over WebSocket. Each one is a control command; see control_command.h.
@@ -19,7 +20,7 @@ static const websocket_command_t cmd_edging_set_mode_s = {
 static command_err_t
 cmd_edging_set_motor(cJSON* command, cJSON* response, websocket_client_t* client) {
     // The switch to manual happens on the next tick; report it now, as before.
-    bool switching = orgasm_control_get_output_mode() != OC_MANUAL;
+    bool switching = status_snapshot_mode() != OC_MANUAL;
     cc_result_t result = control_command_from_ws("setMotor", command);
     if (result == CC_OK && switching) cJSON_AddStringToObject(response, "mode", "MANUAL");
     //cJSON_AddNumberToObject(response, "speed", speed);  //immediate response seemse to be crashing websocket server

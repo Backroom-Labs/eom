@@ -5,6 +5,7 @@
     csvFileName,
     deleteAllSessions,
     deleteSession,
+    formatDuration,
     loadRaw,
     loadSamples,
     toCsv,
@@ -48,12 +49,6 @@
     } finally {
       loading = false;
     }
-  }
-
-  function duration(ms: number) {
-    const m = Math.floor(ms / 60_000);
-    const s = Math.round((ms % 60_000) / 1000);
-    return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : m ? `${m}m ${s}s` : `${s}s`;
   }
 
   function when(t: number) {
@@ -151,6 +146,18 @@
         ctx.globalAlpha = 1;
       }
     }
+    // Marked orgasms dashed, so they stand apart from the detected ones. A mark in the trimmed idle
+    // tail goes at the end.
+    ctx.strokeStyle = color("--orgasm");
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 4]);
+    for (const t of selected?.orgasmMarks ?? []) {
+      ctx.beginPath();
+      ctx.moveTo(x(Math.min(t, span)), pad.t);
+      ctx.lineTo(x(Math.min(t, span)), pad.t + plotH);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
 
     // Keep the peak of each pixel column so edges stay visible on long sessions.
     const cols = Math.max(1, Math.floor(plotW));
@@ -207,14 +214,18 @@
           <li><span class="swatch" class:dashed={line.dash} style="--c: var({line.color})"></span>{line.label}</li>
         {/each}
         <li><span class="swatch tall" style="--c: var(--denied)"></span>Denial</li>
-        <li><span class="swatch tall" style="--c: var(--orgasm)"></span>Orgasm</li>
+        <li><span class="swatch tall" style="--c: var(--orgasm)"></span>Orgasm detected</li>
+        {#if s.orgasmMarks?.length}
+          <li><span class="swatch tall dashed" style="--c: var(--orgasm)"></span>Orgasm marked</li>
+        {/if}
       </ul>
     {/if}
     <dl class="stats">
-      <div><dt>Duration</dt><dd>{duration(s.end - s.start)}</dd></div>
+      <div><dt>Duration</dt><dd>{formatDuration(s.end - s.start)}</dd></div>
       <div><dt>Edges</dt><dd>{s.edges}</dd></div>
       <div><dt>Denials</dt><dd>{s.denials}</dd></div>
-      <div><dt>Orgasms</dt><dd>{s.orgasms}{s.ruined ? " (ruined)" : ""}</dd></div>
+      <div><dt>Orgasms detected</dt><dd>{s.orgasms}{s.ruined ? " (ruined)" : ""}</dd></div>
+      <div><dt>Orgasms marked</dt><dd>{s.orgasmMarks?.length ?? 0}</dd></div>
       <div><dt>Peak arousal</dt><dd>{pct(s.peakArousal)}</dd></div>
       <div><dt>Avg pleasure</dt><dd>{pct(s.avgPleasure, 255)}</dd></div>
       <div><dt>Edge threshold</dt><dd>{pct(s.threshold)}</dd></div>
@@ -254,7 +265,7 @@
           <button onclick={() => open(s)}>
             <span class="when">{when(s.start)}</span>
             <span class="facts">
-              {duration(s.end - s.start)} · {s.edges} edge{s.edges === 1 ? "" : "s"} · {s.denials} denied{s.orgasms ? ` · ${s.orgasms} orgasm${s.orgasms === 1 ? "" : "s"}` : ""}
+              {formatDuration(s.end - s.start)} · {s.edges} edge{s.edges === 1 ? "" : "s"} · {s.denials} denied{s.orgasms ? ` · ${s.orgasms} orgasm${s.orgasms === 1 ? "" : "s"}` : ""}
             </span>
           </button>
         </li>
@@ -347,6 +358,9 @@
   .swatch.tall {
     width: 3px;
     height: 12px;
+  }
+  .swatch.tall.dashed {
+    background: repeating-linear-gradient(to bottom, var(--c) 0 3px, transparent 3px 5px);
   }
   .stats {
     display: grid;

@@ -100,6 +100,12 @@ export const SETTINGS: SettingDef[] = [
     format: (v) => (v === 0 || v >= 100 ? "No limit" : `${v}`),
   },
   {
+    key: "orgasm_chance",
+    label: "Orgasm chance",
+    description: "In Orgasm mode, the chance that an orgasm is permitted when the edging time or denials before orgasm is reached. Otherwise it's a denial and another full round starts. 0% never permits one.",
+    kind: "range", default: 100, min: 0, max: 100, unit: "%",
+  },
+  {
     key: "edge_menu_lock",
     label: "Lock settings during Orgasm mode",
     description: "Two minutes into an Orgasm mode session, settings can't be changed until the session ends. Helps you stick to the plan.",
@@ -447,7 +453,7 @@ export const SETTING_GROUPS: SettingGroup[] = [
     id: "session",
     title: "Session",
     keys: [
-      "vibration_mode", "auto_edging_duration_minutes", "max_denied", "after_orgasm", "milking_rest_seconds",
+      "vibration_mode", "auto_edging_duration_minutes", "max_denied", "orgasm_chance", "after_orgasm", "milking_rest_seconds",
       "milking_max_orgasms", "edge_menu_lock",
     ],
   },
@@ -505,6 +511,12 @@ export const SETTING_GROUPS: SettingGroup[] = [
 
 // Settings shown on the main screen for quick access.
 export const QUICK_SETTINGS = ["sensitivity_threshold", "max_pleasure", "motor_ramp_time_s", "edge_delay"];
+
+// Older firmware lacks newer settings, and a default shown for one would be a setting that does nothing.
+// `reported` holds the keys in the device's config, or null until any arrives.
+export function reportedSettings(keys: string[], reported: ReadonlySet<string> | null): string[] {
+  return reported ? keys.filter((key) => reported.has(key)) : keys;
+}
 
 export function defaultConfig(): Record<string, SettingValue> {
   return Object.fromEntries(SETTINGS.map((s) => [s.key, s.default]));

@@ -69,6 +69,7 @@ export type SessionSummary = {
   rawHz?: number;
   rawSeq0?: number;
   rawT0?: number;
+  orgasmMarks?: number[]; // marked orgasms, ms since the session started; missing if none
 };
 
 const SAMPLE_MS = 200;
@@ -79,6 +80,7 @@ const FLUSH_MS = 10_000;
 const PRE_ORGASM_WINDOW_MS = 60_000;
 const KEEP_SESSIONS = 200;
 const HR_DROP_WINDOW_MS = 60_000;
+const MARK_DEBOUNCE_MS = 5_000; // a double tap on Mark orgasm counts once
 
 // -----------------------------------------------------------------------------------------------
 // Storage
@@ -170,6 +172,14 @@ async function pruneOldSessions() {
   for (const s of all.slice(KEEP_SESSIONS)) await deleteSession(s.id);
 }
 
+// Where the Recorder saves sessions; tests swap IndexedDB for memory.
+export type SessionStore = {
+  save(summary: SessionSummary, n: number, samples: Sample[], raw: RawSegment[]): Promise<void>;
+  remove(id: number): Promise<void>;
+  prune(): Promise<void>;
+};
+const indexedDbStore: SessionStore = { save: saveChunk, remove: deleteSession, prune: pruneOldSessions };
+
 // -----------------------------------------------------------------------------------------------
 // Recording
 
@@ -208,6 +218,12 @@ export class Recorder {
   detailed = false; // also keep raw pressure at the EOM's update rate
   // Called after a session is saved for the last time.
   onSessionEnd?: (summary: SessionSummary | null) => void;
+
+  private store: SessionStore;
+
+  constructor(store: SessionStore = indexedDbStore) {
+    this.store = store;
+  }
 
   get recording(): boolean {
     return this.current !== null;
@@ -304,6 +320,18 @@ export class Recorder {
     s.rawSamples! += fresh.length;
   }
 
+  // Records a marked orgasm at `now`. False if no session is recording or the last mark was under
+  // MARK_DEBOUNCE_MS ago.
+  markOrgasm(now = Date.now()): boolean {
+    const s = this.current?.summary;
+    if (!s) return false;
+    const t = now - s.start;
+    const last = s.orgasmMarks?.at(-1);
+    if (last !== undefined && t - last < MARK_DEBOUNCE_MS) return false;
+    (s.orgasmMarks ??= []).push(t);
+    return true;
+  }
+
   // Call every few seconds: ends a session whose readings stopped (disconnected).
   tick(now = Date.now()) {
     if (this.current && now - this.current.last.localTime > END_AFTER_SILENT_MS) this.end();
@@ -354,7 +382,7 @@ export class Recorder {
     c.lastFlush = c.last.localTime;
     const raw = c.rawPending;
     c.rawPending = [];
-    saveChunk(c.summary, c.chunkNo++, samples, raw).catch((err) => console.error("Couldn't save session history:", err));
+    this.store.save(c.summary, c.chunkNo++, samples, raw).catch((err) => console.error("Couldn't save session history:", err));
   }
 
   // Finish the current session (also called when recording is turned off).
@@ -370,13 +398,14 @@ export class Recorder {
     c.summary.samples = c.stored + c.pending.length;
     if (c.summary.end - c.summary.start < MIN_SESSION_MS) {
       // Too short to keep; drop anything already flushed.
-      if (c.chunkNo > 0) deleteSession(c.summary.id).catch(() => {});
+      if (c.chunkNo > 0) this.store.remove(c.summary.id).catch(() => {});
       this.onSessionEnd?.(null);
       return;
     }
     const summary = c.summary;
-    saveChunk(summary, c.chunkNo, c.pending, c.rawPending)
-      .then(pruneOldSessions)
+    this.store
+      .save(summary, c.chunkNo, c.pending, c.rawPending)
+      .then(() => this.store.prune())
       .then(() => this.onSessionEnd?.(summary))
       .catch((err) => console.error("Couldn't save session history:", err));
   }
@@ -385,11 +414,23 @@ export class Recorder {
 // -----------------------------------------------------------------------------------------------
 // Export
 
+// The index of the row nearest each orgasm mark, given the rows' times (ms, ascending).
+function markedRows(times: number[], marks: number[] = []): Set<number> {
+  const rows = new Set<number>();
+  for (const mark of marks) {
+    let i = 0;
+    while (i + 1 < times.length && Math.abs(times[i + 1] - mark) < Math.abs(times[i] - mark)) i++;
+    if (times.length) rows.add(i);
+  }
+  return rows;
+}
+
 export function toCsv(summary: SessionSummary, samples: Sample[]): string {
+  const marked = markedRows(samples.map((x) => x[0]), summary.orgasmMarks);
   const rows = [
-    "time_s,mode,pressure,arousal_peak,pleasure,edge_threshold,denials,orgasms,baseline,phase,heart_rate",
-    ...samples.map((x) =>
-      [(x[0] / 1000).toFixed(1), MODES[x[8]] ?? "", x[1], x[2], x[3], x[4], x[5], x[6], x[7], x[9], x[10] || ""].join(","),
+    "time_s,mode,pressure,arousal_peak,pleasure,edge_threshold,denials,orgasms,baseline,phase,heart_rate,orgasm_marked",
+    ...samples.map((x, i) =>
+      [(x[0] / 1000).toFixed(1), MODES[x[8]] ?? "", x[1], x[2], x[3], x[4], x[5], x[6], x[7], x[9], x[10] || "", marked.has(i) ? 1 : ""].join(","),
     ),
   ];
   return `# EOM session ${new Date(summary.start).toISOString()}\n${rows.join("\n")}\n`;
@@ -401,7 +442,8 @@ export function toDetailedCsv(summary: SessionSummary, samples: Sample[], raw: R
   const hz = summary.rawHz || 50;
   const seq0 = summary.rawSeq0 ?? 0;
   const t0 = summary.rawT0 ?? 0;
-  const rows = ["time_s,reading,pressure_raw,arousal_peak,pleasure,edge_threshold,denials,orgasms,heart_rate"];
+  const times: number[] = [];
+  const rows: (string | number)[][] = [];
   let j = 0;
   for (const seg of raw) {
     seg.p.forEach((p, i) => {
@@ -409,16 +451,31 @@ export function toDetailedCsv(summary: SessionSummary, samples: Sample[], raw: R
       const t = t0 + ((seq - seq0) * 1000) / hz;
       while (j + 1 < samples.length && samples[j + 1][0] <= t) j++;
       const x = samples[j];
-      rows.push([(t / 1000).toFixed(3), seq, p, x?.[2] ?? "", x?.[3] ?? "", x?.[4] ?? "", x?.[5] ?? "", x?.[6] ?? "", x?.[10] || ""].join(","));
+      times.push(t);
+      rows.push([(t / 1000).toFixed(3), seq, p, x?.[2] ?? "", x?.[3] ?? "", x?.[4] ?? "", x?.[5] ?? "", x?.[6] ?? "", x?.[10] || ""]);
     });
   }
-  return `# EOM session ${new Date(summary.start).toISOString()}, raw pressure at ${hz} Hz\n${rows.join("\n")}\n`;
+  const marked = markedRows(times, summary.orgasmMarks);
+  const lines = [
+    "time_s,reading,pressure_raw,arousal_peak,pleasure,edge_threshold,denials,orgasms,heart_rate,orgasm_marked",
+    ...rows.map((row, i) => [...row, marked.has(i) ? 1 : ""].join(",")),
+  ];
+  return `# EOM session ${new Date(summary.start).toISOString()}, raw pressure at ${hz} Hz\n${lines.join("\n")}\n`;
 }
 
 export function csvFileName(summary: SessionSummary): string {
   const d = new Date(summary.start);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `eom-session-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.csv`;
+}
+
+export function formatDuration(ms: number): string {
+  // Round once before splitting, so 59.8 s rolls over to the next minute instead of showing "60s".
+  const total = Math.round(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor(total / 60) % 60;
+  const s = total % 60;
+  return h ? `${h}h ${m}m` : m ? `${m}m ${s}s` : `${s}s`;
 }
 
 // -----------------------------------------------------------------------------------------------

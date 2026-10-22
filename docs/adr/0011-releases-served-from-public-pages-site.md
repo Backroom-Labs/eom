@@ -8,3 +8,10 @@ The site is the repo's `gh-pages` branch rather than GitHub's deploy-from-Action
 
 - The Pages URL, `https://backroom-labs.github.io/eom/`, is built into installed apps and into each manifest's download URLs, so moving the site later breaks updates for older apps. The repo is named `eom` in lowercase because the repo name is the URL path.
 - The repo has to stay public for Pages to serve it on a free plan.
+
+## Setup assumptions
+
+- The repo is public, which Pages needs on a free plan.
+- The repo is `backroom-labs/eom`: the owner and name form the Pages URL.
+- GitHub Pages is enabled and serves the `gh-pages` branch.
+- The release workflow's own token can push to `gh-pages`, so no extra secret or key is needed.
