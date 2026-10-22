@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { compareVersions, selectRelease, manifestUrl, checkForUpdate, downloadRelease, type Manifest, type ManifestEntry } from "../src/lib/firmwareRelease.ts";
+import { compareVersions, firmwareWarning, isFirmwareSupported, selectRelease, manifestUrl, checkForUpdate, downloadRelease, type Manifest, type ManifestEntry } from "../src/lib/firmwareRelease.ts";
 
 const BASE = "https://example.test/eom/firmware";
 
@@ -172,4 +172,25 @@ test("a connection that drops partway through still gets a plain sentence", asyn
   const offline = { message: "Couldn't reach the release site. Check your internet connection." };
   await assert.rejects(checkForUpdate({ version: "3.6.0", board: "esp32dev" }, { fetch: dropping, baseUrl: BASE }), offline);
   await assert.rejects(downloadRelease(imageEntry(), { fetch: dropping }), offline);
+});
+
+test("isFirmwareSupported accepts the minimum version and newer, and refuses older", () => {
+  assert.equal(isFirmwareSupported("3.8.0", "3.8.0"), true);
+  assert.equal(isFirmwareSupported("3.9.1", "3.8.0"), true);
+  assert.equal(isFirmwareSupported("3.7.4", "3.8.0"), false);
+});
+
+test("isFirmwareSupported counts a prerelease of the minimum as older", () => {
+  assert.equal(isFirmwareSupported("3.8.0-beta.1", "3.8.0"), false);
+});
+
+test("isFirmwareSupported treats an unknown version as unsupported", () => {
+  assert.equal(isFirmwareSupported(null, "3.8.0"), false);
+  assert.equal(isFirmwareSupported("my-build", "3.8.0"), false);
+});
+
+test("firmwareWarning names the old or unknown version, and is null for supported firmware", () => {
+  assert.equal(firmwareWarning("3.5.0", "3.8.0"), "This EOM's firmware (3.5.0) is older than this app supports (3.8.0).");
+  assert.equal(firmwareWarning(null, "3.8.0"), "This EOM didn't report its firmware version, so it may be older than this app supports (3.8.0).");
+  assert.equal(firmwareWarning("3.8.0", "3.8.0"), null);
 });

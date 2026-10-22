@@ -506,6 +506,12 @@ export const SETTING_GROUPS: SettingGroup[] = [
 // Settings shown on the main screen for quick access.
 export const QUICK_SETTINGS = ["sensitivity_threshold", "max_pleasure", "motor_ramp_time_s", "edge_delay"];
 
+// Older firmware lacks newer settings, and a default shown for one would be a setting that does nothing.
+// `reported` holds the keys in the device's config, or null until any arrives.
+export function reportedSettings(keys: string[], reported: ReadonlySet<string> | null): string[] {
+  return reported ? keys.filter((key) => reported.has(key)) : keys;
+}
+
 export function defaultConfig(): Record<string, SettingValue> {
   return Object.fromEntries(SETTINGS.map((s) => [s.key, s.default]));
 }
