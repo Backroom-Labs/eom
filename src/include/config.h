@@ -232,6 +232,9 @@ struct config {
 
     // Maximum number of denials before forcing an orgasm (in orgasm mode).
     uint8_t max_denied;
+    // In Orgasm mode, the percent chance an orgasm is permitted when the edging time or max_denied
+    // is reached; otherwise it's a denial and another full round starts.
+    uint8_t orgasm_chance;
     // Maximum pleasure in endless & orgasm mode.
     uint8_t max_pleasure;
     // The minimum pleasure to start at in endless & orgasm mode.

@@ -19,8 +19,11 @@ The mode where the EOM raises pleasure and denies at every edge, with no orgasm 
 _Avoid_: automatic (that word covers Orgasm mode too)
 
 **Orgasm mode**:
-The mode that edges and denies like Endless until the edging time or the denial count is reached, then permits an orgasm.
+The mode that edges and denies like Endless until the edging time or the denial count is reached, then permits an orgasm, subject to the orgasm chance.
 _Avoid_: release mode
+
+**Orgasm chance**:
+In Orgasm mode, the chance that an orgasm is permitted when the edging time or denials before orgasm is reached; otherwise it's a denial and another full round starts.
 
 **Automatic mode**:
 Either Endless or Orgasm mode: any mode where the EOM drives stimulation itself.

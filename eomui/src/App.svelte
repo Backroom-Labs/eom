@@ -10,6 +10,7 @@
   import PresetPicker from "./lib/PresetPicker.svelte";
   import SessionHistory from "./lib/SessionHistory.svelte";
   import { Recorder, listSessions, suggestHeartRate, suggestThreshold, type SessionSummary } from "./lib/history";
+  import { deniedByChance, denialsUntilPermitted, nextRoundStart } from "./lib/orgasmChance";
   import { O2Ring, type RingReading } from "./lib/o2ring";
   import {
     QUICK_SETTINGS,
@@ -53,6 +54,7 @@
     hr?: number; // bpm from the O2Ring, added by the app
     hrWait?: boolean; // cooldown waiting for the heart rate to settle (firmware 3.5.0)
     hrZone?: boolean; // heart rate in the edge zone, edge threshold lowered
+    chanceDenials?: number; // Orgasm mode rolls lost this session (firmware 3.8.0)
     raw?: { end: number; p: number[]; hz: number }; // raw pressure batch (firmware 3.6.0), see history.ts
   };
 
@@ -296,6 +298,9 @@
     isMilking && Number(config.milking_max_orgasms) > 0 ? Number(config.milking_max_orgasms) : Math.max(5, latest.orgasms ?? 0),
   );
 
+  // The denied count when this Orgasm mode round started (orgasmChance.ts), null if unknown.
+  let roundStart = $state<number | null>(0);
+
   let status = $derived.by(() => {
     if (latest.phase === PHASE_RUINED && runMode === "MANUAL" && latest.motor === 0) {
       return { title: "Ruined", detail: "Stopped as soon as the orgasm was detected.", tone: "danger" };
@@ -324,9 +329,8 @@
     }
     if (runMode === "ORGASM") {
       const permit = latest.permit ?? 0;
-      const limit = Number(config.max_denied);
-      const remaining = limit > 0 && limit < 100 ? limit - (latest.denied ?? 0) : null;
-      if (permit <= 0 || (remaining !== null && remaining <= 0)) {
+      const remaining = denialsUntilPermitted(Number(config.max_denied), latest.denied ?? 0, roundStart);
+      if (permit <= 0) {
         return { title: "Orgasm permitted", detail: "Let go.", tone: "success" };
       }
       const time = permit > 60 ? `${Math.ceil(permit / 60)} min` : `${permit}s`;
@@ -357,6 +361,8 @@
     // Only against a recent reading, so (re)connecting mid-session doesn't toast.
     const recent = r.localTime - latest.localTime < 5000;
     if (recent && (r.orgasms ?? 0) > (latest.orgasms ?? 0)) showToast("Orgasm detected");
+    if (recent && deniedByChance(latest, r)) showToast("Denied by chance");
+    roundStart = nextRoundStart(roundStart, latest, r, recent);
     history.push(r);
     const windowMs = Math.max(1, Number(config.chart_window_s)) * 1000;
     let drop = 0;
@@ -623,6 +629,7 @@
       baseline: r.baseline,
       hrWait: r.hrWait,
       hrZone: r.hrZone,
+      chanceDenials: r.chanceDenials,
       raw: Array.isArray(r.raw) && typeof r.rawSeq === "number" ? { end: r.rawSeq, p: r.raw, hz: rawHz() } : undefined,
       localTime: Date.now(),
     });
@@ -681,6 +688,8 @@
       // added in 3.5.0: [25] heart rate the EOM is using, [26] flags
       hrWait: data.length > 26 ? (data[26] & 0x01) !== 0 : false,
       hrZone: data.length > 26 ? (data[26] & 0x02) !== 0 : false,
+      // added in 3.8.0: Orgasm mode rolls lost this session, after the raw values
+      chanceDenials: data.length > 29 && data.length > 30 + 2 * data[29] ? data[30 + 2 * data[29]] : 0,
       // added in 3.6.0: [27-28] raw reading number (low 16 bits), [29] count, then that many u16
       raw: data.length > 29 && data.length >= 30 + 2 * data[29]
         ? {
@@ -980,7 +989,7 @@
   }
 
   let quickKeys = $derived(
-    runMode === "ORGASM" ? ["auto_edging_duration_minutes", "max_denied", "after_orgasm", ...QUICK_SETTINGS] : QUICK_SETTINGS,
+    runMode === "ORGASM" ? ["auto_edging_duration_minutes", "max_denied", "orgasm_chance", "after_orgasm", ...QUICK_SETTINGS] : QUICK_SETTINGS,
   );
 </script>
 

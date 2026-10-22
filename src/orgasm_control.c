@@ -2,6 +2,7 @@
 #include "config.h"
 #include "eom-hal-esp32.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "heart_rate.h"
@@ -120,6 +121,15 @@ volatile static struct {
     uint8_t orgasm_count;
     //event_handler_node_t* _h_orgasm;
 } orgasm_state = { 0 };
+
+// Orgasm mode rounds (Config.orgasm_chance). A round ends when its edging time or denial target is
+// reached, with one roll: won, an orgasm is permitted; lost, it's a denial and a new round starts.
+static struct {
+    unsigned long start_millis;
+    uint8_t denials;        // denials this round, for Config.max_denied
+    bool won;
+    uint8_t chance_denials; // lost rolls since Orgasm mode started
+} round_state;
 
 // static void _evt_orgasm_start(
 //     const char* evt, EVENT_HANDLER_ARG_TYPE eap, int eai, EVENT_HANDLER_ARG_TYPE hap
@@ -423,6 +433,51 @@ static void orgasm_control_update_idle_led() {
     }
 }
 
+static void orgasm_control_deny(const vibration_mode_controller_t* controller) {
+    output_state.pleasure = controller->stop();
+    output_state.motor_stop_time = (esp_timer_get_time() / 1000UL);
+    output_state.motor_start_time = 0;
+    arousal_state.update_flag = ocTRUE;
+    arousal_state.cooldown = (Config.edge_delay * 1000) + output_state.random_additional_delay;  //calculate cooldown
+    // Saturating, so many rounds can't wrap the count back to 0.
+    if (orgasm_state.orgasm_count < UINT8_MAX) orgasm_state.orgasm_count += 1;
+    if (round_state.denials < UINT8_MAX) round_state.denials += 1;
+    hr_state.peak_since_edge = heart_rate_get();
+    ESP_LOGI(TAG, "Orgasm Denied! Total: %d", orgasm_state.orgasm_count);
+    if (Config.max_additional_delay  != 0) {
+        output_state.random_additional_delay = random() % (Config.max_additional_delay * 1000);
+    }
+}
+
+static void orgasm_control_start_round(void) {
+    round_state.start_millis = (esp_timer_get_time() / 1000UL);
+    round_state.denials = 0;
+    round_state.won = false;
+}
+
+static bool orgasm_control_is_round_target_reached(void) {
+    return (esp_timer_get_time() / 1000UL) >
+               round_state.start_millis + (Config.auto_edging_duration_minutes * 60 * 1000) ||
+           (Config.max_denied > 0 && Config.max_denied < 100 && round_state.denials > Config.max_denied);
+}
+
+// Rolls once per round, when its target is reached. A lost roll counts as the next round's first
+// denial, so that round permits after max_denied more.
+static void orgasm_control_update_round(void) {
+    if (output_state.output_mode != OC_ORGASM || round_state.won || !orgasm_control_is_round_target_reached()) {
+        return;
+    }
+    arousal_state.update_flag = ocTRUE;
+    if (esp_random() % 100 < Config.orgasm_chance) {
+        round_state.won = true;
+        return;
+    }
+    ESP_LOGI(TAG, "Denied by chance (%d%%)", Config.orgasm_chance);
+    if (round_state.chance_denials < UINT8_MAX) round_state.chance_denials++;
+    orgasm_control_start_round();
+    orgasm_control_deny(get_vibration_mode_controller());
+}
+
 static void orgasm_control_update_pleasure() {
     if (!output_state.control_motor) {
         orgasm_control_update_idle_led();
@@ -460,17 +515,7 @@ static void orgasm_control_update_pleasure() {
         // EDGE DETECTED
         // We're not already in timeout, but arousal is high enough to stop the pleasure
         if (!orgasm_control_is_permit_orgasm_reached()) {
-            output_state.pleasure = controller->stop();
-            output_state.motor_stop_time = (esp_timer_get_time() / 1000UL);
-            output_state.motor_start_time = 0;
-            arousal_state.update_flag = ocTRUE;
-            arousal_state.cooldown = (Config.edge_delay * 1000) + output_state.random_additional_delay;  //calculate cooldown
-            orgasm_state.orgasm_count += 1;
-            hr_state.peak_since_edge = heart_rate_get();
-            ESP_LOGI(TAG, "Orgasm Denied! Total: %d", orgasm_state.orgasm_count);
-            if (Config.max_additional_delay  != 0) {
-                output_state.random_additional_delay = random() % (Config.max_additional_delay * 1000);
-            }
+            orgasm_control_deny(controller);
         } else {
             ESP_LOGI(TAG,"EDGE DETECTED BUT ORGASM PERMITTED");
         }
@@ -544,6 +589,7 @@ static void orgasm_control_start_milking_round() {
     post_orgasm_state.post_orgasm_start_millis = 0;
     post_orgasm_state.detected_orgasm = ocFALSE;
     post_orgasm_state.auto_edging_start_millis = (esp_timer_get_time() / 1000UL);
+    orgasm_control_start_round();
     orgasm_state.orgasm_count = 0;
     output_state.pleasure = 0;
     output_state.motor_start_time = 0;
@@ -790,6 +836,7 @@ static void orgasm_control_update(void) {
     unsigned long update_frequency_ms = 1000UL / Config.update_frequency_hz;
 
     if (millis - arousal_state.last_update_ms > update_frequency_ms) {
+        orgasm_control_update_round();
         orgasm_control_update_arousal();
         orgasm_control_update_edging_time();
         orgasm_control_update_pleasure();
@@ -941,8 +988,10 @@ void orgasm_control_set_output_mode(orgasm_output_mode_t mode) {
         post_orgasm_state.detected_orgasm = ocFALSE;
         post_orgasm_state.clench_pressure_threshold = 4096;
     }
+    orgasm_control_start_round();
     if (mode == OC_ORGASM) {
         orgasm_state.orgasm_count = 0;
+        round_state.chance_denials = 0;
     }
 
     // if (old == OC_MANUAL) {
@@ -971,28 +1020,24 @@ void orgasm_control_permit_orgasm(int seconds) {
     post_orgasm_state.auto_edging_start_millis =
         (esp_timer_get_time() / 1000UL) - (Config.auto_edging_duration_minutes * 60 * 1000);
     post_orgasm_state.post_orgasm_duration_seconds = seconds;
+    round_state.won = true;  // permitted straight away, without a roll
 }
 
 oc_bool_t orgasm_control_is_permit_orgasm_reached() {
-    // Detect if edging time has passed or the max denied orgasms reached
-    if (orgasm_control_get_output_mode() == OC_ORGASM && (((esp_timer_get_time() / 1000UL) > 
-        (post_orgasm_state.auto_edging_start_millis + (Config.auto_edging_duration_minutes * 60 * 1000))) ||
-        (Config.max_denied > 0 && Config.max_denied < 100 && orgasm_state.orgasm_count > Config.max_denied))
-    ) {
-        return ocTRUE;
-    } else {
-        return ocFALSE;
-    }
+    return orgasm_control_get_output_mode() == OC_ORGASM && round_state.won ? ocTRUE : ocFALSE;
 }
 
 static uint16_t orgasm_control_get_permit_orgasm_remaining_seconds() {
     if (output_state.output_mode != OC_ORGASM || orgasm_control_is_permit_orgasm_reached()) {
         return 0;
     } else {
-        long remaining_ms = (post_orgasm_state.auto_edging_start_millis +
+        long remaining_ms = (round_state.start_millis +
                              (Config.auto_edging_duration_minutes * 60 * 1000)) -
                             (esp_timer_get_time() / 1000UL);
-        return (uint16_t)(remaining_ms / 1000UL);
+        // Rounded up and at least 1, so 0 always means permitted: the roll waits for the next update,
+        // and a lost roll can follow the last second.
+        if (remaining_ms < 1000) return 1;
+        return (uint16_t)((remaining_ms + 999) / 1000UL);
     }
 }
 
@@ -1039,6 +1084,7 @@ void orgasm_control_lock_menu(oc_bool_t value) {
 
 void orgasm_control_reset_denied(void) {
     orgasm_state.orgasm_count = 0;
+    round_state.denials = 0;
 }
 
 // Everything the app is told about, gathered in one tick (status_snapshot.h).
@@ -1054,6 +1100,7 @@ static void publish_status_snapshot(void) {
         .motor = orgasm_control_get_pleasure(),
         .cooldown = orgasm_control_get_cooldown(),
         .denied = orgasm_control_get_orgasm_count(),
+        .chance_denials = round_state.chance_denials,
         .mode = (uint8_t)orgasm_control_get_output_mode(),
         .mode_name = orgasm_control_get_output_mode_str(),
         .vibration_mode = (uint8_t)Config.vibration_mode,
