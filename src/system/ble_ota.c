@@ -58,12 +58,19 @@ static int begin(uint16_t conn_handle, const uint8_t* buf, size_t len) {
     return 0;
 }
 
+// The app shows the pressure simulator only when the info has this; releases leave it out.
+#ifdef EOM_PRESSURE_SIM
+#define PRESSURE_SIM_FIELD ",\"pressureSim\":true"
+#else
+#define PRESSURE_SIM_FIELD ""
+#endif
+
 static int read_info(uint16_t conn_handle, struct os_mbuf* om) {
-    char json[160];
+    char json[192];
     int n = snprintf(
         json,
         sizeof(json),
-        "{\"version\":\"%s\",\"board\":\"%s\",\"mtu\":%u,\"maxSize\":%zu,\"confirmed\":%s}",
+        "{\"version\":\"%s\",\"board\":\"%s\",\"mtu\":%u,\"maxSize\":%zu,\"confirmed\":%s" PRESSURE_SIM_FIELD "}",
         EOM_VERSION,
         ota_get_board(),
         ble_att_mtu(conn_handle),

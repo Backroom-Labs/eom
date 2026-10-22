@@ -171,7 +171,7 @@ cc_result_t control_command_from_ble(const uint8_t* buf, size_t len) {
         return set_config(name, value);
     }
     case 0x05: {
-        // Simulated pressure (test builds only): 2 bytes MSB first, 0xFFFF for the real sensor.
+        // Simulated pressure (not in releases): 2 bytes MSB first, 0xFFFF for the real sensor.
         if (len < 3) return bad_arg("short BLE simulated pressure");
         int value = (buf[1] << 8) | buf[2];
         return one(SIM_PRESSURE, value == 0xFFFF ? -1 : value);

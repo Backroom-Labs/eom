@@ -6,6 +6,7 @@
 // page a fake Web Bluetooth with one Lovense Lush, so Buttplug finds a toy without hardware.
 // Drives the system Chrome (set CHROME to use another) with puppeteer-core: 412x915 at 2x, dark,
 // reduced motion, then scales each shot to 560x1243 like the other screenshots with macOS `sips`.
+// PRESSURE_SIM=1 makes the mock report the pressure simulator, like firmware that isn't a release.
 
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -23,6 +24,7 @@ const OUT = join(here, "..", "..", "doc", "screenshots");
 const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const VIEWPORT = { width: 412, height: 915, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
 const OUT_SIZE = { width: 560, height: 1243 };
+const PRESSURE_SIM = process.env.PRESSURE_SIM === "1";
 
 // ---------------------------------------------------------------------------------------------
 // The app, served over http so it gets a normal origin for its saved preferences
@@ -61,7 +63,7 @@ eom.on("connection", (socket) => {
   socket.on("message", (data) => {
     const msg = JSON.parse(String(data));
     if ("configList" in msg) socket.send(JSON.stringify({ configList: CONFIG }));
-    if ("info" in msg) socket.send(JSON.stringify({ info: { fwVersion: MIN_FIRMWARE_VERSION } }));
+    if ("info" in msg) socket.send(JSON.stringify({ info: { fwVersion: MIN_FIRMWARE_VERSION, pressureSim: PRESSURE_SIM } }));
     if ("streamReadings" in msg && !timer) {
       timer = setInterval(() => {
         const t = (Date.now() - start) / 1000;

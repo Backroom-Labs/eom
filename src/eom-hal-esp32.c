@@ -49,8 +49,8 @@ static bool setting_up_ambient = false;
 // Consecutive failed sensor reads; the safety checks stop the session when it gets too high.
 static uint16_t pressure_read_failures = 0;
 #ifdef EOM_PRESSURE_SIM
-// Simulated pressure for testing without a sensor, -1 for the real sensor.
-static volatile int sim_pressure = 0;
+// Simulated pressure for testing without a sensor, -1 for the real sensor until a simPressure command.
+static volatile int sim_pressure = -1;
 #endif
 RGBColor led_color = {0, 0, 0};
 RGBColor rgb_off = {0, 0, 0};
