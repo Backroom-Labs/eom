@@ -210,7 +210,7 @@ export function ossmToy(ossm: OssmHandle): Toy {
       try {
         await ossm.stop();
       } catch (err) {
-        console.error(`Couldn't stop OSSM ${ossm.name}:`, err);
+        console.error("Couldn't stop OSSM %s:", ossm.name, err);
       }
     },
     release() {
