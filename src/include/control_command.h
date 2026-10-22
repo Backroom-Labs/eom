@@ -16,10 +16,8 @@ extern "C" {
 //
 // Every motor write switches to manual and goes through orgasm_control's pleasure caps.
 //
-// While the Settings lock is on, setting changes, choosing Endless or Orgasm and resetting the
-// denied count are refused with CC_LOCKED. Stopping (Manual, a motor value) is always accepted, as
-// are triggering arousal, heart rate and simulated pressure. The lock is checked here, when the
-// command arrives, so a command queued just before the lock turned on may still apply.
+// The Settings lock refuses settings, Endless/Orgasm and resetDenied (CC_LOCKED) but never Stop.
+// It's checked on arrival, so a command queued just before the lock turned on may still apply.
 
 typedef enum {
     CC_OK,
