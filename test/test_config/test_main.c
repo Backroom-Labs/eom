@@ -31,9 +31,26 @@ static void test_orgasm_chance_loads_from_the_config(void) {
     TEST_ASSERT_EQUAL(25, cfg.orgasm_chance);
 }
 
+static void test_orgasm_chance_loads_within_0_to_100(void) {
+    TEST_ASSERT_EQUAL(100, load("{\"orgasm_chance\": 250}").orgasm_chance);
+    TEST_ASSERT_EQUAL(0, load("{\"orgasm_chance\": -5}").orgasm_chance);
+}
+
+static void test_setting_orgasm_chance_keeps_it_within_0_to_100(void) {
+    config_t cfg = load("{}");
+    TEST_ASSERT_TRUE(_config_defs(CFG_SET, NULL, &cfg, "orgasm_chance", "150", NULL, 0, NULL));
+    TEST_ASSERT_EQUAL(100, cfg.orgasm_chance);
+    TEST_ASSERT_TRUE(_config_defs(CFG_SET, NULL, &cfg, "orgasm_chance", "-1", NULL, 0, NULL));
+    TEST_ASSERT_EQUAL(0, cfg.orgasm_chance);
+    TEST_ASSERT_TRUE(_config_defs(CFG_SET, NULL, &cfg, "orgasm_chance", "40", NULL, 0, NULL));
+    TEST_ASSERT_EQUAL(40, cfg.orgasm_chance);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_a_config_without_orgasm_chance_loads_it_as_100);
     RUN_TEST(test_orgasm_chance_loads_from_the_config);
+    RUN_TEST(test_orgasm_chance_loads_within_0_to_100);
+    RUN_TEST(test_setting_orgasm_chance_keeps_it_within_0_to_100);
     return UNITY_END();
 }

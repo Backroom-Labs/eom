@@ -25,10 +25,10 @@ static status_snapshot_t fixture(void) {
         .mode_name = "ENDLESS",
         .vibration_mode = 2,
         .permit_s = 0x1234,
-        .menu_locked = true,
+        .settings_locked = true,
         .safety = 4,
         .phase = 2,
-        .session_orgasms = 5,
+        .orgasms = 5,
         .rest_s = 0x0102,
         .baseline = 0x0456,
         .hr = 72,
@@ -72,12 +72,22 @@ static void test_get_returns_what_was_published(void) {
 
 static void test_settings_locked_follows_the_latest_snapshot(void) {
     status_snapshot_t s = fixture();
-    s.menu_locked = true;
+    s.settings_locked = true;
     status_snapshot_publish(&s);
     TEST_ASSERT_TRUE(status_snapshot_settings_locked());
-    s.menu_locked = false;
+    s.settings_locked = false;
     status_snapshot_publish(&s);
     TEST_ASSERT_FALSE(status_snapshot_settings_locked());
+}
+
+static void test_mode_follows_the_latest_snapshot(void) {
+    status_snapshot_t s = fixture();
+    s.mode = OC_ORGASM;
+    status_snapshot_publish(&s);
+    TEST_ASSERT_EQUAL(OC_ORGASM, status_snapshot_mode());
+    s.mode = OC_MANUAL;
+    status_snapshot_publish(&s);
+    TEST_ASSERT_EQUAL(OC_MANUAL, status_snapshot_mode());
 }
 
 static void test_json_matches_the_readings_message(void) {
@@ -157,6 +167,7 @@ int main(void) {
     RUN_TEST(test_get_before_the_first_tick_is_all_zeros);
     RUN_TEST(test_get_returns_what_was_published);
     RUN_TEST(test_settings_locked_follows_the_latest_snapshot);
+    RUN_TEST(test_mode_follows_the_latest_snapshot);
     RUN_TEST(test_json_matches_the_readings_message);
     RUN_TEST(test_json_without_a_mode_name);
     RUN_TEST(test_ble_matches_the_status_characteristic);

@@ -145,7 +145,7 @@ cc_result_t control_command_from_ble(const uint8_t* buf, size_t len) {
         // A motor value means manual, whatever the mode byte says.
         int mode = has_motor ? OC_MANUAL : buf[1];
         // Packets repeat the current mode, so only a change to another mode counts as choosing one.
-        bool chooses_mode = mode != OC_MANUAL && mode != orgasm_control_get_output_mode();
+        bool chooses_mode = mode != OC_MANUAL && mode != status_snapshot_mode();
         if ((chooses_mode || buf[3]) && status_snapshot_settings_locked()) {
             return locked(buf[3] ? "BLE reset denied" : "BLE mode change");
         }

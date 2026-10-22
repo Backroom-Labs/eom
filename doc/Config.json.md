@@ -44,7 +44,7 @@ Types: *Text (n)* holds up to n characters.  *Number (0-255)* and *Number (0-655
 |---|----|---|---|
 |`auto_edging_duration_minutes`|Number|30|Orgasm mode: minutes of edging before an orgasm is permitted.|
 |`max_denied`|Number (0-255)|20|Orgasm mode: an orgasm is permitted once there have been more denials than this in a round, if that comes before the edging time.  0, or 100 and over, turns it off.|
-|`orgasm_chance`|Number (0-255)|100|Orgasm mode: percent chance an orgasm is permitted once the edging time or `max_denied` is reached.  A lost roll is a denial and another full round starts.|
+|`orgasm_chance`|Number (0-100)|100|Orgasm mode: percent chance an orgasm is permitted once the edging time or `max_denied` is reached.  A lost roll is a denial and another full round starts.|
 |`after_orgasm`|Number|1|What happens once an orgasm is detected in Orgasm mode: 0 Ruin, 1 Post-orgasm, 2 Milking.|
 |`post_orgasm_duration_seconds`|Number|10|Post-orgasm and Milking: seconds of full intensity after an orgasm before ramping down.|
 |`milking_rest_seconds`|Number|60|Milking: seconds to rest between an orgasm and the next round of edging.|

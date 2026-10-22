@@ -13,7 +13,7 @@
 
 static unsigned long now;
 static float pleasure;
-static orgasm_mode_output_t output;
+static orgasm_mode_action_t action;
 static int denials;
 
 // One update, in orgasm_control's order: roll, (orgasm detection), then the after-orgasm mode.
@@ -23,7 +23,7 @@ static void update(void) {
         orgasm_mode_denied();
         denials++;
     }
-    output = orgasm_mode_update(now, &pleasure, fake_increment);
+    action = orgasm_mode_update(now, &pleasure, fake_increment);
 }
 
 static void run_ms(long ms) {
@@ -69,7 +69,7 @@ static void edge_until_permitted(void) {
     update();
     TEST_ASSERT_FALSE_MESSAGE(orgasm_mode_is_permitted(), "permitted at the start");
     TEST_ASSERT_EQUAL_MESSAGE(60, status().permit_s, "seconds until permitted at the start");
-    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_EDGING, output, "output while edging");
+    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_EDGING, action, "action while edging");
     run_s(61);
     TEST_ASSERT_TRUE_MESSAGE(orgasm_mode_is_permitted(), "permitted after the edging time");
     TEST_ASSERT_EQUAL_MESSAGE(0, status().permit_s, "seconds until permitted");
@@ -78,7 +78,7 @@ static void edge_until_permitted(void) {
 
 static void test_once_permitted_pleasure_rises_to_the_maximum(void) {
     edge_until_permitted();
-    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_EDGING, output, "output once permitted");
+    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_EDGING, action, "action once permitted");
     TEST_ASSERT_EQUAL_FLOAT_MESSAGE(100, pleasure, "pleasure: the vibration mode's increment");
     pleasure = 255;
     update();
@@ -90,9 +90,9 @@ static void test_ruin_stops_at_the_orgasm_until_pleasure_is_set(void) {
     edge_until_permitted();
     orgasm_mode_orgasm_detected();
     update();
-    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_STOP, output, "output after the orgasm");
+    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_STOP, action, "action after the orgasm");
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_RUINED, status().phase, "phase after the orgasm");
-    TEST_ASSERT_EQUAL_MESSAGE(1, status().session_orgasms, "session orgasms");
+    TEST_ASSERT_EQUAL_MESSAGE(1, status().orgasms, "orgasms");
 
     set_mode(OC_MANUAL);
     run_s(10);
@@ -106,19 +106,19 @@ static void test_post_orgasm_holds_full_then_ramps_down_and_stops(void) {
     edge_until_permitted();
     orgasm_mode_orgasm_detected();
     update();
-    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_POST_ORGASM, output, "output after the orgasm");
+    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_POST_ORGASM, action, "action after the orgasm");
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_POST_ORGASM, status().phase, "phase after the orgasm");
-    TEST_ASSERT_EQUAL_MESSAGE(1, status().session_orgasms, "session orgasms");
+    TEST_ASSERT_EQUAL_MESSAGE(1, status().orgasms, "orgasms");
     TEST_ASSERT_EQUAL_FLOAT_MESSAGE(255, pleasure, "pleasure after the orgasm");
 
     run_s(4);
     TEST_ASSERT_EQUAL_FLOAT_MESSAGE(255, pleasure, "pleasure 4 s into a 5 s Post-orgasm");
     run_s(2);
-    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_POST_ORGASM, output, "output ramping down");
+    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_POST_ORGASM, action, "action ramping down");
     TEST_ASSERT_TRUE_MESSAGE(pleasure < 255 && pleasure > 0, "pleasure ramping down by 1 an update");
 
-    while (output == ORGASM_MODE_POST_ORGASM) update();
-    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_STOP, output, "output once ramped down");
+    while (action == ORGASM_MODE_POST_ORGASM) update();
+    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_STOP, action, "action once ramped down");
     TEST_ASSERT_EQUAL_FLOAT_MESSAGE(0, pleasure, "pleasure at the end");
     set_mode(OC_MANUAL);
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_NONE, status().phase, "phase at the end");
@@ -145,29 +145,29 @@ static void test_milking_rests_then_edges_again_up_to_the_orgasm_limit(void) {
     edge_until_permitted();
     orgasm_mode_orgasm_detected();
     update();
-    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_POST_ORGASM, output, "output after orgasm 1");
-    while (output == ORGASM_MODE_POST_ORGASM) update();
-    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_RESTING, output, "output after Post-orgasm 1");
+    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_POST_ORGASM, action, "action after orgasm 1");
+    while (action == ORGASM_MODE_POST_ORGASM) update();
+    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_RESTING, action, "action after Post-orgasm 1");
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_RESTING, status().phase, "phase after Post-orgasm 1");
     TEST_ASSERT_EQUAL_MESSAGE(20, status().rest_s, "rest left");
 
     run_s(10);
-    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_RESTING, output, "output 10 s into the rest");
+    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_RESTING, action, "action 10 s into the rest");
     TEST_ASSERT_INT_WITHIN_MESSAGE(1, 10, status().rest_s, "rest left 10 s in");
-    while (output == ORGASM_MODE_RESTING) update();
-    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_NEXT_ROUND, output, "output once rested");
+    while (action == ORGASM_MODE_RESTING) update();
+    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_NEXT_ROUND, action, "action once rested");
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_NONE, status().phase, "phase in round 2");
     TEST_ASSERT_FALSE_MESSAGE(orgasm_mode_is_permitted(), "permitted at the start of round 2");
     TEST_ASSERT_EQUAL_MESSAGE(60, status().permit_s, "seconds until permitted in round 2");
-    TEST_ASSERT_EQUAL_MESSAGE(1, status().session_orgasms, "session orgasms in round 2");
+    TEST_ASSERT_EQUAL_MESSAGE(1, status().orgasms, "orgasms in round 2");
 
     run_s(61);
     TEST_ASSERT_TRUE_MESSAGE(orgasm_mode_is_permitted(), "permitted in round 2");
     orgasm_mode_orgasm_detected();
     update();
-    TEST_ASSERT_EQUAL_MESSAGE(2, status().session_orgasms, "session orgasms");
-    while (output == ORGASM_MODE_POST_ORGASM) update();
-    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_STOP, output, "output after the last orgasm");
+    TEST_ASSERT_EQUAL_MESSAGE(2, status().orgasms, "orgasms");
+    while (action == ORGASM_MODE_POST_ORGASM) update();
+    TEST_ASSERT_EQUAL_MESSAGE(ORGASM_MODE_STOP, action, "action after the last orgasm");
 }
 
 static void test_an_orgasm_before_one_is_permitted_is_ignored(void) {
@@ -178,7 +178,7 @@ static void test_an_orgasm_before_one_is_permitted_is_ignored(void) {
     run_s(51);
     TEST_ASSERT_TRUE_MESSAGE(orgasm_mode_is_permitted(), "permitted");
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_NONE, status().phase, "phase once permitted");
-    TEST_ASSERT_EQUAL_MESSAGE(0, status().session_orgasms, "session orgasms");
+    TEST_ASSERT_EQUAL_MESSAGE(0, status().orgasms, "orgasms");
 }
 
 static void test_a_lost_roll_denies_and_starts_a_full_round(void) {
@@ -235,7 +235,7 @@ static void test_the_post_orgasm_lock_engages_at_the_orgasm_and_clears_at_the_en
     orgasm_mode_orgasm_detected();
     update();
     TEST_ASSERT_TRUE_MESSAGE(status().settings_locked, "locked after the orgasm");
-    while (output == ORGASM_MODE_POST_ORGASM) update();
+    while (action == ORGASM_MODE_POST_ORGASM) update();
     TEST_ASSERT_FALSE_MESSAGE(status().settings_locked, "locked at the end");
 }
 

@@ -428,7 +428,7 @@ static void orgasm_control_update_round(void) {
     }
 }
 
-static void orgasm_control_update_pleasure(orgasm_mode_output_t after_orgasm) {
+static void orgasm_control_update_pleasure(orgasm_mode_action_t after_orgasm) {
     if (!output_state.control_motor) {
         orgasm_control_update_idle_led();
         return;
@@ -520,30 +520,24 @@ static void orgasm_control_update_pleasure(orgasm_mode_output_t after_orgasm) {
     // }
 }
 
-static oc_after_orgasm_phase_t orgasm_control_get_after_orgasm_phase(void) {
-    orgasm_mode_status_t status;
-    orgasm_mode_status(esp_timer_get_time() / 1000UL, &status);
-    return status.phase;
-}
-
-// Once an orgasm is permitted, and after one, orgasm_mode sets the output; this acts on what it says.
-static orgasm_mode_output_t orgasm_control_update_after_orgasm(void) {
-    if (orgasm_mode_is_permitted() && orgasm_control_get_after_orgasm_phase() == OC_PHASE_NONE) {
+// Once an orgasm is permitted, and after one, orgasm_mode sets pleasure; this does what it says next.
+static orgasm_mode_action_t orgasm_control_update_after_orgasm(void) {
+    if (orgasm_mode_is_permitted() && orgasm_mode_phase() == OC_PHASE_NONE) {
         orgasm_control_hr_orgasm_detect();
     }
 
     float pleasure = output_state.pleasure;
-    orgasm_mode_output_t output = orgasm_mode_update(
+    orgasm_mode_action_t action = orgasm_mode_update(
         esp_timer_get_time() / 1000UL, &output_state.pleasure, get_vibration_mode_controller()->increment
     );
     if (output_state.pleasure != pleasure) arousal_state.update_flag = ocTRUE;
 
-    switch (output) {
+    switch (action) {
     case ORGASM_MODE_RESTING:
         arousal_state.cooldown = 0;
         break;
     case ORGASM_MODE_NEXT_ROUND:
-        // Unlike orgasm_control_set_output_mode(), this keeps the orgasm count and the Settings lock.
+        // Unlike orgasm_control_set_output_mode(), this keeps the detected orgasms and the Settings lock.
         orgasm_state.orgasm_count = 0;
         output_state.motor_start_time = 0;
         output_state.motor_stop_time = 0;
@@ -558,7 +552,7 @@ static orgasm_mode_output_t orgasm_control_update_after_orgasm(void) {
     default:
         break;
     }
-    return output;
+    return action;
 }
 
 /**
@@ -824,7 +818,7 @@ void orgasm_control_set_output_mode(orgasm_output_mode_t mode) {
     hr_state.orgasm_peak = 0;
     arousal_state.memory = 0;
     if (mode != OC_MANUAL) {
-        // A new session: forget the last one's clench baseline.
+        // A new mode: forget the last run's clench threshold.
         clench_state.clench_pressure_threshold = 4096;
     }
     if (mode == OC_ORGASM) orgasm_state.orgasm_count = 0;
@@ -859,7 +853,7 @@ oc_bool_t orgasm_control_is_permit_orgasm_reached() {
 }
 
 oc_bool_t orgasm_control_is_post_orgasm_reached() {
-    return orgasm_control_get_after_orgasm_phase() == OC_PHASE_POST_ORGASM ? ocTRUE : ocFALSE;
+    return orgasm_mode_phase() == OC_PHASE_POST_ORGASM ? ocTRUE : ocFALSE;
 }
 
 static uint16_t orgasm_control_get_baseline(void) {
@@ -895,10 +889,10 @@ static void publish_status_snapshot(void) {
         .mode_name = orgasm_control_get_output_mode_str(),
         .vibration_mode = (uint8_t)Config.vibration_mode,
         .permit_s = orgasm_mode.permit_s,
-        .menu_locked = orgasm_mode.settings_locked,
+        .settings_locked = orgasm_mode.settings_locked,
         .safety = (uint8_t)safety_get_stop_reason(),
         .phase = (uint8_t)orgasm_mode.phase,
-        .session_orgasms = orgasm_mode.session_orgasms,
+        .orgasms = orgasm_mode.orgasms,
         .rest_s = orgasm_mode.rest_s,
         .baseline = orgasm_control_get_baseline(),
         .hr = heart_rate_get(),

@@ -1,7 +1,5 @@
-// Orgasm chance: in Orgasm mode the EOM rolls when a round's edging time or denial target is
-// reached, and a lost roll is a denial that starts another full round. The status snapshot carries
-// the session's lost rolls (chanceDenials) and its total denials, not the round's, so the app
-// follows where the round started.
+// The status snapshot counts denials and lost Orgasm chance rolls since Orgasm mode started, not
+// per round, so the app follows where each round started.
 
 type Counts = { denied?: number; chanceDenials?: number };
 
@@ -9,7 +7,7 @@ export function deniedByChance(prev: Counts, next: Counts): boolean {
   return (next.chanceDenials ?? 0) > (prev.chanceDenials ?? 0);
 }
 
-// The session's denied count when the current round started, or null if the app missed it.
+// The denied count when the current round started, or null if the app missed it.
 // `continuous` is false when prev isn't the reading just before next (connecting, reconnecting).
 export function nextRoundStart(start: number | null, prev: Counts, next: Counts, continuous: boolean): number | null {
   const denied = next.denied ?? 0;
@@ -22,9 +20,8 @@ export function nextRoundStart(start: number | null, prev: Counts, next: Counts,
   return start;
 }
 
-// Denials left before the EOM permits an orgasm this round, or null when there's no denial target
-// (Denials before orgasm 0 or 100+) or the round's start is unknown. The EOM permits once a round has
-// more denials than maxDenied.
+// Denials left this round before the EOM permits an orgasm (once a round has more than maxDenied),
+// or null with no denial target (0 or 100+) or an unknown round start.
 export function denialsUntilPermitted(maxDenied: number, denied: number, start: number | null): number | null {
   if (start === null || maxDenied <= 0 || maxDenied >= 100) return null;
   const left = maxDenied + 1 - (denied - start);

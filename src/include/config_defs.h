@@ -154,6 +154,38 @@ typedef enum migration_result {
         }                                                                                          \
     }
 
+static inline int cfg_clamp(int value, int min, int max) {
+    return value < min ? min : value > max ? max : value;
+}
+
+// A number kept within min..max on load and set, for settings whose range the type doesn't limit.
+#define CFG_NUMBER_RANGE(name, default, min, max)                                                  \
+    {                                                                                              \
+        if (root != NULL) {                                                                        \
+            if (operation == CFG_SET || operation == CFG_MERGE) {                                  \
+                cJSON* item = cJSON_GetObjectItem(root, #name);                                    \
+                if (item != NULL || operation == CFG_SET) {                                        \
+                    cfg->name = item == NULL ? default : cfg_clamp(item->valueint, min, max);      \
+                }                                                                                  \
+            } else {                                                                               \
+                cJSON_AddNumberToObject(root, #name, cfg->name);                                   \
+            }                                                                                      \
+        } else if (key != NULL && !strcasecmp(key, #name)) {                                       \
+            if (operation == CFG_GET) {                                                            \
+                if (out_val != NULL) snprintf(out_val, len, "%d", cfg->name);                      \
+                return true;                                                                       \
+            } else {                                                                               \
+                if (in_val != NULL) cfg->name = cfg_clamp(atoi(in_val), min, max);                 \
+                return true;                                                                       \
+            }                                                                                      \
+        } else if (key == NULL) {                                                                  \
+            /* Full load with defaults only; a single-key set must leave other entries alone. */   \
+            if (operation == CFG_SET) {                                                            \
+                cfg->name = default;                                                               \
+            }                                                                                      \
+        }                                                                                          \
+    }
+
 #define CFG_ENUM(name, type, default)                                                              \
     {                                                                                              \
         if (root != NULL) {                                                                        \

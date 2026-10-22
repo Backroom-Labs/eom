@@ -29,6 +29,7 @@
   import { ToyList } from "./lib/toyList";
   import { followsText } from "./lib/toyControlView";
   import { savedPreferences } from "./lib/savedPreferences";
+  import { lockedCommands, WsSettings } from "./lib/wsSettings";
 
   // ---------------------------------------------------------------------------------------------
   // Types and constants
@@ -48,13 +49,13 @@
     lock?: boolean; // settings locked by edge_menu_lock
     safety?: number; // why the safety checks last stopped the session, see SAFETY_MESSAGES
     phase?: number; // after-orgasm phase, see PHASE_*
-    orgasms?: number; // orgasms detected this session
+    orgasms?: number; // orgasms detected since the mode started
     rest?: number; // seconds left of a Milking rest
     baseline?: number; // resting pressure followed by the firmware (after 3.3.0)
     hr?: number; // bpm from the O2Ring, added by the app
     hrWait?: boolean; // cooldown waiting for the heart rate to settle (firmware 3.5.0)
     hrZone?: boolean; // heart rate in the edge zone, edge threshold lowered
-    chanceDenials?: number; // Orgasm mode rolls lost this session (firmware 3.8.0)
+    chanceDenials?: number; // rolls lost since Orgasm mode started (firmware 3.8.0)
     raw?: { end: number; p: number[]; hz: number }; // raw pressure batch (firmware 3.6.0), see history.ts
   };
 
@@ -95,6 +96,8 @@
   const BT_CMD_RESTART = 0x04;
   const BT_CMD_SIM_PRESSURE = 0x05;
   const BT_CMD_HEART_RATE = 0x06;
+  // Status bytes: [29] counts the raw values that start here, 2 bytes each.
+  const BT_STATUS_RAW_START = 30;
 
   const isNativeMobile = Capacitor.getPlatform() === "ios" || Capacitor.getPlatform() === "android";
 
@@ -166,6 +169,7 @@
   let lastConnection: "bt" | "ws" = "bt";
   let btDeviceId = $state<string | null>(null);
   let socket: WebSocket | undefined;
+  const wsSettings = new WsSettings((frame) => socket?.send(frame));
   let syncDelta = 0;
   let toast = $state<{ text: string; tone: "info" | "error" } | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -290,7 +294,7 @@
     return isMilking && max > 0 ? `${count} of ${max}` : String(count);
   });
 
-  // Orgasms detected this session; Milking keeps counting across rounds.
+  // Orgasms detected since the mode started; Milking keeps counting across rounds.
   let showOrgasms = $derived(runMode === "ORGASM" || (latest.orgasms ?? 0) > 0);
   // Enhancement counts orgasms as denials; once the real count shows, keep calling them denials.
   let deniedLabel = $derived(isEnhancement && !showOrgasms ? "Orgasms" : "Denied");
@@ -405,29 +409,31 @@
     await BleClient.write(btDeviceId, BT_SERVICE_UUID, BT_CONTROL_CHAR, new DataView(bytes.buffer));
   }
 
-  // Resolves to false if a Bluetooth write failed. Loading a preset reports failures together, so it passes quiet.
+  // Resolves to false if the EOM refused it or a Bluetooth write failed. Loading a preset reports failures together, so it passes quiet.
   async function changeSetting(key: string, value: SettingValue, quiet = false): Promise<boolean> {
     const def = SETTINGS_BY_KEY[key];
     const previous = config[key];
     config[key] = value;
     if (def?.restart) restartNeeded = true;
 
+    let sent = true;
     if (isWsConnected && socket) {
       // The firmware reads booleans with cJSON valueint, so send them as 1/0.
-      const wire = typeof value === "boolean" ? (value ? 1 : 0) : value;
-      socket.send(JSON.stringify({ configSet: { [key]: wire } }));
+      // A Settings lock refusal is shown by handleWsMessage.
+      sent = await wsSettings.set(key, typeof value === "boolean" ? (value ? 1 : 0) : value);
     } else if (isBtConnected) {
       const enc = new TextEncoder();
       try {
         await btWrite(new Uint8Array([BT_CMD_SET_CONFIG, ...enc.encode(key), 0x3a, ...enc.encode(toWire(value))]));
       } catch (err) {
         console.error("Error sending setting via Bluetooth:", err);
-        config[key] = previous;
+        sent = false;
         if (!quiet) showToast(`Couldn't change ${def?.label ?? key}`, "error");
-        return false;
       }
     }
-    return true;
+    // Unless the user has changed it again since.
+    if (!sent && config[key] === value) config[key] = previous;
+    return sent;
   }
 
   function sendCommand(command: "setMode" | "setMotor" | "triggerArousal" | "resetDenied", value: number | string | null = null) {
@@ -604,6 +610,8 @@
       return;
     }
     if (!msg) return;
+    wsSettings.receive(msg);
+    if (lockedCommands(msg).length) showToast("Settings are locked", "error");
     if (msg.configList) applyConfig(msg.configList);
     if (msg.info?.fwVersion) {
       fwVersion = msg.info.fwVersion;
@@ -667,6 +675,7 @@
 
   function handleBtReading(value: DataView) {
     const data = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    const rawEnd = data.length > 29 ? BT_STATUS_RAW_START + 2 * data[29] : Infinity;
     const r: Reading = {
       pressure: data[0] * 16, // scale to 0-4096
       arousal: data[1] * 16,
@@ -688,13 +697,13 @@
       // added in 3.5.0: [25] heart rate the EOM is using, [26] flags
       hrWait: data.length > 26 ? (data[26] & 0x01) !== 0 : false,
       hrZone: data.length > 26 ? (data[26] & 0x02) !== 0 : false,
-      // added in 3.8.0: Orgasm mode rolls lost this session, after the raw values
-      chanceDenials: data.length > 29 && data.length > 30 + 2 * data[29] ? data[30 + 2 * data[29]] : 0,
+      // added in 3.8.0: rolls lost since Orgasm mode started, after the raw values
+      chanceDenials: data.length > rawEnd ? data[rawEnd] : 0,
       // added in 3.6.0: [27-28] raw reading number (low 16 bits), [29] count, then that many u16
-      raw: data.length > 29 && data.length >= 30 + 2 * data[29]
+      raw: data.length >= rawEnd
         ? {
             end: unwrapRawSeq((data[27] << 8) | data[28]),
-            p: Array.from({ length: data[29] }, (_, i) => (data[30 + 2 * i] << 8) | data[31 + 2 * i]),
+            p: Array.from({ length: data[29] }, (_, i) => (data[BT_STATUS_RAW_START + 2 * i] << 8) | data[BT_STATUS_RAW_START + 2 * i + 1]),
             hz: rawHz(),
           }
         : undefined,
@@ -1417,6 +1426,7 @@
             <p class="muted">Save the Session, Stimulation, Detection, Clench and Heart rate settings under a name, and load them later. Saved in this browser only.</p>
             <PresetPicker
               {config}
+              reported={reportedKeys}
               canSave={configLoaded}
               canLoad={connected && configLoaded && !locked}
               change={(key, value) => changeSetting(key, value, true)}

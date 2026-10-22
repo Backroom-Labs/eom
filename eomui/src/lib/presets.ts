@@ -1,5 +1,5 @@
 // Presets: named sets of session settings saved on this phone or browser, never on the EOM.
-import { SETTING_GROUPS, SETTINGS_BY_KEY, type SettingDef, type SettingValue } from "./settings.ts";
+import { reportedSettings, SETTING_GROUPS, SETTINGS_BY_KEY, type SettingDef, type SettingValue } from "./settings.ts";
 
 type Storage = { getItem(key: string): string | null; setItem(key: string, value: string): void };
 export type PresetValues = Record<string, SettingValue>;
@@ -13,8 +13,9 @@ export function presetKeys(): string[] {
 }
 
 // The values to send to bring the device's settings in line with a preset.
-export function settingsToLoad(preset: PresetValues, config: PresetValues): PresetValues {
-  const keys = new Set(presetKeys());
+// Keys the EOM didn't report (`reported`, null offline) are left out: it would refuse them.
+export function settingsToLoad(preset: PresetValues, config: PresetValues, reported: ReadonlySet<string> | null): PresetValues {
+  const keys = new Set(reportedSettings(presetKeys(), reported));
   const changes: PresetValues = {};
   for (const [key, saved] of Object.entries(preset)) {
     const def = SETTINGS_BY_KEY[key];
@@ -46,9 +47,11 @@ export class Presets {
     return this.read()[name];
   }
 
-  save(name: string, config: PresetValues) {
+  // Only reported keys, so a preset from an older EOM doesn't hold the app's defaults for settings it lacks.
+  save(name: string, config: PresetValues, reported: ReadonlySet<string> | null) {
     const all = this.read();
-    all[name] = Object.fromEntries(presetKeys().filter((k) => k in config).map((k) => [k, config[k]]));
+    const keys = reportedSettings(presetKeys(), reported).filter((k) => k in config);
+    all[name] = Object.fromEntries(keys.map((k) => [k, config[k]]));
     this.write(all);
   }
 
