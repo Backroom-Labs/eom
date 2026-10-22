@@ -58,7 +58,7 @@ static int begin(uint16_t conn_handle, const uint8_t* buf, size_t len) {
     return 0;
 }
 
-// The app shows the pressure simulator only when the info has this; releases leave it out.
+// The app shows the pressure simulator only when the info has this; stable releases leave it out.
 #ifdef EOM_PRESSURE_SIM
 #define PRESSURE_SIM_FIELD ",\"pressureSim\":true"
 #else

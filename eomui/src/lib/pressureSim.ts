@@ -1,4 +1,4 @@
-// The pressure simulator, for testing without a sensor. Only firmware that isn't a release has it,
+// The pressure simulator, for testing without a sensor. Every firmware except stable releases has it,
 // and it says so in the info it reports at connect (WebSocket `info`, Bluetooth update info).
 
 // Whether that info reports the simulator. Firmware without the field has none.

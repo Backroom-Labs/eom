@@ -160,7 +160,7 @@ See the heart rate settings in [Config.json.md](Config.json.md#heart-rate).
 
 
 ### `simPressure`
-Firmware with the pressure simulator only: every build except releases (3.8.0; before that, builds with
+Firmware with the pressure simulator only: every build except stable releases (3.8.0; before that, builds with
 `-DEOM_PRESSURE_SIM`, from 3.3.0). Other firmware ignores it. Replaces the sensor reading with this value (0-4095); -1
 goes back to the real sensor, which is also where the EOM starts. [`info`](#info-1) says whether the firmware has it.
 
@@ -353,7 +353,7 @@ Reply to `info`.
 |device|String|Always `Endless Orgasm Machine`|
 |serial|String|Always empty for now|
 |fwVersion|String|Installed firmware version|
-|pressureSim|Boolean|`true` if the firmware has the pressure simulator ([`simPressure`](#simpressure)); absent in releases (3.8.0)|
+|pressureSim|Boolean|`true` if the firmware has the pressure simulator ([`simPressure`](#simpressure)); absent in stable releases (3.8.0)|
 
 **Example:**
 ```json

@@ -25,7 +25,7 @@ export interface FirmwareUploader {
   upload(image: Uint8Array, options: UploadOptions): Promise<number>;
 }
 
-// What the EOM reports about itself before an update. mtu is BLE only; pressureSim is absent in releases.
+// What the EOM reports about itself before an update. mtu is BLE only; pressureSim is absent in stable releases.
 export type DeviceInfo = { version: string; board: string; maxSize: number; confirmed: boolean; mtu?: number; pressureSim?: boolean };
 
 export const OTA_WINDOW = 16 * 1024;

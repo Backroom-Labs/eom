@@ -476,7 +476,7 @@
     }
   }
 
-  // Pressure simulator, for testing without a sensor. Only firmware that isn't a release has it,
+  // Pressure simulator, for testing without a sensor. Every firmware except stable releases has it,
   // and it reports so at connect. -1 goes back to the real sensor.
   const SIM_CLENCH = 1000; // added while "Hold to clench" is pressed
   let simPressure = $state(0);
