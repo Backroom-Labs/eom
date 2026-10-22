@@ -104,6 +104,9 @@ The EOM stopping all stimulation by itself because of a sensor fault, a lost con
 A state where settings and mode changes are refused, either during Orgasm mode or after an orgasm. The firmware refuses them, whichever client sends them. Stopping always works, and switching to Manual ends the lock.
 _Avoid_: menu lock
 
+**Preset**:
+A named set of session settings saved in the app on one phone or browser, which can be loaded to apply them to the EOM.
+
 **Control command**:
 An instruction from the app or a remote to change what the EOM is doing: set the mode, set the motor, trigger arousal, reset the denied count, report a heart rate, or change a setting.
 _Avoid_: command (on its own, it also covers system requests such as restart or info), message, request
@@ -119,6 +122,9 @@ One stretch of use recorded by the app, from when a mode starts or pleasure rise
 
 **Detailed recording**:
 An optional session recording of every pressure reading, rather than the usual few samples a second.
+
+**Marked orgasm**:
+An orgasm the user marks in the app at the moment it happens, recorded with the session as the real time, unlike the orgasms the EOM detects.
 
 ### Toys
 
