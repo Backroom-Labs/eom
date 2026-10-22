@@ -314,6 +314,7 @@ static int update_main_chr_access(uint16_t conn_handle, uint16_t attr_handle, st
             case CC_OK: return 0;
             case CC_BAD_ARG: return BLE_ATT_ERR_VALUE_NOT_ALLOWED;
             case CC_QUEUE_FULL: return BLE_ATT_ERR_INSUFFICIENT_RES;
+            case CC_LOCKED: return BLE_ATT_ERR_WRITE_NOT_PERMITTED;
             case CC_UNKNOWN: break;
             }
             if (buf[0] == 0x03) {

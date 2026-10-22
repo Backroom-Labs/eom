@@ -30,6 +30,14 @@ void status_snapshot_get(status_snapshot_t* out) {
     SNAPSHOT_UNLOCK();
 }
 
+bool status_snapshot_settings_locked(void) {
+    bool locked;
+    SNAPSHOT_LOCK();
+    locked = latest.menu_locked;
+    SNAPSHOT_UNLOCK();
+    return locked;
+}
+
 void status_snapshot_to_json(const status_snapshot_t* s, cJSON* r) {
     cJSON_AddNumberToObject(r, "arousal", s->arousal);
     cJSON_AddNumberToObject(r, "cooldown", s->cooldown);
