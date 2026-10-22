@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include "cJSON.h"
+#include "orgasm_control.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -56,6 +57,9 @@ void status_snapshot_get(status_snapshot_t* out);
 
 // Whether the Settings lock was on in the latest snapshot. Any task can call this.
 bool status_snapshot_settings_locked(void);
+
+// The mode in the latest snapshot. Any task can call this.
+orgasm_output_mode_t status_snapshot_mode(void);
 
 // Add the WebSocket "readings" fields to an object.
 void status_snapshot_to_json(const status_snapshot_t* snapshot, cJSON* readings);

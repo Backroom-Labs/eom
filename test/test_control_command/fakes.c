@@ -88,3 +88,8 @@ void config_enqueue_save(long save_at_ms) {
 bool status_snapshot_settings_locked(void) {
     return fake_settings_locked;
 }
+
+// Ticks run instantly here, so the snapshot always has the current mode.
+orgasm_output_mode_t status_snapshot_mode(void) {
+    return fake_mode;
+}

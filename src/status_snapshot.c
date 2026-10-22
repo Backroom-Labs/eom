@@ -38,6 +38,14 @@ bool status_snapshot_settings_locked(void) {
     return locked;
 }
 
+orgasm_output_mode_t status_snapshot_mode(void) {
+    uint8_t mode;
+    SNAPSHOT_LOCK();
+    mode = latest.mode;
+    SNAPSHOT_UNLOCK();
+    return (orgasm_output_mode_t)mode;
+}
+
 void status_snapshot_to_json(const status_snapshot_t* s, cJSON* r) {
     cJSON_AddNumberToObject(r, "arousal", s->arousal);
     cJSON_AddNumberToObject(r, "cooldown", s->cooldown);
