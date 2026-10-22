@@ -20,6 +20,7 @@ static status_snapshot_t fixture(void) {
         .motor = 200,
         .cooldown = 7,
         .denied = 3,
+        .chance_denials = 2,
         .mode = 1,
         .mode_name = "ENDLESS",
         .vibration_mode = 2,
@@ -77,7 +78,7 @@ static void test_json_matches_the_readings_message(void) {
         "\"pavg\":1500,\"permit\":4660,\"pressure\":2748,\"runMode\":\"ENDLESS\","
         "\"sensitivity\":128,\"threshold\":4080,\"lock\":true,\"safety\":4,\"phase\":2,"
         "\"orgasms\":5,\"rest\":258,\"baseline\":1110,\"hr\":72,\"hrWait\":true,\"hrZone\":false,"
-        "\"rawSeq\":74565,\"raw\":[1008,1009,1010,1011,1012,1013,1014,1015]}",
+        "\"chanceDenials\":2,\"rawSeq\":74565,\"raw\":[1008,1009,1010,1011,1012,1013,1014,1015]}",
         json
     );
     free(json);
@@ -120,12 +121,13 @@ static void test_ble_matches_the_status_characteristic(void) {
         0x23, 0x45,  // 27-28 raw sequence, low 16 bits
         16,          // 29 raw values that follow
     };
-    TEST_ASSERT_EQUAL(62, STATUS_SNAPSHOT_BLE_LEN);
+    TEST_ASSERT_EQUAL(63, STATUS_SNAPSHOT_BLE_LEN);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(head, out, 30);
     for (int i = 0; i < STATUS_SNAPSHOT_RAW_LEN; i++) {
         TEST_ASSERT_EQUAL_HEX8(0x03, out[30 + 2 * i]);
         TEST_ASSERT_EQUAL_HEX8(0xE8 + i, out[31 + 2 * i]);
     }
+    TEST_ASSERT_EQUAL_MESSAGE(2, out[62], "denials by chance, after the raw values");
 }
 
 static void test_ble_heart_rate_flags(void) {

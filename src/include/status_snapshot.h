@@ -17,7 +17,7 @@ extern "C" {
 // Raw pressure readings carried in a snapshot. BLE sends all of them; WebSocket the last 8.
 #define STATUS_SNAPSHOT_RAW_LEN 16
 // Size of the BLE status characteristic value.
-#define STATUS_SNAPSHOT_BLE_LEN (30 + 2 * STATUS_SNAPSHOT_RAW_LEN)
+#define STATUS_SNAPSHOT_BLE_LEN (30 + 2 * STATUS_SNAPSHOT_RAW_LEN + 1)
 
 typedef struct {
     uint64_t millis;         // milliseconds since boot when the tick published it
@@ -28,7 +28,8 @@ typedef struct {
     uint8_t sensitivity;     // sensor sensitivity setting
     uint8_t motor;           // pleasure after the max_pleasure / max_motor_output caps
     uint8_t cooldown;
-    uint8_t denied;          // edges denied
+    uint8_t denied;          // denials this Orgasm mode or Endless run, at most 255
+    uint8_t chance_denials;  // lost Orgasm chance rolls this Orgasm mode run, at most 255
     uint8_t mode;            // orgasm_output_mode_t
     const char* mode_name;   // the mode as the WebSocket names it, e.g. "ENDLESS"
     uint8_t vibration_mode;

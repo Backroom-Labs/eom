@@ -30,8 +30,11 @@ void setUp(void) {
     Config.minimum_on_time = 1;
     Config.pressure_smoothing = 10;
     Config.vibration_mode = Depletion;
+    Config.orgasm_chance = 100;
 
     fake_pressure = 0;
+    fake_random = 0;
+    fake_random_calls = 0;
     // An hour on from the last test (the first starts an hour after boot, well past any edge
     // delay). The clock never runs backwards.
     fake_time_us += 3600LL * 1000000;
@@ -302,6 +305,127 @@ static void test_milking_rests_then_edges_again_up_to_the_orgasm_limit(void) {
     TEST_ASSERT_EQUAL_MESSAGE(0, orgasm_control_get_pleasure(), "pleasure after the last orgasm");
 }
 
+// ---- Orgasm chance
+
+#define ROLL_WINS 0   // esp_random() % 100 under any chance above 0
+#define ROLL_LOSES 99 // esp_random() % 100 at or over any chance below 100
+
+// Orgasm mode with a one-minute edging time and no denial target, under way.
+static void start_orgasm_mode(uint8_t chance) {
+    Config.orgasm_chance = chance;
+    Config.auto_edging_duration_minutes = 1;
+    Config.max_denied = 0;
+    orgasm_control_set_output_mode(OC_ORGASM);
+    run_s(5);
+}
+
+static void test_a_lost_roll_is_a_denial_and_starts_a_full_round(void) {
+    fake_random = ROLL_LOSES;
+    start_orgasm_mode(50);
+    run_s(56);  // the edging time is up
+    TEST_ASSERT_FALSE_MESSAGE(orgasm_control_is_permit_orgasm_reached(), "permitted after a lost roll");
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.denied, "denials after a lost roll");
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.chance_denials, "denials by chance");
+    TEST_ASSERT_EQUAL_MESSAGE(0, orgasm_control_get_pleasure(), "pleasure after a lost roll");
+    TEST_ASSERT_GREATER_THAN_MESSAGE(0, fake_snapshot.cooldown, "cooldown after a lost roll");
+    TEST_ASSERT_INT_WITHIN_MESSAGE(2, 59, fake_snapshot.permit_s, "seconds until permitted in the new round");
+
+    fake_random = ROLL_WINS;
+    run_s(55);
+    TEST_ASSERT_FALSE_MESSAGE(orgasm_control_is_permit_orgasm_reached(), "permitted before the new round's edging time");
+    run_s(6);
+    TEST_ASSERT_TRUE_MESSAGE(orgasm_control_is_permit_orgasm_reached(), "permitted after a won roll");
+    TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.permit_s, "seconds until permitted");
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.denied, "denials after a won roll");
+}
+
+static void test_at_100_percent_an_orgasm_is_permitted_at_the_edging_time(void) {
+    fake_random = ROLL_LOSES;
+    start_orgasm_mode(100);
+    run_s(54);
+    TEST_ASSERT_FALSE_MESSAGE(orgasm_control_is_permit_orgasm_reached(), "permitted a second early");
+    TEST_ASSERT_INT_WITHIN_MESSAGE(1, 1, fake_snapshot.permit_s, "seconds until permitted");
+    run_s(2);
+    TEST_ASSERT_TRUE_MESSAGE(orgasm_control_is_permit_orgasm_reached(), "permitted at the edging time");
+    TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.permit_s, "seconds until permitted");
+    TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.denied, "denials");
+    TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.chance_denials, "denials by chance");
+}
+
+// An edge, then long enough for the cooldown (edge_delay 2) and minimum_on_time to pass.
+static void edge(void) {
+    pressure_peak(0, 1500);
+    run_s(8);
+}
+
+static void test_a_lost_roll_then_max_denied_more_denials_permits_on_a_won_roll(void) {
+    Config.edge_delay = 2;
+    fake_random = ROLL_LOSES;
+    start_orgasm_mode(50);
+    Config.auto_edging_duration_minutes = 60;
+    Config.max_denied = 2;
+    for (int i = 0; i < 3; i++) edge();  // over max_denied: the round's target
+    TEST_ASSERT_FALSE_MESSAGE(orgasm_control_is_permit_orgasm_reached(), "permitted after a lost roll");
+    TEST_ASSERT_EQUAL_MESSAGE(4, fake_snapshot.denied, "denials after a lost roll");
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.chance_denials, "denials by chance");
+
+    fake_random = ROLL_WINS;
+    edge();
+    TEST_ASSERT_FALSE_MESSAGE(orgasm_control_is_permit_orgasm_reached(), "permitted after 1 more denial");
+    edge();
+    TEST_ASSERT_TRUE_MESSAGE(orgasm_control_is_permit_orgasm_reached(), "permitted after 2 more denials");
+    TEST_ASSERT_EQUAL_MESSAGE(6, fake_snapshot.denied, "denials once permitted");
+}
+
+static void test_at_0_percent_no_orgasm_is_ever_permitted(void) {
+    fake_random = ROLL_WINS;
+    start_orgasm_mode(0);
+    for (int round = 1; round <= 3; round++) {
+        for (int s = 0; s < 60; s++) {
+            run_s(1);
+            TEST_ASSERT_FALSE_MESSAGE(orgasm_control_is_permit_orgasm_reached(), "permitted");
+        }
+        TEST_ASSERT_EQUAL_MESSAGE(round, fake_snapshot.denied, "denials");
+        TEST_ASSERT_EQUAL_MESSAGE(round, fake_snapshot.chance_denials, "denials by chance");
+    }
+}
+
+static void test_the_roll_happens_once_per_round(void) {
+    fake_random = ROLL_LOSES;
+    start_orgasm_mode(50);
+    run_s(56);
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_random_calls, "rolls after round 1");
+    run_s(50);
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_random_calls, "rolls during round 2");
+
+    fake_random = ROLL_WINS;
+    run_s(15);
+    TEST_ASSERT_TRUE_MESSAGE(orgasm_control_is_permit_orgasm_reached(), "permitted after round 2");
+    run_s(30);
+    TEST_ASSERT_EQUAL_MESSAGE(2, fake_random_calls, "rolls once permitted");
+}
+
+static void test_permit_orgasm_permits_at_once_without_a_roll(void) {
+    Config.orgasm_chance = 0;
+    Config.auto_edging_duration_minutes = 30;
+    orgasm_control_permit_orgasm(POST_ORGASM_S);
+    TEST_ASSERT_TRUE_MESSAGE(orgasm_control_is_permit_orgasm_reached(), "permitted");
+    run_s(5);
+    TEST_ASSERT_TRUE_MESSAGE(orgasm_control_is_permit_orgasm_reached(), "permitted 5 s later");
+    TEST_ASSERT_EQUAL_MESSAGE(0, fake_random_calls, "rolls");
+    TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.denied, "denials");
+}
+
+// With no edging time every update is a new round and a lost roll: the counts stop at 255.
+static void test_denial_counts_stop_at_255(void) {
+    fake_random = ROLL_LOSES;
+    start_orgasm_mode(50);
+    Config.auto_edging_duration_minutes = 0;
+    run_s(15);
+    TEST_ASSERT_EQUAL_MESSAGE(255, fake_snapshot.denied, "denials");
+    TEST_ASSERT_EQUAL_MESSAGE(255, fake_snapshot.chance_denials, "denials by chance");
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_endless_from_a_fresh_start_ramps);
@@ -319,5 +443,12 @@ int main(void) {
     RUN_TEST(test_post_orgasm_holds_full_pleasure_then_ramps_down_to_manual);
     RUN_TEST(test_ruin_stops_at_the_orgasm);
     RUN_TEST(test_milking_rests_then_edges_again_up_to_the_orgasm_limit);
+    RUN_TEST(test_a_lost_roll_is_a_denial_and_starts_a_full_round);
+    RUN_TEST(test_at_100_percent_an_orgasm_is_permitted_at_the_edging_time);
+    RUN_TEST(test_a_lost_roll_then_max_denied_more_denials_permits_on_a_won_roll);
+    RUN_TEST(test_at_0_percent_no_orgasm_is_ever_permitted);
+    RUN_TEST(test_the_roll_happens_once_per_round);
+    RUN_TEST(test_permit_orgasm_permits_at_once_without_a_roll);
+    RUN_TEST(test_denial_counts_stop_at_255);
     return UNITY_END();
 }

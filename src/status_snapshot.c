@@ -51,6 +51,7 @@ void status_snapshot_to_json(const status_snapshot_t* s, cJSON* r) {
     cJSON_AddNumberToObject(r, "hr", s->hr);
     cJSON_AddBoolToObject(r, "hrWait", s->hr_waiting);
     cJSON_AddBoolToObject(r, "hrZone", s->hr_zone);
+    cJSON_AddNumberToObject(r, "chanceDenials", s->chance_denials);
 
     // Detailed recording: the last WS_RAW_LEN raw readings. rawSeq counts readings since boot; the
     // last one in raw is number rawSeq - 1.
@@ -100,4 +101,6 @@ void status_snapshot_to_ble(const status_snapshot_t* s, uint8_t out[STATUS_SNAPS
         out[30 + 2 * i] = s->raw[i] >> 8;
         out[31 + 2 * i] = s->raw[i] & 0xFF;
     }
+    // After the raw values, where apps that predate it don't look.
+    out[30 + 2 * STATUS_SNAPSHOT_RAW_LEN] = s->chance_denials;
 }
