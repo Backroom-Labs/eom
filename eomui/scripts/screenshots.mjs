@@ -14,6 +14,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import puppeteer from "puppeteer-core";
 import { WebSocketServer } from "ws";
+import { defaultConfig } from "../src/lib/settings.ts";
+import { MIN_FIRMWARE_VERSION } from "../src/lib/firmwareRelease.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(here, "..", "public");
@@ -42,7 +44,10 @@ const appUrl = `http://127.0.0.1:${web.address().port}/`;
 // ---------------------------------------------------------------------------------------------
 // Mock EOM: answers the app's requests and streams a steady edging session
 
+// Like real firmware, the mock reports every setting and a supported version, or the app hides the
+// missing settings and warns about the firmware.
 const CONFIG = {
+  ...defaultConfig(),
   vibration_mode: 2, // Depletion
   after_orgasm: 2, // Milking, so the Orgasms gauge reads "0 of 3"
   milking_max_orgasms: 3,
@@ -56,7 +61,7 @@ eom.on("connection", (socket) => {
   socket.on("message", (data) => {
     const msg = JSON.parse(String(data));
     if ("configList" in msg) socket.send(JSON.stringify({ configList: CONFIG }));
-    if ("info" in msg) socket.send(JSON.stringify({ info: { fwVersion: "3.6.0" } }));
+    if ("info" in msg) socket.send(JSON.stringify({ info: { fwVersion: MIN_FIRMWARE_VERSION } }));
     if ("streamReadings" in msg && !timer) {
       timer = setInterval(() => {
         const t = (Date.now() - start) / 1000;

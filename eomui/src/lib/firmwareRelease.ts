@@ -40,6 +40,22 @@ export function compareVersions(a: string, b: string): number {
   return x.pre.length - y.pre.length;
 }
 
+// The oldest firmware this app works with. Raise it by hand when the app starts relying on newer firmware.
+export const MIN_FIRMWARE_VERSION = "3.8.0-beta.1";
+
+// A version the EOM didn't report, or one that isn't a release version, can't be vouched for.
+export function isFirmwareSupported(version: string | null, minimum = MIN_FIRMWARE_VERSION): boolean {
+  return isVersion(version) && compareVersions(version, minimum) >= 0;
+}
+
+// The main screen's warning about this EOM's firmware, or null if it's new enough.
+export function firmwareWarning(version: string | null, minimum = MIN_FIRMWARE_VERSION): string | null {
+  if (isFirmwareSupported(version, minimum)) return null;
+  return version === null
+    ? `This EOM didn't report its firmware version, so it may be older than this app supports (${minimum}).`
+    : `This EOM's firmware (${version}) is older than this app supports (${minimum}).`;
+}
+
 // One image in a release manifest (tools/make_manifest.py writes these).
 export type ManifestEntry = { env: string; version: string; url: string; sha256: string; size: number };
 export type Manifest = { version: string; firmware: ManifestEntry[] };
