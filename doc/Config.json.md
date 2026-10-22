@@ -26,6 +26,7 @@ Here is a quick summary of config variables:
 |`hostname`|String|"eom3k"|Local hostname for your device.|
 |`chart_window_s`|Int|5|The number of seconds to display in the chart history.  Higher numbers can cause sluggish behavior on slower devices|
 |`max_denied`|Int|20|Maximum number of denials before forcing an orgasm (in orgasm mode).|
+|`orgasm_chance`|Byte|100|Percent chance an orgasm is permitted once the edging time or `max_denied` is reached (in orgasm mode). A lost roll is a denial and another full round starts.|
 |`initial_pleasure`|Byte|10|The minimum speed the motor will start at in endless & orgasm mode.|
 |`max_pleasure`|Byte|255|Maximum speed for the motor in auto-ramp mode.|
 |`motor_ramp_time_s`|Int|30|The time it takes for the motor to reach Motor Max Speed in endless & orgasm mode.|

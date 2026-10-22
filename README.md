@@ -19,7 +19,7 @@ Using an inflatable butt plug to detect pressure changes indicative of pelvic fl
 
 ### But I like orgasms...
 
-Having to wait for it while being right at the edge makes it more intense!  Trying to resist getting close is a turn-on for some.  When you're ready to end the edging, **Orgasm mode** allows you to finish after a chosen number of minutes or denials, and then decides what happens next: ruin it, keep going through it, or rest and start edging again for another one.  If you've had enough, switch to **Manual** and take control of the toys yourself.  It can also be used after orgasms to determine exactly when the refractory period has subsided enough to begin the next round of pleasuring.
+Having to wait for it while being right at the edge makes it more intense!  Trying to resist getting close is a turn-on for some.  When you're ready to end the edging, **Orgasm mode** allows you to finish after a chosen number of minutes or denials, or leaves it to chance: with **Orgasm chance** under 100%, reaching the target rolls the dice, and a lost roll is one more denial and another full round of edging.  Then it decides what happens next: ruin it, keep going through it, or rest and start edging again for another one.  If you've had enough, switch to **Manual** and take control of the toys yourself.  It can also be used after orgasms to determine exactly when the refractory period has subsided enough to begin the next round of pleasuring.
 
 ### Bonus feature:
 You could use the app by itself to control multiple sex toys at once without an EOM being involved.  The app by itself is a versatile and simple control hub.
@@ -121,7 +121,7 @@ Every device setting is in the app, grouped into tabs.  Changes are sent to the 
 
 |Tab|What's in it|
 |---|---|
-|**Session**|**Presets**, algorithm, edging time and denials before orgasm, what happens after an orgasm, rest between orgasms, orgasms per session, settings lock during Orgasm mode|
+|**Session**|**Presets**, algorithm, edging time and denials before orgasm, orgasm chance, what happens after an orgasm, rest between orgasms, orgasms per session, settings lock during Orgasm mode|
 |**Stimulation**|Maximum and starting intensity, ramp time, edge cooldown, random extra cooldown, minimum on time|
 |**Detection**|Edge and warning thresholds, sensor gain, pressure smoothing, update rate, **Calibration** (resting pressure, suggested threshold)|
 |**Clench**|Clench detection and orgasm detection, post-orgasm duration, settings lock after an orgasm, **Follow resting pressure**|
@@ -346,7 +346,7 @@ Using Xtoys you can connect to the EOM and let it control your other Xtoys devic
 
 WebSockets are supported for backwards compatibility with nogasm and edge-o-matic devices, but not necessary for Bluetooth.  Documentation for the WebSocket API is in [doc/WebSocket.md](doc/WebSocket.md) and the config keys are in [doc/Config.json.md](doc/Config.json.md).
 
-Newer firmware adds these to the readings, over both WebSocket (`readings`) and Bluetooth (status characteristic, now 62 bytes, multi-byte values MSB first):
+Newer firmware adds these to the readings, over both WebSocket (`readings`) and Bluetooth (status characteristic, now 63 bytes, multi-byte values MSB first):
 
 |Field|WebSocket|Bluetooth byte|Since|Meaning|
 |---|---|---|---|---|
@@ -359,6 +359,7 @@ Newer firmware adds these to the readings, over both WebSocket (`readings`) and 
 |Heart rate|`hr`|25|3.5.0|Heart rate the EOM is using, in bpm (0 = none)|
 |Heart-rate state|`hrWait`, `hrZone`|26 (bit 0, bit 1)|3.5.0|Cooldown waiting for the heart rate to settle; heart rate in the edge zone|
 |Raw pressure|`rawSeq`, `raw` (last 8)|27-28 reading number (low 16 bits), 29 count, then 16 × 2 bytes|3.6.0|The last raw pressure readings, oldest first; the newest is reading number `rawSeq - 1` since boot|
+|Denied by chance|`chanceDenials`|62, after the raw values|3.8.0|Orgasm chance rolls lost since Orgasm mode started; each is also counted in `denied`|
 
 Bluetooth control commands: `0x02` change a setting (saved), `0x04` save and restart, `0x05` set the simulated pressure (simulator builds only), `0x06 <bpm>` heart rate from an external sensor.  Over WebSocket the heart rate is `{"heartRate": <bpm>}`.
 
@@ -386,6 +387,7 @@ New settings since 3.0.0:
 |`hr_edge_sensitivity`|20|Edge zone threshold drop (%)|
 |`hr_orgasm_min_bpm`|0|Orgasm heart rate (0 = off)|
 |`hr_orgasm_drop_bpm`|0|Detect orgasm from heart rate drop (0 = off)|
+|`orgasm_chance`|100|Orgasm chance (%)|
 
 ## Building tips
 
@@ -448,7 +450,7 @@ This is a product of the open source community.  This will always be open source
 Planned:
 - "Check for updates" in the app, and firmware updates over Wi-Fi
 - Atom Echo button (stop/start, change mode, unlock settings)
-- Timed programs, e.g. 20 minutes of edging then a random chance of an orgasm, or a denial lottery
+- Timed programs that chain modes or settings over time (a random chance of an orgasm is **Orgasm chance**)
 - Keyholder mode: a PIN for settings and mode changes, and a view-only second connection
 
 Older ideas:
