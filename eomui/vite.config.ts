@@ -2,10 +2,13 @@ import { defineConfig } from 'vite'
 import { svelte } from '@sveltejs/vite-plugin-svelte'
 import basicSsl from '@vitejs/plugin-basic-ssl' // Enable HTTPS for development
 import { viteSingleFile } from "vite-plugin-singlefile"
+import { readFileSync } from 'node:fs'
+import { projectVersion } from './scripts/project-version.ts'
 //import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
   define: {
+    '__APP_VERSION__': JSON.stringify(projectVersion(readFileSync(new URL('../CMakeLists.txt', import.meta.url), 'utf8'))),
     'global': 'globalThis',
     'process.env': {}
   },

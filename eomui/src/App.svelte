@@ -2,7 +2,6 @@
   import { onMount, tick } from "svelte";
   import { Capacitor } from "@capacitor/core";
   import { BleClient } from "@capacitor-community/bluetooth-le";
-  import BTLED from "./BTLED.svelte";
   import OSSM from "./OSSM.svelte";
   import DeviceList from "./ButtplugConnector.svelte";
   import FirmwareUpdate, { type UpdateLink } from "./FirmwareUpdate.svelte";
@@ -177,7 +176,6 @@
   let wsUrlDraft = $state(prefs.wsUrl);
 
   // Toy integrations
-  let btledComponent: any;
   let ossmComponent: any;
   // Every connected Buttplug toy and OSSM. A stop switches them to Manual, which is easy to miss.
   const toys = new ToyList(() => showToast("Toys stopped and switched to Manual"));
@@ -192,7 +190,6 @@
   });
   let ossmDevices = $state([]);
   let deviceList = $state([]);
-  let BTLEDconnected = $state(false);
 
   // Heart rate from an O2Ring, connected alongside the EOM
   const ring = new O2Ring();
@@ -690,9 +687,6 @@
     // dump hasn't arrived yet.
     if (configLoaded && data[7] !== Number(config.vibration_mode) && [1, 2, 3].includes(data[7])) {
       config.vibration_mode = data[7];
-    }
-    if (BTLEDconnected && btledComponent) {
-      btledComponent.writeRGB(data[10], data[11], data[12]).catch((err: any) => console.error("Failed to write RGB:", err));
     }
     pushReading(r);
   }
@@ -1516,6 +1510,7 @@
             <h3>About</h3>
             <dl class="facts">
               <dt>Connection</dt><dd>{isBtConnected ? "Bluetooth" : isWsConnected ? `Wi-Fi (${prefs.wsUrl})` : "None"}</dd>
+              <dt>App</dt><dd>{__APP_VERSION__}</dd>
               {#if fwVersionRead}<dt>Firmware</dt><dd>{fwVersion ?? "Unknown"}</dd>{/if}
               <dt>Algorithm</dt><dd>{formatSetting(SETTINGS_BY_KEY.vibration_mode, config.vibration_mode)}</dd>
             </dl>
@@ -1560,10 +1555,6 @@
     <section class="group ossm">
       <h3>OSSM</h3>
       <OSSM bind:this={ossmComponent} bind:devices={ossmDevices} {toys} />
-    </section>
-    <section class="group">
-      <h3>Lights</h3>
-      <BTLED bind:this={btledComponent} bind:BTLEDconnected />
     </section>
   </div>
 </dialog>

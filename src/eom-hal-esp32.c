@@ -96,8 +96,15 @@ void eom_hal_init_pressure_sensor(void) {
     ESP_LOGI(TAG, "Initializing pressure sensor...");
     if (PRESSURE_SENSOR == PRESSURE_SENSOR_ANALOG) {
         ESP_LOGI(TAG, "Initializing analog pressure sensor...");
-        gpio_reset_pin(PRESSURE_GPIO);
-        ESP_LOGI(TAG, "Analog pressure sensor GPIO pin %d reset.", PRESSURE_GPIO);
+        // PRESSURE_GPIO is an ADC channel, not a GPIO number: reset the pin it maps to.
+        int pressure_io = -1;
+        esp_err_t io_err = adc_oneshot_channel_to_io(ADC_UNIT, PRESSURE_GPIO, &pressure_io);
+        if (io_err == ESP_OK) {
+            gpio_reset_pin(pressure_io);
+            ESP_LOGI(TAG, "Analog pressure sensor on ADC unit %d channel %d, GPIO%d reset.", ADC_UNIT + 1, PRESSURE_GPIO, pressure_io);
+        } else {
+            ESP_LOGW(TAG, "No GPIO for ADC unit %d channel %d (%s); skipping pin reset.", ADC_UNIT + 1, PRESSURE_GPIO, esp_err_to_name(io_err));
+        }
 
         adc_atten_t esp_sensitivity = Config.sensor_sensitivity >= 75 ? ADC_ATTEN_DB_0 
                                     : (Config.sensor_sensitivity >= 50 ? ADC_ATTEN_DB_2_5 
