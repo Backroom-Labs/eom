@@ -143,6 +143,42 @@ static void test_no_edge_before_minimum_on_time(void) {
     TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.denied, "denials");
 }
 
+// ---- Cooldown
+
+static void test_stimulation_stays_off_for_the_cooldown_then_resumes(void) {
+    Config.edge_delay = 6;
+    start_endless();
+    pressure_peak(0, 1100);
+    TEST_ASSERT_INT_WITHIN_MESSAGE(1, 6, fake_snapshot.cooldown, "cooldown reported after the edge");
+
+    run_s(5);
+    TEST_ASSERT_EQUAL_MESSAGE(0, orgasm_control_get_pleasure(), "pleasure 5 s into a 6 s cooldown");
+    TEST_ASSERT_GREATER_THAN_MESSAGE(0, fake_snapshot.cooldown, "cooldown 5 s in");
+
+    run_s(2);
+    TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.cooldown, "cooldown after it ran out");
+    TEST_ASSERT_INT_WITHIN_MESSAGE(5, Config.initial_pleasure, orgasm_control_get_pleasure(),
+                                   "pleasure just after the cooldown");
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.denied, "denials");
+}
+
+// Arousal still over the edge threshold during the cooldown starts it again, without another denial.
+static void test_arousal_during_the_cooldown_extends_it(void) {
+    Config.edge_delay = 6;
+    start_endless();
+    pressure_peak(0, 1500);
+    for (int i = 0; i < 5; i++) {  // 10 s of contractions
+        run_s(2);
+        pressure_peak(0, 1500);
+    }
+    TEST_ASSERT_EQUAL_MESSAGE(0, orgasm_control_get_pleasure(), "pleasure 10 s after the edge");
+    TEST_ASSERT_INT_WITHIN_MESSAGE(1, 6, fake_snapshot.cooldown, "cooldown after the last contraction");
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.denied, "denials");
+
+    run_s(8);
+    TEST_ASSERT_GREATER_THAN_MESSAGE(0, orgasm_control_get_pleasure(), "pleasure once arousal has faded");
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_endless_from_a_fresh_start_ramps);
@@ -154,5 +190,7 @@ int main(void) {
     RUN_TEST(test_ramp_stop_stops_at_an_edge);
     RUN_TEST(test_enhancement_goes_to_max_at_an_edge);
     RUN_TEST(test_no_edge_before_minimum_on_time);
+    RUN_TEST(test_stimulation_stays_off_for_the_cooldown_then_resumes);
+    RUN_TEST(test_arousal_during_the_cooldown_extends_it);
     return UNITY_END();
 }
