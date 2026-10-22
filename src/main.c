@@ -14,6 +14,7 @@
 #include "wifi_manager.h"
 #include <esp_https_ota.h>
 #include <esp_ota_ops.h>
+#include "system/ota_session.h"
 #include <esp_system.h>
 #include <esp_sleep.h>
 #include <driver/gpio.h>
@@ -281,6 +282,8 @@ void app_main() {
     ESP_LOGI(TAG, "LED initialization returned.");
     orgasm_control_init();
     ESP_LOGI(TAG, "Orgasm control initialization returned.");
+    // Before Bluetooth and Wi-Fi, which both take updates through it.
+    ota_session_init();
 
     if (MOTOR1_ENABLED || MOTOR2_ENABLED) {
         eom_hal_init_motor();

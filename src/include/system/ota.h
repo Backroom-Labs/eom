@@ -59,6 +59,12 @@ ota_status_t ota_get_status(void);
 // Board this firmware was built for (the PlatformIO environment name).
 const char* ota_get_board(void);
 
+// False while newly installed firmware is still on probation, during which updates are refused.
+bool ota_firmware_confirmed(void);
+
+// The largest image the inactive app partition can take.
+size_t ota_max_image_size(void);
+
 #ifdef __cplusplus
 }
 #endif

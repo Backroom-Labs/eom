@@ -5,7 +5,7 @@
   import BTLED from "./BTLED.svelte";
   import OSSM from "./OSSM.svelte";
   import DeviceList from "./ButtplugConnector.svelte";
-  import FirmwareUpdate from "./FirmwareUpdate.svelte";
+  import FirmwareUpdate, { type UpdateLink } from "./FirmwareUpdate.svelte";
   import Gauge from "./lib/Gauge.svelte";
   import SettingControl from "./lib/SettingControl.svelte";
   import SessionHistory from "./lib/SessionHistory.svelte";
@@ -251,6 +251,10 @@
   // Derived values
 
   let connected = $derived(isWsConnected || isBtConnected);
+  // Firmware updates go over whichever connection is up.
+  let updateLink = $derived<UpdateLink | null>(
+    isBtConnected && btDeviceId ? { kind: "ble", deviceId: btDeviceId } : isWsConnected && socket ? { kind: "ws", socket } : null,
+  );
   let runMode = $derived((RUN_MODES.includes(latest.runMode as RunMode) ? latest.runMode : "ENDLESS") as RunMode);
   let locked = $derived(Boolean(latest.lock));
   let safetyMessage = $derived(SAFETY_MESSAGES[latest.safety ?? 0]);
@@ -1465,7 +1469,7 @@
             {@render settingList(SETTING_GROUPS.find((g) => g.id === "advanced")?.keys ?? [])}
           </section>
           <section class="group">
-            <FirmwareUpdate deviceId={btDeviceId} connected={isBtConnected} />
+            <FirmwareUpdate link={updateLink} />
           </section>
         {/if}
       </div>

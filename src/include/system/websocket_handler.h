@@ -51,6 +51,9 @@ void websocket_run_command(const char* command, cJSON* data, cJSON* response,
                            websocket_client_t* client);
 void websocket_run_commands(cJSON* commands, cJSON* response, websocket_client_t* client);
 
+// Sends a text frame to the WebSocket client on socket fd, from any task.
+esp_err_t websocket_send_text(int fd, const char* msg);
+
 // Broadcast update triggers:
 esp_err_t websocket_broadcast(cJSON* root, int broadcast_flags);
 

@@ -58,6 +58,17 @@ const char* ota_get_board(void) {
     return eom_app_desc.board;
 }
 
+bool ota_firmware_confirmed(void) {
+    esp_ota_img_states_t state;
+    return esp_ota_get_state_partition(esp_ota_get_running_partition(), &state) != ESP_OK ||
+           state != ESP_OTA_IMG_PENDING_VERIFY;
+}
+
+size_t ota_max_image_size(void) {
+    const esp_partition_t* next = esp_ota_get_next_update_partition(NULL);
+    return next != NULL ? next->size : 0;
+}
+
 ota_status_t ota_get_status(void) {
     taskENTER_CRITICAL(&s_lock);
     ota_status_t status = {

@@ -2,20 +2,22 @@
 #define __system__ble_ota_h
 
 #include "host/ble_gatt.h"
+#include "system/ota_session.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// Firmware updates over BLE: a transport for system/ota.h, using two characteristics in the EOM
-// service. Multi-byte values are little-endian.
+// Firmware updates over BLE: a transport for system/ota_session.h, using two characteristics in the
+// EOM service. Multi-byte values are little-endian.
 //
 // OTA control (GATTS_CHAR_OTA_CONTROL_UUID): read, write, notify
 //   read   JSON {"version", "board", "mtu", "maxSize", "confirmed"}, so the client can check the board
 //          and size its chunks. confirmed is false while new firmware is still on probation, during
 //          which updates are refused.
-//   write  0x01 BEGIN  u32 image size, u8 flags (bit 0: allow downgrade)
+//   write  0x01 BEGIN  u32 image size, u8 flags (bit 0: allow downgrade). If an update is
+//                      already running, over BLE or Wi-Fi, it's refused with RESULT 0x103.
 //          0x02 ABORT
 //   notify u8 event, i32 esp_err_t, u32 value
 //          0x01 READY     partition erased; send the image from offset 0
@@ -33,21 +35,10 @@ extern "C" {
 // RESEND, and a stalled transfer is restarted with RESEND too, so lost packets are recovered. The
 // session ends if the client disconnects or stops sending for a while.
 
-#define BLE_OTA_WINDOW (16 * 1024)
+#define BLE_OTA_WINDOW OTA_WINDOW
 
 #define BLE_OTA_CMD_BEGIN 0x01
 #define BLE_OTA_CMD_ABORT 0x02
-
-#define BLE_OTA_EVT_READY 0x01
-#define BLE_OTA_EVT_PROGRESS 0x02
-#define BLE_OTA_EVT_RESEND 0x03
-#define BLE_OTA_EVT_RESULT 0x04
-
-// ATT error returned to a BEGIN while another update is running.
-#define BLE_OTA_ATT_ERR_BUSY 0x80
-
-// Call before the GATT services are registered.
-void ble_ota_init(void);
 
 extern uint16_t ble_ota_control_val_handle;
 extern uint16_t ble_ota_data_val_handle;

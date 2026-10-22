@@ -6,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "sdkconfig.h"
+#include "system/ws_ota.h"
 #include "util/list.h"
 #include <sys/socket.h>
 #include <unistd.h>
@@ -47,6 +48,23 @@ esp_err_t websocket_send_to_client(websocket_client_t* client, const char* msg) 
     ws_pkt.final = true;
 
     return httpd_ws_send_frame_async(client->server, client->fd, &ws_pkt);
+}
+
+esp_err_t websocket_send_text(int fd, const char* msg) {
+    websocket_client_t target;
+    bool found = false;
+    websocket_client_t* client = NULL;
+
+    CLIENT_LIST_LOCK();
+    list_foreach(_client_list, client) {
+        if (client->fd == fd) {
+            target = *client;
+            found = true;
+            break;
+        }
+    }
+    CLIENT_LIST_UNLOCK();
+    return found ? websocket_send_to_client(&target, msg) : ESP_ERR_NOT_FOUND;
 }
 
 esp_err_t websocket_broadcast(cJSON* root, int broadcast_flags) {
@@ -214,6 +232,7 @@ void websocket_close_fd(httpd_handle_t hd, int sockfd) {
         list_remove(&_client_list, client);
         CLIENT_LIST_UNLOCK();
     }
+    ws_ota_on_close(sockfd);
 
     // With a custom close_fn, httpd does not close the socket itself.
     close(sockfd);
@@ -238,6 +257,12 @@ esp_err_t websocket_handler(httpd_req_t* req) {
     }
 
     ESP_LOGD(TAG, "Got frame, length: %d", ws_pkt.len);
+    // Binary frames carry firmware updates (system/ws_ota.h), bounded so the buffer stays small.
+    // A bigger one is refused, which closes the connection.
+    if (ws_pkt.type == HTTPD_WS_TYPE_BINARY && ws_pkt.len > WS_OTA_MAX_FRAME) {
+        ESP_LOGW(TAG, "Binary frame of %d bytes is too big", ws_pkt.len);
+        return ESP_ERR_INVALID_SIZE;
+    }
     if (ws_pkt.len) {
         buf = calloc(1, ws_pkt.len + 1);
         if (buf == NULL) {
@@ -256,7 +281,9 @@ esp_err_t websocket_handler(httpd_req_t* req) {
         ESP_LOGD(TAG, "Got packet type 0x%02x", ws_pkt.type);
     }
 
-    if (ws_pkt.type == HTTPD_WS_TYPE_CLOSE) {
+    if (ws_pkt.type == HTTPD_WS_TYPE_BINARY) {
+        ws_ota_on_binary(httpd_req_to_sockfd(req), ws_pkt.payload, ws_pkt.len);
+    } else if (ws_pkt.type == HTTPD_WS_TYPE_CLOSE) {
         ESP_LOGD(TAG, "Client requesting CLOSE");
     } else if (ws_pkt.type == HTTPD_WS_TYPE_PING) {
         ESP_LOGD(TAG, "Received PING message from client");
