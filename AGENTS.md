@@ -10,6 +10,8 @@ Issues live in GitHub Issues on backroom-labs/eom, managed with the `gh` CLI. Se
 
 Default labels: needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix. See `docs/agents/triage-labels.md`.
 
+When an agent brief or ADR relies on how the repo or account is set up (visibility, ownership, hosting, secrets and keys, plan or billing limits), list each assumption under a **Setup assumptions** heading; omit the heading when it relies on none. Before applying `ready-for-agent` to an issue whose brief has that heading, confirm each assumption with the maintainer.
+
 ### Domain docs
 
 Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.

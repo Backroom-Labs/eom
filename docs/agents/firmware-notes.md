@@ -7,6 +7,7 @@ Gotchas that the code and config don't show. The Bluetooth/WebSocket protocol, f
 - **M5Stack Atom Echo**: env `m5stack_atom_echo`, board `m5stack-atom`, 4 MB flash, SK6812 LED on G27, pressure on Grove G32 (`ADC_CHANNEL_4`).
 - It has no pressure sensor, so test with the pressure simulator build (README, "Testing without a pressure sensor"). A normal upload puts the real sensor code back, and switching the flag rebuilds everything.
 - Serial is `/dev/cu.usbserial-*`. Read boot logs with pyserial from `~/.platformio/penv/bin/python`, toggling RTS to reset the board.
+- Hardware test scripts: `tools/serial_log.py` (reset and read serial), `eomui/scripts/wifi_ota.ts` (drive Wi-Fi OTA in modes `update`, `interrupt`, `busy`, `stray`) and `eomui/scripts/confirmed.ts` (wait until the new firmware is confirmed); usage at the top of each.
 - `gatt_svc.c` logs every control write at error level, so the app's 1 Hz heart rate fills the serial log. Known and left as is.
 
 ## Build
@@ -34,4 +35,4 @@ Gotchas that the code and config don't show. The Bluetooth/WebSocket protocol, f
 - A change to how chunks are accepted or resent goes in `ota_rx.c` (host-tested), not in `ble_ota.c` or `ws_ota.c`: both transports feed `ota_transfer.c` (ADR 0012).
 - Each update allocates a 20 KB receive buffer and an 8 KB task stack. The log line "Heap after the transfer" shows the headroom: on the Echo over `ws://` with BLE on, 49 KB free at the end of a transfer and 24 KB the lowest since boot (2026-10-22). `wss://` adds the TLS session on top, so check this again once it works.
 - Wi-Fi OTA over `ws://` sends a 1.27 MB image in 20 to 25 s. Binary frames over `WS_OTA_MAX_FRAME` close the connection.
-- With `use_ssl` on, the EOM serves only `wss://` on port 443. If TLS fails you can't reach it over Wi-Fi to turn it back off: use Bluetooth. On the test Echo, `wss://` handshakes fail with `mbedtls_x509_crt_parse ... -0x3D00` (2026-10-22, issue #38), so Wi-Fi OTA over `wss://` is untested.
+- With `use_ssl` on, the EOM serves only `wss://` on port 443. If TLS fails you can't reach it over Wi-Fi to turn it back off: use Bluetooth. `mbedtls_x509_crt_parse ... -0x3D00` at handshake means the cert encodes P-256 with explicit EC parameters, which mbedTLS rejects. LibreSSL (macOS's `openssl`) writes those unless asked for a named curve. `tools/gen_cert.py` now asks for one and regenerates an explicit-parameter pair; the new pair reaches the device only with `uploadfs` (issue #38).
