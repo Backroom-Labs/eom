@@ -11,6 +11,7 @@
 uint16_t fake_pressure = 0;
 int64_t fake_time_us = 0;
 uint8_t fake_motor1 = 0;
+status_snapshot_t fake_snapshot;
 
 config_t Config;
 bool isConnected = true;
@@ -35,4 +36,4 @@ void safety_tick(uint16_t pressure) { (void)pressure; }
 safety_stop_t safety_get_stop_reason(void) { return (safety_stop_t)0; }
 void safety_clear(void) {}
 size_t websocket_client_count(void) { return 1; }
-void status_snapshot_publish(const status_snapshot_t* snapshot) { (void)snapshot; }
+void status_snapshot_publish(const status_snapshot_t* snapshot) { fake_snapshot = *snapshot; }
