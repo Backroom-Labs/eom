@@ -9,25 +9,23 @@ extern "C" {
 #include <stdbool.h>
 #include <stdint.h>
 
-// Orgasm mode (see GLOSSARY.md): its rounds and Orgasm chance, detected orgasms, the after-orgasm
-// mode and the Settings lock. orgasm_control owns the mode, edges and the output; it tells this
-// module what happened and acts on what it returns. Not thread-safe: only the control loop calls it.
-// Other tasks read the Settings lock with status_snapshot_settings_locked().
+// Orgasm mode's rounds, Orgasm chance, detected orgasms, after-orgasm mode and Settings lock.
+// Only the control loop calls it; other tasks read the status snapshot (status_snapshot.h).
 
-// What orgasm_control should do with the output after orgasm_mode_update().
+// What orgasm_control should do next, as orgasm_mode_update() says.
 typedef enum {
     ORGASM_MODE_EDGING,      // the vibration mode drives pleasure, edging and denying as usual
     ORGASM_MODE_POST_ORGASM, // pleasure set here (full, then ramping down): don't edge
     ORGASM_MODE_RESTING,     // Milking rest: pleasure 0 and no cooldown
     ORGASM_MODE_NEXT_ROUND,  // the rest is over: edge again from 0 pleasure and 0 denials
     ORGASM_MODE_STOP,        // Ruin, or the after-orgasm mode is over: stop and switch to Manual
-} orgasm_mode_output_t;
+} orgasm_mode_action_t;
 
 typedef struct {
     oc_after_orgasm_phase_t phase;
     uint16_t permit_s;       // seconds until an orgasm is permitted; 0 once one is, or not in Orgasm mode
     uint16_t rest_s;         // seconds left of a Milking rest
-    uint8_t session_orgasms; // orgasms detected since a mode started
+    uint8_t orgasms;         // detected since a mode started
     uint8_t chance_denials;  // lost Orgasm chance rolls since Orgasm mode started
     bool settings_locked;
 } orgasm_mode_status_t;
@@ -56,10 +54,9 @@ void orgasm_mode_pleasure_set(void);
 
 void orgasm_mode_lock_settings(bool locked);
 
-// Once per update, after orgasm detection. Applies the after-orgasm mode to *pleasure: once an
-// orgasm is permitted it raises it with increment() (the vibration mode's), then holds it at full,
-// ramps it down and rests as Config.after_orgasm says.
-orgasm_mode_output_t orgasm_mode_update(unsigned long now_ms, float* pleasure, float (*increment)(void));
+// Once per update, after orgasm detection. Once an orgasm is permitted, raises *pleasure with
+// increment() (the vibration mode's), then holds, ramps down and rests as Config.after_orgasm says.
+orgasm_mode_action_t orgasm_mode_update(unsigned long now_ms, float* pleasure, float (*increment)(void));
 
 bool orgasm_mode_is_permitted(void);
 void orgasm_mode_status(unsigned long now_ms, orgasm_mode_status_t* out);

@@ -33,7 +33,7 @@ void status_snapshot_get(status_snapshot_t* out) {
 bool status_snapshot_settings_locked(void) {
     bool locked;
     SNAPSHOT_LOCK();
-    locked = latest.menu_locked;
+    locked = latest.settings_locked;
     SNAPSHOT_UNLOCK();
     return locked;
 }
@@ -58,10 +58,10 @@ void status_snapshot_to_json(const status_snapshot_t* s, cJSON* r) {
     cJSON_AddStringToObject(r, "runMode", s->mode_name ? s->mode_name : "");
     cJSON_AddNumberToObject(r, "sensitivity", s->sensitivity);
     cJSON_AddNumberToObject(r, "threshold", s->threshold);
-    cJSON_AddBoolToObject(r, "lock", s->menu_locked);
+    cJSON_AddBoolToObject(r, "lock", s->settings_locked);
     cJSON_AddNumberToObject(r, "safety", s->safety);
     cJSON_AddNumberToObject(r, "phase", s->phase);
-    cJSON_AddNumberToObject(r, "orgasms", s->session_orgasms);
+    cJSON_AddNumberToObject(r, "orgasms", s->orgasms);
     cJSON_AddNumberToObject(r, "rest", s->rest_s);
     cJSON_AddNumberToObject(r, "baseline", s->baseline);
     cJSON_AddNumberToObject(r, "hr", s->hr);
@@ -98,9 +98,9 @@ void status_snapshot_to_ble(const status_snapshot_t* s, uint8_t out[STATUS_SNAPS
         (uint8_t)(time >> 16),
         (uint8_t)(time >> 8),
         (uint8_t)(time & 0xFF),
-        s->menu_locked,
+        s->settings_locked,
         s->safety,
-        s->session_orgasms,
+        s->orgasms,
         s->phase,
         (uint8_t)(s->rest_s >> 8),     // MSB
         (uint8_t)(s->rest_s & 0xFF),   // LSB

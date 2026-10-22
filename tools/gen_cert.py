@@ -8,9 +8,8 @@ The files are written to data/server.crt and data/server.key so they're included
 image ("Build Filesystem Image" / "Upload Filesystem Image"). They are git-ignored: every build
 machine gets its own key. Delete them to regenerate.
 
-The key uses the named P-256 curve. mbedTLS (the ESP32's TLS library) rejects certificates that
-spell the curve out as explicit parameters, which LibreSSL (macOS's openssl) writes by default, so a
-pair with explicit parameters is regenerated.
+The key names the P-256 curve: mbedTLS rejects explicit curve parameters, which LibreSSL (macOS's
+openssl) writes by default, so a pair that has them is regenerated.
 
 After flashing, visit https://<device-ip>/ once in your browser and accept the certificate so the
 web UI can connect over wss://.

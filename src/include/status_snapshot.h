@@ -35,10 +35,10 @@ typedef struct {
     const char* mode_name;   // the mode as the WebSocket names it, e.g. "ENDLESS"
     uint8_t vibration_mode;
     uint16_t permit_s;       // seconds until an orgasm is permitted
-    bool menu_locked;
+    bool settings_locked;
     uint8_t safety;          // safety_stop_t
     uint8_t phase;           // oc_after_orgasm_phase_t
-    uint8_t session_orgasms;
+    uint8_t orgasms;         // detected since a mode started
     uint16_t rest_s;         // seconds left of a Milking rest
     uint16_t baseline;       // resting pressure, same scale as pressure
     uint8_t hr;              // heart rate in use, bpm; 0 = none

@@ -111,7 +111,7 @@ static void start_milking_round(unsigned long now_ms) {
     start_round(now_ms);
 }
 
-orgasm_mode_output_t orgasm_mode_update(unsigned long now_ms, float* pleasure, float (*increment)(void)) {
+orgasm_mode_action_t orgasm_mode_update(unsigned long now_ms, float* pleasure, float (*increment)(void)) {
     if (state.mode == OC_MANUAL) {
         state.settings_locked = false;
         state.post_orgasm_s = Config.post_orgasm_duration_seconds;
@@ -141,7 +141,7 @@ orgasm_mode_output_t orgasm_mode_update(unsigned long now_ms, float* pleasure, f
         if (state.orgasm_detected) {
             state.orgasm_detected = false;
             if (state.orgasms < UINT8_MAX) state.orgasms++;
-            ESP_LOGI(TAG, "Orgasm detected: %d this session", state.orgasms);
+            ESP_LOGI(TAG, "Orgasm detected: %d since the mode started", state.orgasms);
 
             if (Config.after_orgasm == AfterOrgasmRuin) {
                 ESP_LOGI(TAG, "Orgasm ruined");
@@ -215,7 +215,7 @@ void orgasm_mode_status(unsigned long now_ms, orgasm_mode_status_t* out) {
         .phase = phase(),
         .permit_s = permit_seconds(now_ms),
         .rest_s = rest_seconds(now_ms),
-        .session_orgasms = state.orgasms,
+        .orgasms = state.orgasms,
         .chance_denials = round_state.chance_denials,
         .settings_locked = state.settings_locked,
     };

@@ -38,7 +38,7 @@ void setUp(void) {
     // An hour on from the last test (the first starts an hour after boot, well past any edge
     // delay). The clock never runs backwards.
     fake_time_us += 3600LL * 1000000;
-    orgasm_control_set_output_mode(OC_MANUAL);  // init alone leaves the last test's session running
+    orgasm_control_set_output_mode(OC_MANUAL);  // init alone leaves the last test's mode running
     orgasm_control_init();
     run_s(30);  // in Manual, long enough for the last test's arousal to fade
 }
@@ -220,16 +220,16 @@ static void test_no_orgasm_is_detected_before_one_is_permitted(void) {
     clench();
     run_s(1);
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_NONE, fake_snapshot.phase, "phase after the clench");
-    TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.session_orgasms, "session orgasms after the clench");
+    TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.orgasms, "session orgasms after the clench");
 
     run_s(60);  // the edging time is up: an orgasm is permitted
     TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.permit_s, "seconds until permitted");
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_NONE, fake_snapshot.phase, "phase once permitted");
-    TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.session_orgasms, "session orgasms once permitted");
+    TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.orgasms, "session orgasms once permitted");
 
     clench();
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_POST_ORGASM, fake_snapshot.phase, "phase after a permitted clench");
-    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.session_orgasms, "session orgasms");
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.orgasms, "session orgasms");
 }
 
 static void test_post_orgasm_holds_full_pleasure_then_ramps_down_to_manual(void) {
@@ -238,8 +238,8 @@ static void test_post_orgasm_holds_full_pleasure_then_ramps_down_to_manual(void)
     permit_orgasm();
     clench();
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_POST_ORGASM, fake_snapshot.phase, "phase after the orgasm");
-    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.session_orgasms, "session orgasms");
-    TEST_ASSERT_TRUE_MESSAGE(fake_snapshot.menu_locked, "settings locked after the orgasm");
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.orgasms, "session orgasms");
+    TEST_ASSERT_TRUE_MESSAGE(fake_snapshot.settings_locked, "settings locked after the orgasm");
 
     run_s(POST_ORGASM_S - 1);
     TEST_ASSERT_EQUAL_MESSAGE(255, orgasm_control_get_pleasure(), "pleasure during post-orgasm");
@@ -254,7 +254,7 @@ static void test_post_orgasm_holds_full_pleasure_then_ramps_down_to_manual(void)
     TEST_ASSERT_EQUAL_MESSAGE(0, orgasm_control_get_pleasure(), "pleasure at the end");
     TEST_ASSERT_EQUAL_MESSAGE(OC_MANUAL, orgasm_control_get_output_mode(), "mode at the end");
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_NONE, fake_snapshot.phase, "phase at the end");
-    TEST_ASSERT_FALSE_MESSAGE(fake_snapshot.menu_locked, "settings locked at the end");
+    TEST_ASSERT_FALSE_MESSAGE(fake_snapshot.settings_locked, "settings locked at the end");
 }
 
 static void test_ruin_stops_at_the_orgasm(void) {
@@ -265,7 +265,7 @@ static void test_ruin_stops_at_the_orgasm(void) {
     TEST_ASSERT_EQUAL_MESSAGE(0, fake_motor1, "motor after the orgasm");
     TEST_ASSERT_EQUAL_MESSAGE(OC_MANUAL, orgasm_control_get_output_mode(), "mode after the orgasm");
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_RUINED, fake_snapshot.phase, "phase after the orgasm");
-    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.session_orgasms, "session orgasms");
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.orgasms, "session orgasms");
 
     run_s(10);
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_RUINED, fake_snapshot.phase, "phase 10 s later");
@@ -293,12 +293,12 @@ static void test_milking_rests_then_edges_again_up_to_the_orgasm_limit(void) {
     run_s(21);
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_NONE, fake_snapshot.phase, "phase in round 2");
     TEST_ASSERT_GREATER_THAN_MESSAGE(0, orgasm_control_get_pleasure(), "pleasure in round 2");
-    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.session_orgasms, "session orgasms in round 2");
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.orgasms, "session orgasms in round 2");
 
     run_s(5);
     clench();
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_POST_ORGASM, fake_snapshot.phase, "phase after orgasm 2");
-    TEST_ASSERT_EQUAL_MESSAGE(2, fake_snapshot.session_orgasms, "session orgasms");
+    TEST_ASSERT_EQUAL_MESSAGE(2, fake_snapshot.orgasms, "session orgasms");
     run_s(POST_ORGASM_S + 12);
     TEST_ASSERT_EQUAL_MESSAGE(OC_PHASE_NONE, fake_snapshot.phase, "phase after the last orgasm");
     TEST_ASSERT_EQUAL_MESSAGE(OC_MANUAL, orgasm_control_get_output_mode(), "mode after the last orgasm");

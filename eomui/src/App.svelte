@@ -49,13 +49,13 @@
     lock?: boolean; // settings locked by edge_menu_lock
     safety?: number; // why the safety checks last stopped the session, see SAFETY_MESSAGES
     phase?: number; // after-orgasm phase, see PHASE_*
-    orgasms?: number; // orgasms detected this session
+    orgasms?: number; // orgasms detected since the mode started
     rest?: number; // seconds left of a Milking rest
     baseline?: number; // resting pressure followed by the firmware (after 3.3.0)
     hr?: number; // bpm from the O2Ring, added by the app
     hrWait?: boolean; // cooldown waiting for the heart rate to settle (firmware 3.5.0)
     hrZone?: boolean; // heart rate in the edge zone, edge threshold lowered
-    chanceDenials?: number; // Orgasm mode rolls lost this session (firmware 3.8.0)
+    chanceDenials?: number; // rolls lost since Orgasm mode started (firmware 3.8.0)
     raw?: { end: number; p: number[]; hz: number }; // raw pressure batch (firmware 3.6.0), see history.ts
   };
 
@@ -292,7 +292,7 @@
     return isMilking && max > 0 ? `${count} of ${max}` : String(count);
   });
 
-  // Orgasms detected this session; Milking keeps counting across rounds.
+  // Orgasms detected since the mode started; Milking keeps counting across rounds.
   let showOrgasms = $derived(runMode === "ORGASM" || (latest.orgasms ?? 0) > 0);
   // Enhancement counts orgasms as denials; once the real count shows, keep calling them denials.
   let deniedLabel = $derived(isEnhancement && !showOrgasms ? "Orgasms" : "Denied");
@@ -694,7 +694,7 @@
       // added in 3.5.0: [25] heart rate the EOM is using, [26] flags
       hrWait: data.length > 26 ? (data[26] & 0x01) !== 0 : false,
       hrZone: data.length > 26 ? (data[26] & 0x02) !== 0 : false,
-      // added in 3.8.0: Orgasm mode rolls lost this session, after the raw values
+      // added in 3.8.0: rolls lost since Orgasm mode started, after the raw values
       chanceDenials: data.length > 29 && data.length > 30 + 2 * data[29] ? data[30 + 2 * data[29]] : 0,
       // added in 3.6.0: [27-28] raw reading number (low 16 bits), [29] count, then that many u16
       raw: data.length > 29 && data.length >= 30 + 2 * data[29]
