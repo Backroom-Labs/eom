@@ -15,12 +15,18 @@ extern "C" {
 // Setting changes are the exception: they are applied immediately.
 //
 // Every motor write switches to manual and goes through orgasm_control's pleasure caps.
+//
+// While the Settings lock is on, setting changes, choosing Endless or Orgasm and resetting the
+// denied count are refused with CC_LOCKED. Stopping (Manual, a motor value) is always accepted, as
+// are triggering arousal, heart rate and simulated pressure. The lock is checked here, when the
+// command arrives, so a command queued just before the lock turned on may still apply.
 
 typedef enum {
     CC_OK,
     CC_BAD_ARG,     // malformed or out of range; nothing was queued or changed
     CC_QUEUE_FULL,  // the queue is full; nothing was queued
     CC_UNKNOWN,     // not a control command (for example a BLE restart request); the caller handles it
+    CC_LOCKED,      // refused because the Settings lock is on; nothing was queued or changed
 } cc_result_t;
 
 // A write to the BLE control characteristic: 0x01 control, 0x02 setting ("name:value"),
