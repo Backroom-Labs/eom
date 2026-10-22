@@ -32,6 +32,10 @@ static command_err_t cmd_system_info(cJSON* command, cJSON* response, websocket_
     cJSON_AddStringToObject(response, "serial", buf);
     //cJSON_AddStringToObject(response, "hwVersion", eom_hal_get_version());
     cJSON_AddStringToObject(response, "fwVersion", EOM_VERSION);
+#ifdef EOM_PRESSURE_SIM
+    // The app shows the pressure simulator only when this is here; releases leave it out.
+    cJSON_AddBoolToObject(response, "pressureSim", true);
+#endif
     return CMD_OK;
 }
 

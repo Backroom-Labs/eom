@@ -325,13 +325,15 @@ The firmware is pinned to ESP-IDF 5.5.2 (`espressif32@6.13.0`).  Don't move to 5
 
 ## Testing without a pressure sensor
 
-You can test on almost any ESP32 without extra hardware by touching the pin assigned to the pressure sensor (see [Building tips](#building-tips)).  For repeatable testing there is also a **pressure simulator** build, which lets the app set the pressure reading:
+You can test on almost any ESP32 without extra hardware by touching the pin assigned to the pressure sensor (see [Building tips](#building-tips)).  For repeatable testing, every firmware you build yourself also has a **pressure simulator**, which lets the app set the pressure reading (3.8.0):
 
 ```
-PLATFORMIO_BUILD_FLAGS=-DEOM_PRESSURE_SIM pio run -e <your board> -t upload
+pio run -e <your board> -t upload
 ```
 
-Then turn on **Settings > App > Pressure simulator**.  The Controls card gets a pressure slider and a **Hold to clench** button.  A normal upload (without the flag) puts the real sensor back.  The simulator is never part of a normal or release build.
+Connect the app and turn on **Settings > App > Pressure simulator**; the app shows it only for firmware that has the simulator.  The Controls card gets a pressure slider and a **Hold to clench** button.  The EOM reads the real sensor until you turn it on, and again when you turn it off.
+
+The simulator is never part of a release.  Releases are built with `EOM_RELEASE=1`, which leaves it out (`tools/pressure_sim.py`); set it yourself for a release-like build: `EOM_RELEASE=1 pio run -e <your board>`.
 
 ## Bluetooth and Xtoys
 Wi-Fi is not necessary!  The app works over Bluetooth: no IP address or Wi-Fi setup needed.  Just connect to your EOM directly with the **Bluetooth** button.  Android or PC Chrome/Edge only in the browser; Apple and Firefox don't support Web Bluetooth.

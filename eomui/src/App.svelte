@@ -26,6 +26,7 @@
   } from "./lib/settings";
   import { firmwareWarning } from "./lib/firmwareRelease";
   import { readBleDeviceInfo } from "./lib/bleUpload";
+  import { reportsPressureSim, simPressureToSend } from "./lib/pressureSim";
   import { ToyList } from "./lib/toyList";
   import { followsText } from "./lib/toyControlView";
   import { savedPreferences } from "./lib/savedPreferences";
@@ -109,7 +110,7 @@
     pressureStep: number; // raw threshold units added by "Apply pressure"
     defaultView: "gauges" | "chart";
     keepAwake: boolean;
-    pressureSim: boolean; // show the pressure simulator (needs a -DEOM_PRESSURE_SIM firmware build)
+    pressureSim: boolean; // use the pressure simulator, on firmware that has it
     recordSessions: boolean; // keep session history in this browser
     detailedRecording: boolean; // also record raw pressure at the EOM's update rate
   };
@@ -399,6 +400,7 @@
     fwVersionRead = false;
     fwWarningDismissed = false;
     reportedKeys = null;
+    pressureSimAvailable = false;
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -474,11 +476,25 @@
     }
   }
 
-  // Pressure simulator, for testing without a sensor. Only firmware built with -DEOM_PRESSURE_SIM
-  // acts on it; other firmware ignores the command. -1 goes back to the real sensor.
+  // Pressure simulator, for testing without a sensor. Only firmware that isn't a release has it,
+  // and it reports so at connect. -1 goes back to the real sensor.
   const SIM_CLENCH = 1000; // added while "Hold to clench" is pressed
   let simPressure = $state(0);
   let simClenching = $state(false);
+  let pressureSimAvailable = $state(false); // reset per connection, so another EOM's answer never carries over
+  let offerPressureSim = $derived(connected && pressureSimAvailable);
+  let showPressureSim = $derived(offerPressureSim && prefs.pressureSim);
+  // Called when the toggle changes and when the EOM reports the simulator, so the EOM matches it.
+  function syncSimPressure() {
+    // Turning off removes "Hold to clench" mid-press, so its release never arrives.
+    if (!prefs.pressureSim) simClenching = false;
+    const value = simPressureToSend(pressureSimAvailable, prefs.pressureSim, simPressure);
+    if (value !== null) sendSimPressure(value);
+  }
+  function learnPressureSim(info: unknown) {
+    pressureSimAvailable = reportsPressureSim(info);
+    syncSimPressure();
+  }
   function sendSimPressure(value: number) {
     if (isWsConnected && socket) {
       socket.send(JSON.stringify({ simPressure: value }));
@@ -617,6 +633,7 @@
       fwVersion = msg.info.fwVersion;
       fwVersionRead = true;
     }
+    if (msg.info) learnPressureSim(msg.info);
     const r = msg.readings;
     if (!r || !r.millis || r.pressure === undefined || r.arousal === undefined || r.motor === undefined) return;
     pushReading({
@@ -731,13 +748,14 @@
     }
   }
 
-  // The version is in the firmware update info; firmware from before Bluetooth updates has none,
-  // so its version stays unknown. Not awaited, so a slow read doesn't hold up connecting.
-  function readBtFirmwareVersion(deviceId: string) {
+  // Firmware from before Bluetooth updates has no update info, so its version stays unknown and it
+  // has no simulator. Not awaited, so a slow read doesn't hold up connecting.
+  function readBtDeviceInfo(deviceId: string) {
     readBleDeviceInfo(deviceId).then((info) => {
       if (btDeviceId !== deviceId) return;
       fwVersion = typeof info?.version === "string" ? info.version : null;
       fwVersionRead = true;
+      learnPressureSim(info);
     });
   }
 
@@ -756,7 +774,7 @@
       forgetPreviousEom();
       await BleClient.startNotifications(device.deviceId, BT_SERVICE_UUID, BT_CONFIG_CHAR, handleBtConfig);
       await btWrite(new Uint8Array([BT_CMD_GET_CONFIG]));
-      readBtFirmwareVersion(device.deviceId);
+      readBtDeviceInfo(device.deviceId);
       connectDialog?.close();
       showToast(`Connected to ${device.name ?? "EOM"}`);
     } catch (error: any) {
@@ -1292,7 +1310,7 @@
         </div>
       {/if}
 
-      {#if prefs.pressureSim}
+      {#if showPressureSim}
         <div class="field">
           <div class="fieldHead">
             <label class="fieldLabel" for="simPressure">Simulated pressure</label>
@@ -1526,15 +1544,12 @@
               <span><b>Detailed recording</b><small>Also record the raw pressure at full speed (50 times a second) for each session, for a detailed CSV export. Needs firmware 3.6.0. Uses more storage.</small></span>
               <input type="checkbox" class="check" bind:checked={prefs.detailedRecording} disabled={!prefs.recordSessions} />
             </label>
-            <label class="prefRow">
-              <span><b>Pressure simulator</b><small>Test without a sensor. Needs firmware built with EOM_PRESSURE_SIM.</small></span>
-              <input
-                type="checkbox"
-                class="check"
-                bind:checked={prefs.pressureSim}
-                onchange={() => sendSimPressure(prefs.pressureSim ? simPressure : -1)}
-              />
-            </label>
+            {#if offerPressureSim}
+              <label class="prefRow">
+                <span><b>Pressure simulator</b><small>Test without a sensor.</small></span>
+                <input type="checkbox" class="check" bind:checked={prefs.pressureSim} onchange={syncSimPressure} />
+              </label>
+            {/if}
             <div class="prefRow column">
               <span><b>Apply pressure step</b><small>How much "Apply pressure" raises the edge threshold.</small></span>
               <div class="inline">

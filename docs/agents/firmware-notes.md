@@ -5,7 +5,7 @@ Gotchas that the code and config don't show. The Bluetooth/WebSocket protocol, f
 ## The test device
 
 - **M5Stack Atom Echo**: env `m5stack_atom_echo`, board `m5stack-atom`, 4 MB flash, SK6812 LED on G27, pressure on Grove G32 (`ADC_CHANNEL_4`).
-- It has no pressure sensor, so test with the pressure simulator build (README, "Testing without a pressure sensor"). A normal upload puts the real sensor code back, and switching the flag rebuilds everything.
+- It has no pressure sensor, so test with the pressure simulator (README, "Testing without a pressure sensor"). Every build has it unless `EOM_RELEASE=1` is set (`tools/pressure_sim.py`); CI sets that on tag builds only. Switching between the two rebuilds every file in `src/`.
 - Serial is `/dev/cu.usbserial-*`. Read boot logs with pyserial from `~/.platformio/penv/bin/python`, toggling RTS to reset the board.
 - Hardware test scripts: `tools/serial_log.py` (reset and read serial), `eomui/scripts/wifi_ota.ts` (drive Wi-Fi OTA in modes `update`, `interrupt`, `busy`, `stray`) and `eomui/scripts/confirmed.ts` (wait until the new firmware is confirmed); usage at the top of each.
 - `gatt_svc.c` logs every control write at error level, so the app's 1 Hz heart rate fills the serial log. Known and left as is.
@@ -15,7 +15,7 @@ Gotchas that the code and config don't show. The Bluetooth/WebSocket protocol, f
 - `pio` isn't on the PATH: run `~/.platformio/penv/bin/pio`.
 - `esp32dev`, `m5stack_atom_echo` and `esp32-s3-devkitm-1` are enabled in `platformio.ini`, so CI builds those three (issues #15, #35).
 - `sdkconfig.<env>` files are git-ignored and regenerated on each build. Put sdkconfig changes in `sdkconfig.defaults` or `sdkconfig.defaults.esp32`.
-- Classic ESP32 IRAM is tight: 688 B free on `m5stack_atom_echo` with Wi-Fi OTA (ESP-IDF 5.5.2, 2026-10-22). The last `heap_init` line in the boot log (`At 4009FD50 len 000002B0 ... IRAM`) shows it. Check after adding code that runs from interrupts.
+- Classic ESP32 IRAM is tight: 688 B free on `m5stack_atom_echo` with Wi-Fi OTA (ESP-IDF 5.5.2, 2026-10-22), and still 688 B in a dev build with the pressure simulator (2026-10-23). The last `heap_init` line in the boot log (`At 4009FD50 len 000002B0 ... IRAM`) shows it. Check after adding code that runs from interrupts.
 - RMT DMA exists only on S3/P4, so `configure_led_2812` enables it only `#if SOC_RMT_SUPPORT_DMA`. Without that guard, other WS2812 boards boot-loop.
 - The first build with a new ESP-IDF can fail creating its venv (`~/.platformio/penv/.espidf-<ver>`). Rerun the build or delete that folder.
 - After deleting `dependencies.lock`, build the envs one at a time (`pio run -e X`, twice).

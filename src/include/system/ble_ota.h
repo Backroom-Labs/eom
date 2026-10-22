@@ -15,7 +15,7 @@ extern "C" {
 // OTA control (GATTS_CHAR_OTA_CONTROL_UUID): read, write, notify
 //   read   JSON {"version", "board", "mtu", "maxSize", "confirmed"}, so the client can check the board
 //          and size its chunks. confirmed is false while new firmware is still on probation, during
-//          which updates are refused.
+//          which updates are refused. Builds that aren't releases add "pressureSim": true.
 //   write  0x01 BEGIN  u32 image size, u8 flags (bit 0: allow downgrade). If an update is
 //                      already running, over BLE or Wi-Fi, it's refused with RESULT 0x103.
 //          0x02 ABORT
