@@ -21,7 +21,7 @@ void eom_hal_set_sensor_sensitivity(uint8_t sensitivity);
 void eom_hal_init_pressure_sensor(void);
 void eom_hal_setup_pressure_ambient(void);
 // Not in releases (-DEOM_PRESSURE_SIM, tools/pressure_sim.py): replace the sensor with this value, -1 for the real sensor.
-// Does nothing in normal builds.
+// Does nothing in releases.
 void eom_hal_set_simulated_pressure(int value);
 
 //=== Vibration

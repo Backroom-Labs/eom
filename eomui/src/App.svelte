@@ -481,12 +481,19 @@
   const SIM_CLENCH = 1000; // added while "Hold to clench" is pressed
   let simPressure = $state(0);
   let simClenching = $state(false);
-  let pressureSimAvailable = $state(false); // this connection's firmware reports the simulator
-  let showPressureSim = $derived(connected && pressureSimAvailable && prefs.pressureSim);
+  let pressureSimAvailable = $state(false); // reset per connection, so another EOM's answer never carries over
+  let offerPressureSim = $derived(connected && pressureSimAvailable);
+  let showPressureSim = $derived(offerPressureSim && prefs.pressureSim);
   // Called when the toggle changes and when the EOM reports the simulator, so the EOM matches it.
   function syncSimPressure() {
+    // Turning off removes "Hold to clench" mid-press, so its release never arrives.
+    if (!prefs.pressureSim) simClenching = false;
     const value = simPressureToSend(pressureSimAvailable, prefs.pressureSim, simPressure);
     if (value !== null) sendSimPressure(value);
+  }
+  function learnPressureSim(info: unknown) {
+    pressureSimAvailable = reportsPressureSim(info);
+    syncSimPressure();
   }
   function sendSimPressure(value: number) {
     if (isWsConnected && socket) {
@@ -626,10 +633,7 @@
       fwVersion = msg.info.fwVersion;
       fwVersionRead = true;
     }
-    if (msg.info) {
-      pressureSimAvailable = reportsPressureSim(msg.info);
-      syncSimPressure();
-    }
+    if (msg.info) learnPressureSim(msg.info);
     const r = msg.readings;
     if (!r || !r.millis || r.pressure === undefined || r.arousal === undefined || r.motor === undefined) return;
     pushReading({
@@ -744,16 +748,14 @@
     }
   }
 
-  // The version and the pressure simulator are in the firmware update info; firmware from before
-  // Bluetooth updates has none, so its version stays unknown. Not awaited, so a slow read doesn't
-  // hold up connecting.
+  // Firmware from before Bluetooth updates has no update info, so its version stays unknown and it
+  // has no simulator. Not awaited, so a slow read doesn't hold up connecting.
   function readBtDeviceInfo(deviceId: string) {
     readBleDeviceInfo(deviceId).then((info) => {
       if (btDeviceId !== deviceId) return;
       fwVersion = typeof info?.version === "string" ? info.version : null;
       fwVersionRead = true;
-      pressureSimAvailable = reportsPressureSim(info);
-      syncSimPressure();
+      learnPressureSim(info);
     });
   }
 
@@ -1542,7 +1544,7 @@
               <span><b>Detailed recording</b><small>Also record the raw pressure at full speed (50 times a second) for each session, for a detailed CSV export. Needs firmware 3.6.0. Uses more storage.</small></span>
               <input type="checkbox" class="check" bind:checked={prefs.detailedRecording} disabled={!prefs.recordSessions} />
             </label>
-            {#if connected && pressureSimAvailable}
+            {#if offerPressureSim}
               <label class="prefRow">
                 <span><b>Pressure simulator</b><small>Test without a sensor.</small></span>
                 <input type="checkbox" class="check" bind:checked={prefs.pressureSim} onchange={syncSimPressure} />
