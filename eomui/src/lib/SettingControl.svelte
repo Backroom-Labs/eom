@@ -20,7 +20,7 @@
   );
   // The same setting can be on screen twice (quick settings and the drawer), so ids must be unique.
   const uid = $props.id();
-  const id = `${uid}-${def.key}`;
+  const id = $derived(`${uid}-${def.key}`);
 </script>
 
 <div class="setting" class:disabled>
