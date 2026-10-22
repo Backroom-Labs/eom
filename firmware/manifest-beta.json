@@ -1,26 +1,26 @@
 {
-  "version": "3.8.0-beta.3",
+  "version": "3.8.0-beta.4",
   "firmware": [
     {
       "env": "esp32-s3-devkitm-1",
-      "version": "3.8.0-beta.3",
-      "url": "https://backroom-labs.github.io/eom/firmware/3.8.0-beta.3/firmware-esp32-s3-devkitm-1.bin",
-      "sha256": "26eb1e609dc6c88e4cbb66df0294c2e61cc410e0d871739786a28a531d554072",
-      "size": 1246400
+      "version": "3.8.0-beta.4",
+      "url": "https://backroom-labs.github.io/eom/firmware/3.8.0-beta.4/firmware-esp32-s3-devkitm-1.bin",
+      "sha256": "adc8ee17004afa110df73c5d8753d70928e96344deb887fbd351f3a3a071271e",
+      "size": 1246640
     },
     {
       "env": "esp32dev",
-      "version": "3.8.0-beta.3",
-      "url": "https://backroom-labs.github.io/eom/firmware/3.8.0-beta.3/firmware-esp32dev.bin",
-      "sha256": "f3bb57bd35d3c1d23580f81372f7ea207bd2f25d8fbd8cd10213aa16e660121b",
-      "size": 1254736
+      "version": "3.8.0-beta.4",
+      "url": "https://backroom-labs.github.io/eom/firmware/3.8.0-beta.4/firmware-esp32dev.bin",
+      "sha256": "28f1af667ffd83ffe3c986973a6b41ab8f318fc9c8257eba8927369e277adc77",
+      "size": 1254960
     },
     {
       "env": "m5stack_atom_echo",
-      "version": "3.8.0-beta.3",
-      "url": "https://backroom-labs.github.io/eom/firmware/3.8.0-beta.3/firmware-m5stack_atom_echo.bin",
-      "sha256": "27058030b7ce06b425ac640f420848c35245c7044c0455ddafa4c3021c392416",
-      "size": 1275216
+      "version": "3.8.0-beta.4",
+      "url": "https://backroom-labs.github.io/eom/firmware/3.8.0-beta.4/firmware-m5stack_atom_echo.bin",
+      "sha256": "1bd09ad8dd90cb8b26d5606e88dc5583be3e85d4ad42cdc9e062bd6f20e069d5",
+      "size": 1275456
     }
   ]
 }
