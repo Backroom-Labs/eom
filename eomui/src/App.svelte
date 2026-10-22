@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { Capacitor } from "@capacitor/core";
   import { BleClient } from "@capacitor-community/bluetooth-le";
   import OSSM from "./OSSM.svelte";
@@ -7,6 +7,7 @@
   import FirmwareUpdate, { type UpdateLink } from "./FirmwareUpdate.svelte";
   import Gauge from "./lib/Gauge.svelte";
   import SettingControl from "./lib/SettingControl.svelte";
+  import PresetPicker from "./lib/PresetPicker.svelte";
   import SessionHistory from "./lib/SessionHistory.svelte";
   import { Recorder, listSessions, suggestHeartRate, suggestThreshold, type SessionSummary } from "./lib/history";
   import { O2Ring, type RingReading } from "./lib/o2ring";
@@ -18,9 +19,12 @@
     coerce,
     defaultConfig,
     formatSetting,
+    reportedSettings,
     toWire,
     type SettingValue,
   } from "./lib/settings";
+  import { firmwareWarning } from "./lib/firmwareRelease";
+  import { readBleDeviceInfo } from "./lib/bleUpload";
   import { ToyList } from "./lib/toyList";
   import { followsText } from "./lib/toyControlView";
   import { savedPreferences } from "./lib/savedPreferences";
@@ -140,6 +144,9 @@
   let configLoaded = $state(false);
   let restartNeeded = $state(false);
   let fwVersion = $state<string | null>(null);
+  let fwVersionRead = $state(false); // this connection's version answer arrived (fwVersion null: unknown)
+  let fwWarningDismissed = $state(false);
+  let reportedKeys = $state<Set<string> | null>(null); // keys in this connection's config dump
 
   // Chart history is a plain array: it changes 50 times a second and only the canvas reads it.
   let history: Reading[] = [];
@@ -233,6 +240,9 @@
     listSessions()
       .then((list) => (sessions = list))
       .catch((err) => console.error("Couldn't read session history:", err));
+  }
+  function markOrgasm() {
+    if (recorder.markOrgasm()) showToast("Orgasm marked");
   }
   recorder.onSessionEnd = (summary) => {
     if (summary) showToast("Session saved to History");
@@ -368,7 +378,17 @@
       const def = SETTINGS_BY_KEY[key];
       if (def) config[key] = coerce(def, raw);
     }
+    // Bluetooth sends the dump in slices, so the keys add up.
+    reportedKeys = new Set([...(reportedKeys ?? []), ...Object.keys(values)]);
     configLoaded = true;
+  }
+
+  // Called as each connection opens, so nothing carries over from the last EOM.
+  function forgetPreviousEom() {
+    fwVersion = null;
+    fwVersionRead = false;
+    fwWarningDismissed = false;
+    reportedKeys = null;
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -379,7 +399,8 @@
     await BleClient.write(btDeviceId, BT_SERVICE_UUID, BT_CONTROL_CHAR, new DataView(bytes.buffer));
   }
 
-  function changeSetting(key: string, value: SettingValue) {
+  // Resolves to false if a Bluetooth write failed. Loading a preset reports failures together, so it passes quiet.
+  async function changeSetting(key: string, value: SettingValue, quiet = false): Promise<boolean> {
     const def = SETTINGS_BY_KEY[key];
     const previous = config[key];
     config[key] = value;
@@ -391,12 +412,16 @@
       socket.send(JSON.stringify({ configSet: { [key]: wire } }));
     } else if (isBtConnected) {
       const enc = new TextEncoder();
-      btWrite(new Uint8Array([BT_CMD_SET_CONFIG, ...enc.encode(key), 0x3a, ...enc.encode(toWire(value))])).catch((err) => {
+      try {
+        await btWrite(new Uint8Array([BT_CMD_SET_CONFIG, ...enc.encode(key), 0x3a, ...enc.encode(toWire(value))]));
+      } catch (err) {
         console.error("Error sending setting via Bluetooth:", err);
         config[key] = previous;
-        showToast(`Couldn't change ${def?.label ?? key}`, "error");
-      });
+        if (!quiet) showToast(`Couldn't change ${def?.label ?? key}`, "error");
+        return false;
+      }
     }
+    return true;
   }
 
   function sendCommand(command: "setMode" | "setMotor" | "triggerArousal" | "resetDenied", value: number | string | null = null) {
@@ -556,6 +581,7 @@
     isWsConnected = true;
     connecting = null;
     syncDelta = 0;
+    forgetPreviousEom();
     socket?.send(JSON.stringify({ configList: null }));
     socket?.send(JSON.stringify({ streamReadings: null }));
     socket?.send(JSON.stringify({ info: null }));
@@ -573,7 +599,10 @@
     }
     if (!msg) return;
     if (msg.configList) applyConfig(msg.configList);
-    if (msg.info?.fwVersion) fwVersion = msg.info.fwVersion;
+    if (msg.info?.fwVersion) {
+      fwVersion = msg.info.fwVersion;
+      fwVersionRead = true;
+    }
     const r = msg.readings;
     if (!r || !r.millis || r.pressure === undefined || r.arousal === undefined || r.motor === undefined) return;
     pushReading({
@@ -684,6 +713,16 @@
     }
   }
 
+  // The version is in the firmware update info; firmware from before Bluetooth updates has none,
+  // so its version stays unknown. Not awaited, so a slow read doesn't hold up connecting.
+  function readBtFirmwareVersion(deviceId: string) {
+    readBleDeviceInfo(deviceId).then((info) => {
+      if (btDeviceId !== deviceId) return;
+      fwVersion = typeof info?.version === "string" ? info.version : null;
+      fwVersionRead = true;
+    });
+  }
+
   async function btConnect() {
     connecting = "bt";
     try {
@@ -696,8 +735,10 @@
       socket?.close();
       isWsConnected = false;
       isBtConnected = true;
+      forgetPreviousEom();
       await BleClient.startNotifications(device.deviceId, BT_SERVICE_UUID, BT_CONFIG_CHAR, handleBtConfig);
       await btWrite(new Uint8Array([BT_CMD_GET_CONFIG]));
+      readBtFirmwareVersion(device.deviceId);
       connectDialog?.close();
       showToast(`Connected to ${device.name ?? "EOM"}`);
     } catch (error: any) {
@@ -920,13 +961,31 @@
     { id: "device", label: "Device", groups: [] },
   ];
 
+  let fwWarning = $derived(connected && fwVersionRead && !fwWarningDismissed ? firmwareWarning(fwVersion) : null);
+
+  // Offline, every setting shows with its default.
+  const shownKeys = (keys: string[]) => reportedSettings(keys, connected ? reportedKeys : null);
+  const groupKeys = (groupId: string) => shownKeys(SETTING_GROUPS.find((g) => g.id === groupId)?.keys ?? []);
+  // The App and Device tabs hold more than device settings, so they always show.
+  let shownTabs = $derived(SETTINGS_TABS.filter((tab) => !tab.groups.length || tab.groups.some((id) => groupKeys(id).length)));
+  $effect(() => {
+    if (!shownTabs.some((tab) => tab.id === settingsTab)) settingsTab = shownTabs[0].id;
+  });
+
+  async function openFirmwareUpdate() {
+    settingsTab = "device";
+    settingsDialog?.showModal();
+    await tick();
+    document.getElementById("firmware-update")?.scrollIntoView({ block: "start" });
+  }
+
   let quickKeys = $derived(
     runMode === "ORGASM" ? ["auto_edging_duration_minutes", "max_denied", "after_orgasm", ...QUICK_SETTINGS] : QUICK_SETTINGS,
   );
 </script>
 
 {#snippet settingList(keys: string[])}
-  {#each keys as key (key)}
+  {#each shownKeys(keys) as key (key)}
     {@const def = SETTINGS_BY_KEY[key]}
     {#if def && (!def.visible || def.visible(config))}
       <SettingControl {def} value={config[key]} disabled={locked} onchange={changeSetting} />
@@ -1037,6 +1096,13 @@
   {#if safetyMessage && connected}
     <div class="banner warn">{safetyMessage}</div>
   {/if}
+  {#if fwWarning}
+    <div class="banner warn">
+      {fwWarning}
+      <button class="small" onclick={openFirmwareUpdate}>Update</button>
+      <button class="small" onclick={() => (fwWarningDismissed = true)}>Dismiss</button>
+    </div>
+  {/if}
   {#if restartNeeded && connected}
     <div class="banner">
       Restart the EOM to apply connectivity changes.
@@ -1057,6 +1123,9 @@
           <button role="tab" aria-selected={view === "chart"} class:active={view === "chart"} onclick={() => { view = "chart"; scheduleChartUpdate(); }} aria-label="Chart">{@render icon("chart")}</button>
         </div>
       </div>
+      {#if recording}
+        <button class="markOrgasm" onclick={markOrgasm} title="Record that you're having an orgasm now">Mark orgasm</button>
+      {/if}
 
       {#if view === "gauges"}
         <div class="gauges">
@@ -1313,7 +1382,7 @@
     <button class="iconBtn" onclick={() => settingsDialog?.close()} aria-label="Close">{@render icon("close")}</button>
   </div>
   <div class="tabs" role="tablist">
-    {#each SETTINGS_TABS as tab}
+    {#each shownTabs as tab}
       <button role="tab" aria-selected={settingsTab === tab.id} class:active={settingsTab === tab.id} onclick={(e) => {
         settingsTab = tab.id;
         e.currentTarget.scrollIntoView({ inline: "nearest", block: "nearest" });
@@ -1333,9 +1402,22 @@
     {#each SETTINGS_TABS as tab}
       <!-- Inactive tabs stay mounted (hidden) so a firmware update keeps running when switching. -->
       <div role="tabpanel" hidden={settingsTab !== tab.id}>
+        {#if tab.id === "session"}
+          <section class="group">
+            <h3>Presets</h3>
+            <p class="muted">Save the Session, Stimulation, Detection, Clench and Heart rate settings under a name, and load them later. Saved in this browser only.</p>
+            <PresetPicker
+              {config}
+              canSave={configLoaded}
+              canLoad={connected && configLoaded && !locked}
+              change={(key, value) => changeSetting(key, value, true)}
+              notify={showToast}
+            />
+          </section>
+        {/if}
         {#each tab.groups as groupId}
           {@const group = SETTING_GROUPS.find((g) => g.id === groupId)}
-          {#if group}
+          {#if group && groupKeys(groupId).length}
             <section class="group">
               <h3>{group.title}</h3>
               {#if group.description}<p class="muted">{group.description}</p>{/if}
@@ -1453,7 +1535,8 @@
             <h3>About</h3>
             <dl class="facts">
               <dt>Connection</dt><dd>{isBtConnected ? "Bluetooth" : isWsConnected ? `Wi-Fi (${prefs.wsUrl})` : "None"}</dd>
-              {#if fwVersion}<dt>Firmware</dt><dd>{fwVersion}</dd>{/if}
+              <dt>App</dt><dd>{__APP_VERSION__}</dd>
+              {#if fwVersionRead}<dt>Firmware</dt><dd>{fwVersion ?? "Unknown"}</dd>{/if}
               <dt>Algorithm</dt><dd>{formatSetting(SETTINGS_BY_KEY.vibration_mode, config.vibration_mode)}</dd>
             </dl>
             <button onclick={restartDevice} disabled={!connected}>Restart device</button>
@@ -1462,7 +1545,7 @@
             <h3>Advanced</h3>
             {@render settingList(SETTING_GROUPS.find((g) => g.id === "advanced")?.keys ?? [])}
           </section>
-          <section class="group">
+          <section class="group" id="firmware-update">
             <FirmwareUpdate link={updateLink} />
           </section>
         {/if}
@@ -1660,6 +1743,10 @@
   }
   .viewSwitch {
     flex: none;
+  }
+  .markOrgasm {
+    width: 100%;
+    margin-bottom: 8px;
   }
   .viewSwitch button {
     min-width: 44px;

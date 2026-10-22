@@ -117,18 +117,18 @@ While a toy is connected, the top of the main screen shows it with its level and
   <img src="doc/screenshots/settings-calibration.png" width="260" alt="Detection settings and calibration">
 </p>
 
-Every device setting is in the app, grouped into tabs.  Changes are sent to the device straight away and saved there, over Bluetooth or Wi-Fi.  Settings marked as needing a restart can be applied with **Restart device**.
+Every device setting is in the app, grouped into tabs.  Changes are sent to the device straight away and saved there, over Bluetooth or Wi-Fi.  Settings marked as needing a restart can be applied with **Restart device**.  **Presets** at the top of the Session tab save the Session, Stimulation, Detection, Clench and Heart rate settings under a name in this phone or browser, so you can load them again later; Safety and Connectivity settings are left as they are.
 
 |Tab|What's in it|
 |---|---|
-|**Session**|Algorithm, edging time and denials before orgasm, what happens after an orgasm, rest between orgasms, orgasms per session, settings lock during Orgasm mode|
+|**Session**|**Presets**, algorithm, edging time and denials before orgasm, what happens after an orgasm, rest between orgasms, orgasms per session, settings lock during Orgasm mode|
 |**Stimulation**|Maximum and starting intensity, ramp time, edge cooldown, random extra cooldown, minimum on time|
 |**Detection**|Edge and warning thresholds, sensor gain, pressure smoothing, update rate, **Calibration** (resting pressure, suggested threshold)|
 |**Clench**|Clench detection and orgasm detection, post-orgasm duration, settings lock after an orgasm, **Follow resting pressure**|
 |**Safety**|Stop on sensor fault, stop when disconnected, session time limit, output limit|
 |**Connectivity**|Wi-Fi (own network or join yours), network name and password, hostname, secure WebSocket, Bluetooth name, Bluetooth and Wi-Fi together|
 |**App**|Settings for this app only: start view, keep screen on, record sessions, pressure simulator, Apply pressure step|
-|**Device**|Firmware version, [firmware update over Bluetooth](#updating-the-device), restart|
+|**Device**|App and firmware versions, [firmware update over Bluetooth](#updating-the-device), restart|
 
 If **Lock settings during Orgasm mode** or **Lock settings after orgasm** is on, settings can't be changed until the Orgasm session ends.  This is useful if someone else sets the rules.
 
@@ -170,10 +170,12 @@ The **Orgasms** counter shows how many were detected this session (for example "
 </p>
 
 The app records every session while it's connected and keeps it **in that browser only**; nothing is stored on the device.  Open **History** in the top bar to see your past sessions.  Each one has:
-- a chart of pleasure, arousal, edge threshold, pressure and resting pressure, with denials and orgasms marked
-- duration, edges, denials, orgasms, peak arousal, average pleasure, edge threshold and resting-pressure drift
+- a chart of pleasure, arousal, edge threshold, pressure and resting pressure, with denials and detected orgasms as solid lines and the orgasms you marked as dashed ones
+- duration, edges, denials, orgasms detected and marked, peak arousal, average pleasure, edge threshold and resting-pressure drift
 - **Export CSV** to keep or analyse the readings elsewhere
 - **Export detailed CSV**, if **Settings > App > Detailed recording** was on: the raw pressure at the EOM's full update rate (50 times a second) with the other readings alongside, for studying contraction patterns.  Needs firmware 3.6.0, and it takes more storage in the browser.
+
+While a session is recording, the main screen shows **Mark orgasm**.  Tap it the moment you have an orgasm: it records the real time with the session, so you can compare it with what the EOM detected.  It works while settings are locked, and taps within 5 seconds of the last one count once.  Both CSV exports have an `orgasm_marked` column at the end, with `1` on the row nearest each mark.
 
 A session starts when a mode runs or the intensity goes above 0, and ends 30 seconds after the EOM stops.  Sessions shorter than 15 seconds aren't kept, and the last 200 are saved.  Turn recording off under **Settings > App > Record sessions**.
 
@@ -446,7 +448,6 @@ This is a product of the open source community.  This will always be open source
 Planned:
 - "Check for updates" in the app, and firmware updates over Wi-Fi
 - Atom Echo button (stop/start, change mode, unlock settings)
-- Presets: save and load your settings under a name
 - Timed programs, e.g. 20 minutes of edging then a random chance of an orgasm, or a denial lottery
 - Keyholder mode: a PIN for settings and mode changes, and a view-only second connection
 
