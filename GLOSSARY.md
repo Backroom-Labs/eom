@@ -104,6 +104,9 @@ The EOM stopping all stimulation by itself because of a sensor fault, a lost con
 A state where settings and mode changes are refused, either during Orgasm mode or after an orgasm.
 _Avoid_: menu lock
 
+**Preset**:
+A named set of session settings saved in the app on one phone or browser, which can be loaded to apply them to the EOM.
+
 **Control command**:
 An instruction from the app or a remote to change what the EOM is doing: set the mode, set the motor, trigger arousal, reset the denied count, report a heart rate, or change a setting.
 _Avoid_: command (on its own, it also covers system requests such as restart or info), message, request
