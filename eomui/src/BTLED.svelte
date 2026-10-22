@@ -178,7 +178,7 @@
     let data: Uint8Array<ArrayBuffer> = RGBdata(deviceConfig?.name || null, r, g, b);
       
     isWriting = true;
-    console.log(`Writing RGB to ${deviceConfig?.name || "unknown device"}: ${r}, ${g}, ${b}: `, data);
+    console.log("Writing RGB to %s: %d, %d, %d:", deviceConfig?.name || "unknown device", r, g, b, data);
     try {
       const dataView = new DataView(data.buffer);
       await BleClient.writeWithoutResponse(BTLEDdeviceId, deviceConfig.service, deviceConfig.tx, dataView);
