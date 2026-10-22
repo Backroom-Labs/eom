@@ -2,12 +2,12 @@
   import { onMount } from "svelte";
   import { Capacitor } from "@capacitor/core";
   import { BleClient } from "@capacitor-community/bluetooth-le";
-  import BTLED from "./BTLED.svelte";
   import OSSM from "./OSSM.svelte";
   import DeviceList from "./ButtplugConnector.svelte";
   import FirmwareUpdate, { type UpdateLink } from "./FirmwareUpdate.svelte";
   import Gauge from "./lib/Gauge.svelte";
   import SettingControl from "./lib/SettingControl.svelte";
+  import PresetPicker from "./lib/PresetPicker.svelte";
   import SessionHistory from "./lib/SessionHistory.svelte";
   import { Recorder, listSessions, suggestHeartRate, suggestThreshold, type SessionSummary } from "./lib/history";
   import { O2Ring, type RingReading } from "./lib/o2ring";
@@ -171,7 +171,6 @@
   let wsUrlDraft = $state(prefs.wsUrl);
 
   // Toy integrations
-  let btledComponent: any;
   let ossmComponent: any;
   // Every connected Buttplug toy and OSSM. A stop switches them to Manual, which is easy to miss.
   const toys = new ToyList(() => showToast("Toys stopped and switched to Manual"));
@@ -186,7 +185,6 @@
   });
   let ossmDevices = $state([]);
   let deviceList = $state([]);
-  let BTLEDconnected = $state(false);
 
   // Heart rate from an O2Ring, connected alongside the EOM
   const ring = new O2Ring();
@@ -385,7 +383,8 @@
     await BleClient.write(btDeviceId, BT_SERVICE_UUID, BT_CONTROL_CHAR, new DataView(bytes.buffer));
   }
 
-  function changeSetting(key: string, value: SettingValue) {
+  // Resolves to false if a Bluetooth write failed. Loading a preset reports failures together, so it passes quiet.
+  async function changeSetting(key: string, value: SettingValue, quiet = false): Promise<boolean> {
     const def = SETTINGS_BY_KEY[key];
     const previous = config[key];
     config[key] = value;
@@ -397,12 +396,16 @@
       socket.send(JSON.stringify({ configSet: { [key]: wire } }));
     } else if (isBtConnected) {
       const enc = new TextEncoder();
-      btWrite(new Uint8Array([BT_CMD_SET_CONFIG, ...enc.encode(key), 0x3a, ...enc.encode(toWire(value))])).catch((err) => {
+      try {
+        await btWrite(new Uint8Array([BT_CMD_SET_CONFIG, ...enc.encode(key), 0x3a, ...enc.encode(toWire(value))]));
+      } catch (err) {
         console.error("Error sending setting via Bluetooth:", err);
         config[key] = previous;
-        showToast(`Couldn't change ${def?.label ?? key}`, "error");
-      });
+        if (!quiet) showToast(`Couldn't change ${def?.label ?? key}`, "error");
+        return false;
+      }
     }
+    return true;
   }
 
   function sendCommand(command: "setMode" | "setMotor" | "triggerArousal" | "resetDenied", value: number | string | null = null) {
@@ -673,9 +676,6 @@
     // dump hasn't arrived yet.
     if (configLoaded && data[7] !== Number(config.vibration_mode) && [1, 2, 3].includes(data[7])) {
       config.vibration_mode = data[7];
-    }
-    if (BTLEDconnected && btledComponent) {
-      btledComponent.writeRGB(data[10], data[11], data[12]).catch((err: any) => console.error("Failed to write RGB:", err));
     }
     pushReading(r);
   }
@@ -1345,6 +1345,19 @@
     {#each SETTINGS_TABS as tab}
       <!-- Inactive tabs stay mounted (hidden) so a firmware update keeps running when switching. -->
       <div role="tabpanel" hidden={settingsTab !== tab.id}>
+        {#if tab.id === "session"}
+          <section class="group">
+            <h3>Presets</h3>
+            <p class="muted">Save the Session, Stimulation, Detection, Clench and Heart rate settings under a name, and load them later. Saved in this browser only.</p>
+            <PresetPicker
+              {config}
+              canSave={configLoaded}
+              canLoad={connected && configLoaded && !locked}
+              change={(key, value) => changeSetting(key, value, true)}
+              notify={showToast}
+            />
+          </section>
+        {/if}
         {#each tab.groups as groupId}
           {@const group = SETTING_GROUPS.find((g) => g.id === groupId)}
           {#if group}
@@ -1465,6 +1478,7 @@
             <h3>About</h3>
             <dl class="facts">
               <dt>Connection</dt><dd>{isBtConnected ? "Bluetooth" : isWsConnected ? `Wi-Fi (${prefs.wsUrl})` : "None"}</dd>
+              <dt>App</dt><dd>{__APP_VERSION__}</dd>
               {#if fwVersion}<dt>Firmware</dt><dd>{fwVersion}</dd>{/if}
               <dt>Algorithm</dt><dd>{formatSetting(SETTINGS_BY_KEY.vibration_mode, config.vibration_mode)}</dd>
             </dl>
@@ -1509,10 +1523,6 @@
     <section class="group ossm">
       <h3>OSSM</h3>
       <OSSM bind:this={ossmComponent} bind:devices={ossmDevices} {toys} />
-    </section>
-    <section class="group">
-      <h3>Lights</h3>
-      <BTLED bind:this={btledComponent} bind:BTLEDconnected />
     </section>
   </div>
 </dialog>

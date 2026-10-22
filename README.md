@@ -102,7 +102,6 @@ The top bar has three more buttons: **History** (with a red dot while a session 
 The **Toys** panel connects other toys to the app so they follow the EOM:
 - Bluetooth toys through [Buttplug.io](https://buttplug.io/) (vibrators, strokers and many more)
 - An [OSSM](https://github.com/KinkyMakers/OSSM-hardware) stroker
-- A Bluetooth LED strip that shows the EOM's status colour
 
 Each toy control can follow **Pleasure**, **Arousal**, **Pressure** or **Denials**, or be set by hand in **Manual**.  **Range** limits how weak and how strong it goes, and **Invert** runs it from the top of its range down.  A toy starts on Manual when it connects, and gets back the range and invert you last set for it on this phone or browser.
 
@@ -118,18 +117,18 @@ While a toy is connected, the top of the main screen shows it with its level and
   <img src="doc/screenshots/settings-calibration.png" width="260" alt="Detection settings and calibration">
 </p>
 
-Every device setting is in the app, grouped into tabs.  Changes are sent to the device straight away and saved there, over Bluetooth or Wi-Fi.  Settings marked as needing a restart can be applied with **Restart device**.
+Every device setting is in the app, grouped into tabs.  Changes are sent to the device straight away and saved there, over Bluetooth or Wi-Fi.  Settings marked as needing a restart can be applied with **Restart device**.  **Presets** at the top of the Session tab save the Session, Stimulation, Detection, Clench and Heart rate settings under a name in this phone or browser, so you can load them again later; Safety and Connectivity settings are left as they are.
 
 |Tab|What's in it|
 |---|---|
-|**Session**|Algorithm, edging time and denials before orgasm, what happens after an orgasm, rest between orgasms, orgasms per session, settings lock during Orgasm mode|
+|**Session**|**Presets**, algorithm, edging time and denials before orgasm, what happens after an orgasm, rest between orgasms, orgasms per session, settings lock during Orgasm mode|
 |**Stimulation**|Maximum and starting intensity, ramp time, edge cooldown, random extra cooldown, minimum on time|
 |**Detection**|Edge and warning thresholds, sensor gain, pressure smoothing, update rate, **Calibration** (resting pressure, suggested threshold)|
 |**Clench**|Clench detection and orgasm detection, post-orgasm duration, settings lock after an orgasm, **Follow resting pressure**|
 |**Safety**|Stop on sensor fault, stop when disconnected, session time limit, output limit|
 |**Connectivity**|Wi-Fi (own network or join yours), network name and password, hostname, secure WebSocket, Bluetooth name, Bluetooth and Wi-Fi together|
 |**App**|Settings for this app only: start view, keep screen on, record sessions, pressure simulator, Apply pressure step|
-|**Device**|Firmware version, [firmware update over Bluetooth](#updating-the-device), restart|
+|**Device**|App and firmware versions, [firmware update over Bluetooth](#updating-the-device), restart|
 
 If **Lock settings during Orgasm mode** or **Lock settings after orgasm** is on, settings can't be changed until the Orgasm session ends.  This is useful if someone else sets the rules.
 
@@ -234,7 +233,7 @@ On boards with an RGB LED (WS2812/SK6812), while no automatic mode is running:
 |Solid green|App connected|
 |Flashing red|Stopped by a sensor fault|
 
-In Endless and Orgasm mode the LED shows the EOM's arousal colour instead.  This colour is also sent to the app and to a connected Bluetooth LED strip.
+In Endless and Orgasm mode the LED shows the EOM's arousal colour instead.  This colour is also sent to the app.
 
 ## Hardware
 #### [Build examples here](doc/building/building.md)
@@ -449,13 +448,11 @@ This is a product of the open source community.  This will always be open source
 Planned:
 - "Check for updates" in the app, and firmware updates over Wi-Fi
 - Atom Echo button (stop/start, change mode, unlock settings)
-- Presets: save and load your settings under a name
 - Timed programs, e.g. 20 minutes of edging then a random chance of an orgasm, or a denial lottery
 - Keyholder mode: a PIN for settings and mode changes, and a view-only second connection
 
 Older ideas:
 - connect to DG Labs Coyote
-- support for more bluetooth LED types
 - add build walkthrough to docs and more examples, pinouts and schematics
 - audio buzzer in the app for cooldown!
 - add a config save button so setting changes aren't immediately permanent (save toy settings also/separately?)

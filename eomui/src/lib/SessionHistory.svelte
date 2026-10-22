@@ -5,6 +5,7 @@
     csvFileName,
     deleteAllSessions,
     deleteSession,
+    formatDuration,
     loadRaw,
     loadSamples,
     toCsv,
@@ -48,12 +49,6 @@
     } finally {
       loading = false;
     }
-  }
-
-  function duration(ms: number) {
-    const m = Math.floor(ms / 60_000);
-    const s = Math.round((ms % 60_000) / 1000);
-    return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : m ? `${m}m ${s}s` : `${s}s`;
   }
 
   function when(t: number) {
@@ -226,7 +221,7 @@
       </ul>
     {/if}
     <dl class="stats">
-      <div><dt>Duration</dt><dd>{duration(s.end - s.start)}</dd></div>
+      <div><dt>Duration</dt><dd>{formatDuration(s.end - s.start)}</dd></div>
       <div><dt>Edges</dt><dd>{s.edges}</dd></div>
       <div><dt>Denials</dt><dd>{s.denials}</dd></div>
       <div><dt>Orgasms detected</dt><dd>{s.orgasms}{s.ruined ? " (ruined)" : ""}</dd></div>
@@ -270,7 +265,7 @@
           <button onclick={() => open(s)}>
             <span class="when">{when(s.start)}</span>
             <span class="facts">
-              {duration(s.end - s.start)} · {s.edges} edge{s.edges === 1 ? "" : "s"} · {s.denials} denied{s.orgasms ? ` · ${s.orgasms} orgasm${s.orgasms === 1 ? "" : "s"}` : ""}
+              {formatDuration(s.end - s.start)} · {s.edges} edge{s.edges === 1 ? "" : "s"} · {s.denials} denied{s.orgasms ? ` · ${s.orgasms} orgasm${s.orgasms === 1 ? "" : "s"}` : ""}
             </span>
           </button>
         </li>

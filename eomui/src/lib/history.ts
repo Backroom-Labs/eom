@@ -469,6 +469,15 @@ export function csvFileName(summary: SessionSummary): string {
   return `eom-session-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.csv`;
 }
 
+export function formatDuration(ms: number): string {
+  // Round once before splitting, so 59.8 s rolls over to the next minute instead of showing "60s".
+  const total = Math.round(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor(total / 60) % 60;
+  const s = total % 60;
+  return h ? `${h}h ${m}m` : m ? `${m}m ${s}s` : `${s}s`;
+}
+
 // -----------------------------------------------------------------------------------------------
 // Threshold suggestion
 

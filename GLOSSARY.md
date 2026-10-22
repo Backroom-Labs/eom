@@ -104,6 +104,9 @@ The EOM stopping all stimulation by itself because of a sensor fault, a lost con
 A state where settings and mode changes are refused, either during Orgasm mode or after an orgasm.
 _Avoid_: menu lock
 
+**Preset**:
+A named set of session settings saved in the app on one phone or browser, which can be loaded to apply them to the EOM.
+
 **Control command**:
 An instruction from the app or a remote to change what the EOM is doing: set the mode, set the motor, trigger arousal, reset the denied count, report a heart rate, or change a setting.
 _Avoid_: command (on its own, it also covers system requests such as restart or info), message, request
@@ -140,10 +143,6 @@ _Avoid_: step, speed
 **Toy strip**:
 The row of toy pills in the main screen header, shown while any toy is connected, that gives each toy's name, its strength and what its toy controls follow, with a stop button for each toy.
 _Avoid_: toy bar, toy panel
-
-**Light**:
-A Bluetooth light that mirrors the EOM's LED colour. Not a toy: it doesn't follow pleasure or arousal.
-_Avoid_: LED (the EOM's own light)
 
 ### Firmware updates
 
