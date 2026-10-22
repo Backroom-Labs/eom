@@ -29,6 +29,7 @@
   import { ToyList } from "./lib/toyList";
   import { followsText } from "./lib/toyControlView";
   import { savedPreferences } from "./lib/savedPreferences";
+  import { lockedCommands, WsSettings } from "./lib/wsSettings";
 
   // ---------------------------------------------------------------------------------------------
   // Types and constants
@@ -166,6 +167,7 @@
   let lastConnection: "bt" | "ws" = "bt";
   let btDeviceId = $state<string | null>(null);
   let socket: WebSocket | undefined;
+  const wsSettings = new WsSettings((frame) => socket?.send(frame));
   let syncDelta = 0;
   let toast = $state<{ text: string; tone: "info" | "error" } | null>(null);
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
@@ -405,29 +407,31 @@
     await BleClient.write(btDeviceId, BT_SERVICE_UUID, BT_CONTROL_CHAR, new DataView(bytes.buffer));
   }
 
-  // Resolves to false if a Bluetooth write failed. Loading a preset reports failures together, so it passes quiet.
+  // Resolves to false if the EOM refused it or a Bluetooth write failed. Loading a preset reports failures together, so it passes quiet.
   async function changeSetting(key: string, value: SettingValue, quiet = false): Promise<boolean> {
     const def = SETTINGS_BY_KEY[key];
     const previous = config[key];
     config[key] = value;
     if (def?.restart) restartNeeded = true;
 
+    let sent = true;
     if (isWsConnected && socket) {
       // The firmware reads booleans with cJSON valueint, so send them as 1/0.
-      const wire = typeof value === "boolean" ? (value ? 1 : 0) : value;
-      socket.send(JSON.stringify({ configSet: { [key]: wire } }));
+      // A Settings lock refusal is shown by handleWsMessage.
+      sent = await wsSettings.set(key, typeof value === "boolean" ? (value ? 1 : 0) : value);
     } else if (isBtConnected) {
       const enc = new TextEncoder();
       try {
         await btWrite(new Uint8Array([BT_CMD_SET_CONFIG, ...enc.encode(key), 0x3a, ...enc.encode(toWire(value))]));
       } catch (err) {
         console.error("Error sending setting via Bluetooth:", err);
-        config[key] = previous;
+        sent = false;
         if (!quiet) showToast(`Couldn't change ${def?.label ?? key}`, "error");
-        return false;
       }
     }
-    return true;
+    // Unless the user has changed it again since.
+    if (!sent && config[key] === value) config[key] = previous;
+    return sent;
   }
 
   function sendCommand(command: "setMode" | "setMotor" | "triggerArousal" | "resetDenied", value: number | string | null = null) {
@@ -604,6 +608,8 @@
       return;
     }
     if (!msg) return;
+    wsSettings.receive(msg);
+    if (lockedCommands(msg).length) showToast("Settings are locked", "error");
     if (msg.configList) applyConfig(msg.configList);
     if (msg.info?.fwVersion) {
       fwVersion = msg.info.fwVersion;
