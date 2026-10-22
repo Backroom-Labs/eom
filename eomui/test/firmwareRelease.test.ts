@@ -158,3 +158,18 @@ test("downloadRelease says so plainly when the image can't be fetched", async ()
     message: "Couldn't get the firmware (HTTP 404).",
   });
 });
+
+test("a connection that drops partway through still gets a plain sentence", async () => {
+  // A response whose body fails after the headers arrived.
+  const dropping = async () =>
+    new Response(
+      new ReadableStream({
+        pull(controller) {
+          controller.error(new TypeError("network error"));
+        },
+      }),
+    );
+  const offline = { message: "Couldn't reach the release site. Check your internet connection." };
+  await assert.rejects(checkForUpdate({ version: "3.6.0", board: "esp32dev" }, { fetch: dropping, baseUrl: BASE }), offline);
+  await assert.rejects(downloadRelease(imageEntry(), { fetch: dropping }), offline);
+});

@@ -1,6 +1,6 @@
 <script lang="ts">
   // Firmware update over BLE: a release found by Check for updates, or a firmware.bin chosen by hand.
-  import { bleUploader, readDeviceInfo, ERR_TIMEOUT, type DeviceInfo, type UploadStage } from './lib/firmwareUpload';
+  import { bleUploader, readDeviceInfo, OtaResult, type DeviceInfo, type UploadStage } from './lib/firmwareUpload';
   import { checkForUpdate, downloadRelease, RELEASES_URL, type ManifestEntry } from './lib/firmwareRelease';
 
   interface Props {
@@ -17,8 +17,6 @@
   const SIG_TRAILER_LEN = 128;
   const SIG_MAGIC = "EOMSIG1";
 
-  const ERR_NOT_SIGNED_FOR_BOARD = 0x1503;
-
   type ImageInfo = { version: string; board: string; signed: boolean };
 
   let info = $state(null) as DeviceInfo | null;
@@ -30,13 +28,20 @@
   let busy = $state(false);
   let progress = $state(0); // 0..1
   let status = $state("");
+  let checkGeneration = 0; // bumped when the EOM changes, so a check still running for the old one is dropped
 
   const errors: Record<number, string> = {
-    0x103: "The EOM is busy, or still checking the firmware it last installed. Try again in 30 seconds.",
-    0x104: "This file is the wrong size for the EOM.",
-    [ERR_TIMEOUT]: "The transfer timed out.",
-    0x10a: "This is older than the installed firmware. Tick \"Allow downgrade\" to install it anyway.",
-    [ERR_NOT_SIGNED_FOR_BOARD]: "The EOM rejected this file: it isn't signed firmware for this board.",
+    [OtaResult.BUSY]: "The EOM is busy, or still checking the firmware it last installed. Try again in 30 seconds.",
+    [OtaResult.WRONG_SIZE]: "This file is the wrong size for the EOM.",
+    [OtaResult.TIMEOUT]: "The transfer timed out.",
+    [OtaResult.OLDER]: "This is older than the installed firmware. Tick \"Allow downgrade\" to install it anyway.",
+    [OtaResult.NOT_SIGNED_FOR_BOARD]: "The EOM rejected this file: it isn't signed firmware for this board.",
+  };
+
+  // A release is signed with the release key, so an EOM that refuses one was built and signed by someone else.
+  const releaseErrors: Record<number, string> = {
+    [OtaResult.NOT_SIGNED_FOR_BOARD]:
+      "This EOM runs its own build, so it only accepts firmware signed with the same key. Install your own build, or flash a release over USB once.",
   };
 
   const stages: Record<UploadStage, string> = {
@@ -46,6 +51,7 @@
   };
 
   $effect(() => {
+    checkGeneration++;
     offer = null;
     if (connected && deviceId) {
       readDeviceInfo(deviceId).then((value) => (info = value));
@@ -100,36 +106,37 @@
 
   async function check() {
     if (!info) return;
+    const installed = info;
+    const generation = checkGeneration;
     checking = true;
     offer = null;
     status = "Checking for updates…";
     try {
-      const choice = await checkForUpdate(info, { fetch: (url) => fetch(url, { cache: "no-cache" }), baseUrl: RELEASES_URL });
+      const choice = await checkForUpdate(installed, { fetch: (url) => fetch(url, { cache: "no-cache" }), baseUrl: RELEASES_URL });
+      if (generation !== checkGeneration) return;
       if (choice.kind === "offer") {
         offer = choice.entry;
         status = `${choice.entry.version} is available.`;
       } else if (choice.kind === "up-to-date") {
-        status = `This EOM is up to date (${info.version}).`;
+        status = `This EOM is up to date (${installed.version}).`;
       } else {
-        status = `There's no release for this EOM's board (${info.board}).`;
+        status = `There's no release for this EOM's board (${installed.board}).`;
       }
     } catch (error: any) {
       console.error("Check for updates failed:", error);
-      status = error?.message ?? String(error);
+      if (generation === checkGeneration) status = error?.message ?? String(error);
     } finally {
       checking = false;
     }
   }
 
-  function errorMessage(err: number, fromRelease: boolean): string {
-    if (err === ERR_NOT_SIGNED_FOR_BOARD && fromRelease) {
-      return "This EOM runs its own build, so it only accepts firmware signed with the same key. Install your own build, or flash a release over USB once.";
-    }
-    return errors[err] ?? `The update failed (error 0x${(err >>> 0).toString(16)}).`;
-  }
+  type InstallOptions = {
+    allowDowngrade: boolean;
+    messages: Record<number, string>; // overrides for the EOM's result codes
+  };
 
-  // Sends bytes to the EOM, reporting progress in the panel. Leaves the panel idle whatever happens.
-  async function install(getImage: () => Promise<Uint8Array>, fromRelease: boolean) {
+  // Sends the image to the EOM, reporting progress in the panel. Leaves the panel idle whatever happens.
+  async function install(getImage: () => Promise<Uint8Array>, options: InstallOptions) {
     if (!deviceId || !info) return;
     const uploader = bleUploader(deviceId, info);
     busy = true;
@@ -137,13 +144,16 @@
     try {
       const bytes = await getImage();
       const result = await uploader.upload(bytes, {
-        allowDowngrade: fromRelease ? false : allowDowngrade,
+        allowDowngrade: options.allowDowngrade,
         onProgress: (fraction, stage) => {
           progress = fraction;
           status = stages[stage];
         },
       });
-      if (result !== 0) throw new Error(errorMessage(result, fromRelease));
+      if (result !== OtaResult.OK) {
+        const message = options.messages[result] ?? errors[result];
+        throw new Error(message ?? `The update failed (error 0x${(result >>> 0).toString(16)}).`);
+      }
       progress = 1;
       status = "Firmware installed. The EOM is restarting; reconnect in a few seconds.";
       image = null;
@@ -159,7 +169,7 @@
 
   function installFile() {
     const bytes = image;
-    if (bytes) install(async () => bytes, false);
+    if (bytes) install(async () => bytes, { allowDowngrade, messages: {} });
   }
 
   function installRelease() {
@@ -171,7 +181,7 @@
       const problem = imageProblem(parseImage(bytes), bytes);
       if (problem) throw new Error(problem);
       return bytes;
-    }, true);
+    }, { allowDowngrade: false, messages: releaseErrors });
   }
 </script>
 
@@ -189,7 +199,7 @@
   {#if offer}
     <button onclick={installRelease} disabled={busy || checking || !info.confirmed}>Install {offer.version}</button>
   {/if}
-  <input type="file" accept=".bin" disabled={busy} onchange={chooseFile} />
+  <input type="file" accept=".bin" disabled={busy || checking} onchange={chooseFile} />
   {#if imageInfo}
     <p>File: {imageInfo.version} ({imageInfo.board})</p>
   {/if}
@@ -197,7 +207,7 @@
     <input type="checkbox" bind:checked={allowDowngrade} disabled={busy} />
     Allow downgrade
   </label>
-  <button onclick={installFile} disabled={busy || !image || !info.confirmed}>Install</button>
+  <button onclick={installFile} disabled={busy || checking || !image || !info.confirmed}>Install</button>
   {#if busy || progress > 0}
     <progress value={progress} max="1" style="width: 100%;"></progress>
   {/if}

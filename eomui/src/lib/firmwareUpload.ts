@@ -10,14 +10,22 @@ export type UploadOptions = {
   onProgress: (fraction: number, stage: UploadStage) => void;
 };
 
-// Sends image and resolves with the EOM's result code: 0 when it installed the image,
-// otherwise an esp_err_t such as 0x10a (older than installed) or 0x1503 (not signed with its key).
-// Throws only if the transport itself fails.
+// The result codes the EOM sends back (esp_err_t values from src/system/ota.c and ble_ota.c).
+export const OtaResult = {
+  OK: 0,
+  BUSY: 0x103, // ESP_ERR_INVALID_STATE: busy, or still checking the last update
+  WRONG_SIZE: 0x104, // ESP_ERR_INVALID_SIZE
+  TIMEOUT: 0x107, // ESP_ERR_TIMEOUT
+  OLDER: 0x10a, // ESP_ERR_INVALID_VERSION: older than installed, and downgrade not allowed
+  NOT_SIGNED_FOR_BOARD: 0x1503, // ESP_ERR_OTA_VALIDATE_FAILED: not signed with this EOM's key
+} as const;
+
+// Sends image and resolves with an OtaResult code: OK when the EOM installed it, otherwise why not.
+// The app's own wait for the EOM timing out also resolves with TIMEOUT, as the EOM's does.
+// Throws if a call to the transport itself fails.
 export interface FirmwareUploader {
   upload(image: Uint8Array, options: UploadOptions): Promise<number>;
 }
-
-export const ERR_TIMEOUT = 0x107;
 
 const SERVICE_UUID = "00006969-0000-1000-8000-00805f9b34fb";
 const CONTROL_CHAR = "0000696d-0000-1000-8000-00805f9b34fb";
@@ -53,7 +61,6 @@ class Timeout extends Error {}
 export function bleUploader(deviceId: string, info: DeviceInfo): FirmwareUploader {
   return {
     async upload(bytes, { allowDowngrade, onProgress }) {
-      const id = deviceId;
       let sent = 0;
       let acked = 0;
       let resends = 0; // bumped on every RESEND, so an in-flight write knows its chunk was dropped
@@ -93,12 +100,12 @@ export function bleUploader(deviceId: string, info: DeviceInfo): FirmwareUploade
       }
 
       const abort = () =>
-        BleClient.write(id, SERVICE_UUID, CONTROL_CHAR, new DataView(new Uint8Array([CMD_ABORT]).buffer)).catch(() => {});
+        BleClient.write(deviceId, SERVICE_UUID, CONTROL_CHAR, new DataView(new Uint8Array([CMD_ABORT]).buffer)).catch(() => {});
 
       try {
-        await BleClient.startNotifications(id, SERVICE_UUID, CONTROL_CHAR, onEvent);
+        await BleClient.startNotifications(deviceId, SERVICE_UUID, CONTROL_CHAR, onEvent);
         if (Capacitor.getPlatform() === "android") {
-          await BleClient.requestConnectionPriority(id, ConnectionPriority.CONNECTION_PRIORITY_HIGH).catch(() => {});
+          await BleClient.requestConnectionPriority(deviceId, ConnectionPriority.CONNECTION_PRIORITY_HIGH).catch(() => {});
         }
 
         onProgress(0, "preparing");
@@ -108,7 +115,7 @@ export function bleUploader(deviceId: string, info: DeviceInfo): FirmwareUploade
         begin.setUint8(5, allowDowngrade ? 0x01 : 0x00);
         // Listen before writing: a refusal can arrive as soon as the write is acknowledged.
         const ready = waitForEvent(ERASE_TIMEOUT_MS);
-        await BleClient.write(id, SERVICE_UUID, CONTROL_CHAR, begin);
+        await BleClient.write(deviceId, SERVICE_UUID, CONTROL_CHAR, begin);
         await ready;
 
         // Runs until the RESULT event: a RESEND can still rewind after the last chunk went out.
@@ -125,17 +132,17 @@ export function bleUploader(deviceId: string, info: DeviceInfo): FirmwareUploade
           new DataView(packet.buffer).setUint32(0, offset, true);
           packet.set(bytes.subarray(offset, offset + n), 4);
           const generation = resends;
-          await BleClient.writeWithoutResponse(id, SERVICE_UUID, DATA_CHAR, new DataView(packet.buffer));
+          await BleClient.writeWithoutResponse(deviceId, SERVICE_UUID, DATA_CHAR, new DataView(packet.buffer));
           if (generation === resends) sent = offset + n;
         }
         if (result !== 0) await abort();
         return result;
       } catch (error) {
         await abort();
-        if (error instanceof Timeout) return ERR_TIMEOUT;
+        if (error instanceof Timeout) return OtaResult.TIMEOUT;
         throw error;
       } finally {
-        await BleClient.stopNotifications(id, SERVICE_UUID, CONTROL_CHAR).catch(() => {});
+        await BleClient.stopNotifications(deviceId, SERVICE_UUID, CONTROL_CHAR).catch(() => {});
       }
     },
   };

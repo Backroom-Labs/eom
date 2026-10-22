@@ -72,16 +72,23 @@ export function selectRelease(installed: Installed, manifest: Manifest): Release
 export type Fetch = (url: string) => Promise<Response>;
 export type ReleaseSource = { fetch: Fetch; baseUrl: string };
 
-// Fetches url, turning a network failure or a non-200 status into a sentence for the panel.
-async function get(fetch: Fetch, url: string, what: string): Promise<Response> {
+const OFFLINE = "Couldn't reach the release site. Check your internet connection.";
+
+// Fetches url and reads its body, turning a network failure (even partway through)
+// or a non-200 status into a sentence for the panel.
+async function get<T>(fetch: Fetch, url: string, what: string, read: (response: Response) => Promise<T>): Promise<T> {
   let response: Response;
   try {
     response = await fetch(url);
   } catch {
-    throw new Error("Couldn't reach the release site. Check your internet connection.");
+    throw new Error(OFFLINE);
   }
   if (!response.ok) throw new Error(`Couldn't get ${what} (HTTP ${response.status}).`);
-  return response;
+  try {
+    return await read(response);
+  } catch {
+    throw new Error(OFFLINE);
+  }
 }
 
 function isVersion(value: unknown): value is string {
@@ -119,8 +126,8 @@ export async function checkForUpdate(installed: Installed, source: ReleaseSource
   if (!isVersion(installed.version)) {
     throw new Error(`Can't check for updates: this EOM reports version "${installed.version}", which isn't a release version.`);
   }
-  const response = await get(source.fetch, manifestUrl(installed.version, source.baseUrl), "the release list");
-  return selectRelease(installed, parseManifest(await response.text()));
+  const text = await get(source.fetch, manifestUrl(installed.version, source.baseUrl), "the release list", (r) => r.text());
+  return selectRelease(installed, parseManifest(text));
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -130,8 +137,7 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
 
 // Downloads a release image and checks it against the manifest before anything is sent to the EOM.
 export async function downloadRelease(entry: ManifestEntry, source: { fetch: Fetch }): Promise<Uint8Array> {
-  const response = await get(source.fetch, entry.url, "the firmware");
-  const bytes = new Uint8Array(await response.arrayBuffer());
+  const bytes = new Uint8Array(await get(source.fetch, entry.url, "the firmware", (r) => r.arrayBuffer()));
   if (bytes.length !== entry.size) {
     throw new Error("The downloaded firmware is damaged (wrong size), so it wasn't installed. Try again.");
   }
