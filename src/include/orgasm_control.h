@@ -63,9 +63,8 @@ oc_bool_t orgasm_control_is_recording(void);
 // Note 03-27-24 M. Abata - Clarify the above?
 void orgasm_control_twitch_detect(void);
 
-// Post orgasm
-// TODO - Refactor post-orgasm and similar modes into post_orgasm_control.h, which I so
-//        generously provided a template for! Truly my generosity is boundless.
+// Orgasm mode, answered by orgasm_mode.h. Other tasks read the Settings lock with
+// status_snapshot_settings_locked().
 oc_bool_t orgasm_control_is_permit_orgasm_reached(void);
 oc_bool_t orgasm_control_is_post_orgasm_reached(void);
 void orgasm_control_permit_orgasm(int seconds);

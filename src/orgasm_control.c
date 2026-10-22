@@ -6,6 +6,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "heart_rate.h"
+#include "orgasm_mode.h"
 #include "safety.h"
 #include "status_snapshot.h"
 #include "system/websocket_handler.h"
@@ -25,11 +26,6 @@ static uint16_t orgasm_control_get_arousal_threshold(void);
 static uint8_t orgasm_control_get_orgasm_count(void);
 static uint8_t orgasm_control_get_arousal_sensitivity(void);
 static uint8_t orgasm_control_get_cooldown(void);
-static uint16_t orgasm_control_get_permit_orgasm_remaining_seconds(void);
-static oc_bool_t orgasm_control_is_menu_locked(void);
-static oc_after_orgasm_phase_t orgasm_control_get_after_orgasm_phase(void);
-static uint8_t orgasm_control_get_session_orgasms(void);
-static uint16_t orgasm_control_get_rest_remaining_seconds(void);
 static uint16_t orgasm_control_get_baseline(void);
 static uint32_t orgasm_control_get_raw_pressure(uint16_t* out, uint8_t n);
 static bool orgasm_control_is_hr_waiting(void);
@@ -81,25 +77,10 @@ static struct {
 } logger_state;
 
 static struct {
-    //  Post Orgasm Clench variables
-    long clench_pressure_threshold; //  4096?
-    int clench_duration;
-
-    // Autoedging Time and Post-Orgasm varables
-    unsigned long auto_edging_start_millis;
-    unsigned long post_orgasm_start_millis;
-    unsigned long post_orgasm_duration_millis;
+    long clench_pressure_threshold;
     unsigned long clench_start_millis;
     long clench_duration_millis;
-    oc_bool_t menu_is_locked;
-    oc_bool_t detected_orgasm;
-    int post_orgasm_duration_seconds;
-
-    // After-orgasm modes (Config.after_orgasm)
-    uint8_t session_orgasms;
-    unsigned long rest_start_millis; // Milking rest between rounds, 0 when not resting
-    oc_bool_t ruined;
-} post_orgasm_state;
+} clench_state;
 
 // Resting pressure, followed slowly so drift can be told apart from clenches.
 static struct {
@@ -122,20 +103,11 @@ volatile static struct {
     //event_handler_node_t* _h_orgasm;
 } orgasm_state = { 0 };
 
-// Orgasm mode rounds (Config.orgasm_chance). A round ends when its edging time or denial target is
-// reached, with one roll: won, an orgasm is permitted; lost, it's a denial and a new round starts.
-static struct {
-    unsigned long start_millis;
-    uint8_t denials;        // denials this round, for Config.max_denied
-    bool won;
-    uint8_t chance_denials; // lost rolls since Orgasm mode started
-} round_state;
-
 // static void _evt_orgasm_start(
 //     const char* evt, EVENT_HANDLER_ARG_TYPE eap, int eai, EVENT_HANDLER_ARG_TYPE hap
 // ) {
 //     if ( orgasm_control_is_permit_orgasm_reached() ) {
-//         post_orgasm_state.detected_orgasm = ocTRUE;
+//         orgasm_mode_orgasm_detected();
 //     }
 //     //orgasm_state.orgasm_count += 1;
 // }
@@ -169,7 +141,7 @@ void orgasm_control_set_pleasure_ex(uint8_t pleasure, bool use_motor) {
     if (pleasure > Config.max_motor_output) pleasure = Config.max_motor_output;
     if (pleasure > 0) {
         safety_clear();
-        post_orgasm_state.ruined = ocFALSE;
+        orgasm_mode_pleasure_set();
     }
 
     if (use_motor) {
@@ -210,7 +182,7 @@ void orgasm_control_init(void) {
     output_state.output_mode = OC_MANUAL;
     output_state.vibration_mode = Config.vibration_mode;
     output_state.edge_time_out = 10000;
-    post_orgasm_state.clench_pressure_threshold = 4096;    
+    clench_state.clench_pressure_threshold = 4096;    
     arousal_state.cooldown = 0; 
 
     running_average_init(&arousal_state.average, Config.pressure_smoothing);
@@ -319,7 +291,7 @@ static void orgasm_control_hr_orgasm_detect(void) {
     bool high_enough = Config.hr_orgasm_min_bpm == 0 || hr_state.orgasm_peak >= Config.hr_orgasm_min_bpm;
     if (high_enough && hr + Config.hr_orgasm_drop_bpm <= hr_state.orgasm_peak && output_state.pleasure > 0) {
         ESP_LOGI(TAG, "Orgasm detected from heart rate: %d -> %d bpm", hr_state.orgasm_peak, hr);
-        post_orgasm_state.detected_orgasm = ocTRUE;
+        orgasm_mode_orgasm_detected();
         hr_state.orgasm_peak = 0;
     }
 }
@@ -441,7 +413,7 @@ static void orgasm_control_deny(const vibration_mode_controller_t* controller) {
     arousal_state.cooldown = (Config.edge_delay * 1000) + output_state.random_additional_delay;  //calculate cooldown
     // Saturating, so many rounds can't wrap the count back to 0.
     if (orgasm_state.orgasm_count < UINT8_MAX) orgasm_state.orgasm_count += 1;
-    if (round_state.denials < UINT8_MAX) round_state.denials += 1;
+    orgasm_mode_denied();
     hr_state.peak_since_edge = heart_rate_get();
     ESP_LOGI(TAG, "Orgasm Denied! Total: %d", orgasm_state.orgasm_count);
     if (Config.max_additional_delay  != 0) {
@@ -449,43 +421,21 @@ static void orgasm_control_deny(const vibration_mode_controller_t* controller) {
     }
 }
 
-static void orgasm_control_start_round(void) {
-    round_state.start_millis = (esp_timer_get_time() / 1000UL);
-    round_state.denials = 0;
-    round_state.won = false;
-}
-
-static bool orgasm_control_is_round_target_reached(void) {
-    return (esp_timer_get_time() / 1000UL) >
-               round_state.start_millis + (Config.auto_edging_duration_minutes * 60 * 1000) ||
-           (Config.max_denied > 0 && Config.max_denied < 100 && round_state.denials > Config.max_denied);
-}
-
-// Rolls once per round, when its target is reached. A lost roll counts as the next round's first
-// denial, so that round permits after max_denied more.
+// A lost Orgasm chance roll is a denial.
 static void orgasm_control_update_round(void) {
-    if (output_state.output_mode != OC_ORGASM || round_state.won || !orgasm_control_is_round_target_reached()) {
-        return;
+    if (orgasm_mode_roll(esp_timer_get_time() / 1000UL)) {
+        orgasm_control_deny(get_vibration_mode_controller());
     }
-    arousal_state.update_flag = ocTRUE;
-    if (esp_random() % 100 < Config.orgasm_chance) {
-        round_state.won = true;
-        return;
-    }
-    ESP_LOGI(TAG, "Denied by chance (%d%%)", Config.orgasm_chance);
-    if (round_state.chance_denials < UINT8_MAX) round_state.chance_denials++;
-    orgasm_control_start_round();
-    orgasm_control_deny(get_vibration_mode_controller());
 }
 
-static void orgasm_control_update_pleasure() {
+static void orgasm_control_update_pleasure(orgasm_mode_output_t after_orgasm) {
     if (!output_state.control_motor) {
         orgasm_control_update_idle_led();
         return;
     }
 
-    // After an orgasm, orgasm_control_update_edging_time() owns the output.
-    if (orgasm_control_is_post_orgasm_reached() || post_orgasm_state.rest_start_millis > 0) {
+    // After an orgasm, orgasm_mode owns the output.
+    if (after_orgasm == ORGASM_MODE_POST_ORGASM || after_orgasm == ORGASM_MODE_RESTING) {
         return;
     }
 
@@ -570,150 +520,45 @@ static void orgasm_control_update_pleasure() {
     // }
 }
 
-// Ruin: stop everything as soon as the orgasm is detected.
-static void orgasm_control_ruin() {
-    ESP_LOGI(TAG, "Orgasm ruined");
-    post_orgasm_state.menu_is_locked = ocFALSE;
-    output_state.pleasure = 0;
-    arousal_state.cooldown = 0;
-    orgasm_control_set_output_mode(OC_MANUAL);
-    orgasm_control_set_pleasure(0);
-    post_orgasm_state.ruined = ocTRUE;
+static oc_after_orgasm_phase_t orgasm_control_get_after_orgasm_phase(void) {
+    orgasm_mode_status_t status;
+    orgasm_mode_status(esp_timer_get_time() / 1000UL, &status);
+    return status.phase;
 }
 
-// Milking: start the next round of edging after a rest. Unlike orgasm_control_set_output_mode()
-// this keeps the session's orgasm count and the menu lock.
-static void orgasm_control_start_milking_round() {
-    ESP_LOGI(TAG, "Milking: starting round %d", post_orgasm_state.session_orgasms + 1);
-    post_orgasm_state.rest_start_millis = 0;
-    post_orgasm_state.post_orgasm_start_millis = 0;
-    post_orgasm_state.detected_orgasm = ocFALSE;
-    post_orgasm_state.auto_edging_start_millis = (esp_timer_get_time() / 1000UL);
-    orgasm_control_start_round();
-    orgasm_state.orgasm_count = 0;
-    output_state.pleasure = 0;
-    output_state.motor_start_time = 0;
-    output_state.motor_stop_time = 0;
-    arousal_state.cooldown = 0;
-    arousal_state.update_flag = ocTRUE;
-}
-
-static void orgasm_control_update_edging_time() { // Edging+Orgasm timer
-    const vibration_mode_controller_t* controller = get_vibration_mode_controller();
-    // Make sure menu_is_locked is turned off in Manual mode
-    if (output_state.output_mode == OC_MANUAL) {
-        post_orgasm_state.menu_is_locked = ocFALSE;
-        post_orgasm_state.post_orgasm_duration_seconds = Config.post_orgasm_duration_seconds;
-        return;
-    }
-
-    // keep edging start time to current time as long as system is not in Orgasm mode 2
-    if (output_state.output_mode != OC_ORGASM) {
-        post_orgasm_state.auto_edging_start_millis = (esp_timer_get_time() / 1000UL);
-        post_orgasm_state.post_orgasm_start_millis = 0;
-    }
-
-    // Lock Menu if turned on. and in Edging_orgasm mode
-    if (Config.edge_menu_lock && !post_orgasm_state.menu_is_locked) {
-        // Lock only after 2 minutes
-        if ((esp_timer_get_time() / 1000UL) >
-            post_orgasm_state.auto_edging_start_millis + (2 * 60 * 1000)) {
-            post_orgasm_state.menu_is_locked = ocTRUE;
-            arousal_state.update_flag = ocTRUE;
-        }
-    }
-
-    // Milking: resting between rounds. Stay off, then start the next round of edging.
-    if (post_orgasm_state.rest_start_millis > 0) {
-        output_state.pleasure = 0;
-        if ((esp_timer_get_time() / 1000UL) >=
-            post_orgasm_state.rest_start_millis + (Config.milking_rest_seconds * 1000UL)) {
-            orgasm_control_start_milking_round();
-        }
-        return;
-    }
-
-    // Pre-Orgasm loop -- Orgasm is permited
-    if (orgasm_control_is_permit_orgasm_reached() && !orgasm_control_is_post_orgasm_reached()) {
-        if (output_state.control_motor) {
-            //orgasm_control_pause_control(); // make sure orgasm is now possible
-        }
-
+// Once an orgasm is permitted, and after one, orgasm_mode sets the output; this acts on what it says.
+static orgasm_mode_output_t orgasm_control_update_after_orgasm(void) {
+    if (orgasm_mode_is_permitted() && orgasm_control_get_after_orgasm_phase() == OC_PHASE_NONE) {
         orgasm_control_hr_orgasm_detect();
-
-        // now detect the orgasm to start post orgasm torture timer
-        if (post_orgasm_state.detected_orgasm) {
-            post_orgasm_state.detected_orgasm = ocFALSE;
-            if (post_orgasm_state.session_orgasms < UINT8_MAX) post_orgasm_state.session_orgasms++;
-            arousal_state.update_flag = ocTRUE;
-            ESP_LOGI(TAG, "Orgasm detected: %d this session", post_orgasm_state.session_orgasms);
-
-            if (Config.after_orgasm == AfterOrgasmRuin) {
-                orgasm_control_ruin();
-                return;
-            }
-
-            post_orgasm_state.post_orgasm_start_millis =
-                (esp_timer_get_time() / 1000UL); // Start Post orgasm torture timer
-            // Lock menu if turned on
-            if (Config.post_orgasm_menu_lock && !post_orgasm_state.menu_is_locked) {
-                post_orgasm_state.menu_is_locked = ocTRUE;
-                arousal_state.update_flag = ocTRUE;
-            }
-
-           // eom_hal_set_encoder_rgb(255, 0, 0);
-        } else {
-          //  eom_hal_set_encoder_rgb(0, 255, 0);
-        }
-
-        // raise pleasure to max. protect not to go higher than max
-        if (output_state.pleasure < Config.max_pleasure) {
-            update_check(output_state.pleasure, controller->increment());
-            //output_state.pleasure += 5;  //why 5?
-        } else {
-            update_check(output_state.pleasure, Config.max_pleasure);
-        }
     }
 
-    // Post Orgasm loop
-    if (orgasm_control_is_post_orgasm_reached()) {
-        post_orgasm_state.post_orgasm_duration_millis =
-            (post_orgasm_state.post_orgasm_duration_seconds * 1000);
+    float pleasure = output_state.pleasure;
+    orgasm_mode_output_t output = orgasm_mode_update(
+        esp_timer_get_time() / 1000UL, &output_state.pleasure, get_vibration_mode_controller()->increment
+    );
+    if (output_state.pleasure != pleasure) arousal_state.update_flag = ocTRUE;
 
-        // Detect if within post orgasm session
-        if ((esp_timer_get_time() / 1000UL) < (post_orgasm_state.post_orgasm_start_millis +
-                                               post_orgasm_state.post_orgasm_duration_millis)) {
-            output_state.pleasure = Config.max_pleasure;
-        } else {                                // Post_orgasm timer reached
-            if (output_state.pleasure > 0) { // Ramp down pleasure to 0
-                output_state.pleasure = output_state.pleasure - 1;  // why 1?
-            } else if (Config.after_orgasm == AfterOrgasmMilking &&
-                       (Config.milking_max_orgasms <= 0 ||
-                        post_orgasm_state.session_orgasms < Config.milking_max_orgasms)) {
-                // Milking: rest, then go again.
-                ESP_LOGI(TAG, "Milking: resting for %ds", Config.milking_rest_seconds);
-                post_orgasm_state.detected_orgasm = ocFALSE;
-                post_orgasm_state.post_orgasm_start_millis = 0;
-                unsigned long now = esp_timer_get_time() / 1000UL;
-                post_orgasm_state.rest_start_millis = now > 0 ? now : 1;
-                output_state.pleasure = 0;
-                arousal_state.cooldown = 0;
-                arousal_state.update_flag = ocTRUE;
-            } else {
-                post_orgasm_state.menu_is_locked = ocFALSE;
-                post_orgasm_state.detected_orgasm = ocFALSE;
-                output_state.pleasure = 0;
-                arousal_state.cooldown = 0;
-                orgasm_control_set_pleasure(output_state.pleasure);
-                orgasm_control_set_output_mode(OC_MANUAL);
-            }
-        }
+    switch (output) {
+    case ORGASM_MODE_RESTING:
+        arousal_state.cooldown = 0;
+        break;
+    case ORGASM_MODE_NEXT_ROUND:
+        // Unlike orgasm_control_set_output_mode(), this keeps the orgasm count and the Settings lock.
+        orgasm_state.orgasm_count = 0;
+        output_state.motor_start_time = 0;
+        output_state.motor_stop_time = 0;
+        arousal_state.cooldown = 0;
+        arousal_state.update_flag = ocTRUE;
+        break;
+    case ORGASM_MODE_STOP:
+        arousal_state.cooldown = 0;
+        orgasm_control_set_output_mode(OC_MANUAL);
+        orgasm_control_set_pleasure(0);
+        break;
+    default:
+        break;
     }
-    // Control output while motor control is paused
-    if (output_state.control_motor == OC_MANUAL) {
-        uint8_t pleasure = orgasm_control_get_pleasure();
-        orgasm_control_set_pleasure(pleasure);
-    }
+    return output;
 }
 
 /**
@@ -730,48 +575,48 @@ long orgasm_control_clench_detect(long p_check){
     if (Config.auto_baseline) {
         // Never below resting pressure + 1/2 sensitivity, so drift doesn't count as a clench.
         long floor = (long)baseline_state.baseline + Config.clench_pressure_sensitivity / 2;
-        if (post_orgasm_state.clench_pressure_threshold < floor) {
-            post_orgasm_state.clench_pressure_threshold = floor;
+        if (clench_state.clench_pressure_threshold < floor) {
+            clench_state.clench_pressure_threshold = floor;
         }
     }
     if (p_check >=
-        (post_orgasm_state.clench_pressure_threshold + Config.clench_pressure_sensitivity)) {
-        post_orgasm_state.clench_pressure_threshold =
+        (clench_state.clench_pressure_threshold + Config.clench_pressure_sensitivity)) {
+        clench_state.clench_pressure_threshold =
             (p_check - (Config.clench_pressure_sensitivity / 2));
     }
 
     // Start counting clench time if pressure over threshold
-    if (p_check >= post_orgasm_state.clench_pressure_threshold) {
-        post_orgasm_state.clench_duration_millis =
-            current_time - post_orgasm_state.clench_start_millis;
+    if (p_check >= clench_state.clench_pressure_threshold) {
+        clench_state.clench_duration_millis =
+            current_time - clench_state.clench_start_millis;
 
         // Orgasm detected
-        if (post_orgasm_state.clench_duration_millis >= Config.clench_time_to_orgasm_ms &&
+        if (clench_state.clench_duration_millis >= Config.clench_time_to_orgasm_ms &&
             !orgasm_detect) {
             orgasm_detect = true;
-            if ( orgasm_control_is_permit_orgasm_reached() ) {
+            if ( orgasm_mode_is_permitted() ) {
                 uint8_t hr = heart_rate_get();
                 if (Config.hr_orgasm_min_bpm > 0 && hr > 0 && hr < Config.hr_orgasm_min_bpm) {
                     ESP_LOGI(TAG, "Clench ignored: heart rate %d below %d", hr, Config.hr_orgasm_min_bpm);
                 } else {
-                    post_orgasm_state.detected_orgasm = ocTRUE;
+                    orgasm_mode_orgasm_detected();
                 }
             }
             //event_manager_dispatch(EVT_ORGASM_START, NULL, 0);    
         }
-        return post_orgasm_state.clench_duration_millis;
+        return clench_state.clench_duration_millis;
 
     } else {
         orgasm_detect = false;
-        post_orgasm_state.clench_start_millis = current_time;
-        post_orgasm_state.clench_duration_millis -= 150; // ms
-        if (post_orgasm_state.clench_duration_millis <= 0) {
-            post_orgasm_state.clench_duration_millis = 0;
+        clench_state.clench_start_millis = current_time;
+        clench_state.clench_duration_millis -= 150; // ms
+        if (clench_state.clench_duration_millis <= 0) {
+            clench_state.clench_duration_millis = 0;
             // clench pressure threshold value decays over time to a min of pressure + 1/2
             // sensitivity
             if ((p_check + (Config.clench_pressure_sensitivity / 2)) <
-                post_orgasm_state.clench_pressure_threshold) {
-                post_orgasm_state.clench_pressure_threshold *= 0.99;
+                clench_state.clench_pressure_threshold) {
+                clench_state.clench_pressure_threshold *= 0.99;
             }
         }
         return 0;
@@ -838,8 +683,7 @@ static void orgasm_control_update(void) {
     if (millis - arousal_state.last_update_ms > update_frequency_ms) {
         orgasm_control_update_round();
         orgasm_control_update_arousal();
-        orgasm_control_update_edging_time();
-        orgasm_control_update_pleasure();
+        orgasm_control_update_pleasure(orgasm_control_update_after_orgasm());
         safety_tick(arousal_state.pressure_value);
         arousal_state.last_update_ms = millis;
 
@@ -855,8 +699,8 @@ static void orgasm_control_update(void) {
                 orgasm_control_get_arousal(),
                 orgasm_control_get_pleasure(),
                 Config.sensitivity_threshold,
-                post_orgasm_state.clench_pressure_threshold,
-                post_orgasm_state.clench_duration_millis,
+                clench_state.clench_pressure_threshold,
+                clench_state.clench_duration_millis,
                 orgasm_state.orgasm_count
             );
 
@@ -975,24 +819,15 @@ void orgasm_control_set_output_mode(orgasm_output_mode_t mode) {
         output_state.motor_start_time = 0;
     }
     output_state.motor_stop_time = 0;
-    post_orgasm_state.auto_edging_start_millis = (esp_timer_get_time() / 1000UL);
-    post_orgasm_state.post_orgasm_start_millis = 0;
-    post_orgasm_state.rest_start_millis = 0;
+    orgasm_mode_set_mode(mode, esp_timer_get_time() / 1000UL);
     hr_state.waiting = false;
     hr_state.orgasm_peak = 0;
     arousal_state.memory = 0;
     if (mode != OC_MANUAL) {
-        // A new session: forget the last one's orgasms and clench baseline.
-        post_orgasm_state.session_orgasms = 0;
-        post_orgasm_state.ruined = ocFALSE;
-        post_orgasm_state.detected_orgasm = ocFALSE;
-        post_orgasm_state.clench_pressure_threshold = 4096;
+        // A new session: forget the last one's clench baseline.
+        clench_state.clench_pressure_threshold = 4096;
     }
-    orgasm_control_start_round();
-    if (mode == OC_ORGASM) {
-        orgasm_state.orgasm_count = 0;
-        round_state.chance_denials = 0;
-    }
+    if (mode == OC_ORGASM) orgasm_state.orgasm_count = 0;
 
     // if (old == OC_MANUAL) {
     //     const vibration_mode_controller_t* controller = get_vibration_mode_controller();
@@ -1015,81 +850,36 @@ void orgasm_control_resume_control() {
 }
 
 void orgasm_control_permit_orgasm(int seconds) {
-    post_orgasm_state.detected_orgasm = ocFALSE;
     orgasm_control_set_output_mode(OC_ORGASM);
-    post_orgasm_state.auto_edging_start_millis =
-        (esp_timer_get_time() / 1000UL) - (Config.auto_edging_duration_minutes * 60 * 1000);
-    post_orgasm_state.post_orgasm_duration_seconds = seconds;
-    round_state.won = true;  // permitted straight away, without a roll
+    orgasm_mode_permit(seconds, esp_timer_get_time() / 1000UL);
 }
 
 oc_bool_t orgasm_control_is_permit_orgasm_reached() {
-    return orgasm_control_get_output_mode() == OC_ORGASM && round_state.won ? ocTRUE : ocFALSE;
-}
-
-static uint16_t orgasm_control_get_permit_orgasm_remaining_seconds() {
-    if (output_state.output_mode != OC_ORGASM || orgasm_control_is_permit_orgasm_reached()) {
-        return 0;
-    } else {
-        long remaining_ms = (round_state.start_millis +
-                             (Config.auto_edging_duration_minutes * 60 * 1000)) -
-                            (esp_timer_get_time() / 1000UL);
-        // Rounded up and at least 1, so 0 always means permitted: the roll waits for the next update,
-        // and a lost roll can follow the last second.
-        if (remaining_ms < 1000) return 1;
-        return (uint16_t)((remaining_ms + 999) / 1000UL);
-    }
+    return orgasm_mode_is_permitted() ? ocTRUE : ocFALSE;
 }
 
 oc_bool_t orgasm_control_is_post_orgasm_reached() {
-    // Detect if after orgasm
-    if (post_orgasm_state.post_orgasm_start_millis > 0) {
-        return ocTRUE;
-    } else {
-        return ocFALSE;
-    }
-}
-
-static oc_after_orgasm_phase_t orgasm_control_get_after_orgasm_phase(void) {
-    if (post_orgasm_state.ruined) return OC_PHASE_RUINED;
-    if (post_orgasm_state.rest_start_millis > 0) return OC_PHASE_RESTING;
-    if (output_state.output_mode == OC_ORGASM && orgasm_control_is_post_orgasm_reached()) {
-        return OC_PHASE_POST_ORGASM;
-    }
-    return OC_PHASE_NONE;
+    return orgasm_control_get_after_orgasm_phase() == OC_PHASE_POST_ORGASM ? ocTRUE : ocFALSE;
 }
 
 static uint16_t orgasm_control_get_baseline(void) {
     return baseline_state.baseline < 0 ? 0 : (uint16_t)baseline_state.baseline;
 }
 
-static uint8_t orgasm_control_get_session_orgasms(void) {
-    return post_orgasm_state.session_orgasms;
-}
-
-static uint16_t orgasm_control_get_rest_remaining_seconds(void) {
-    if (post_orgasm_state.rest_start_millis == 0) return 0;
-    unsigned long end = post_orgasm_state.rest_start_millis + (Config.milking_rest_seconds * 1000UL);
-    unsigned long now = esp_timer_get_time() / 1000UL;
-    return now >= end ? 0 : (uint16_t)((end - now + 999) / 1000);
-}
-
-static oc_bool_t orgasm_control_is_menu_locked() {
-    return post_orgasm_state.menu_is_locked;
-};
-
 void orgasm_control_lock_menu(oc_bool_t value) {
-    post_orgasm_state.menu_is_locked = value;
+    orgasm_mode_lock_settings(value);
 }
 
 void orgasm_control_reset_denied(void) {
     orgasm_state.orgasm_count = 0;
-    round_state.denials = 0;
+    orgasm_mode_reset_denied();
 }
 
 // Everything the app is told about, gathered in one tick (status_snapshot.h).
 static void publish_status_snapshot(void) {
     RGBColor led = eom_hal_get_rgb_color();
+    orgasm_mode_status_t orgasm_mode;
+    orgasm_mode_status(esp_timer_get_time() / 1000UL, &orgasm_mode);
     status_snapshot_t s = {
         .millis = esp_timer_get_time() / 1000,
         .pressure = orgasm_control_get_last_pressure(),
@@ -1100,16 +890,16 @@ static void publish_status_snapshot(void) {
         .motor = orgasm_control_get_pleasure(),
         .cooldown = orgasm_control_get_cooldown(),
         .denied = orgasm_control_get_orgasm_count(),
-        .chance_denials = round_state.chance_denials,
+        .chance_denials = orgasm_mode.chance_denials,
         .mode = (uint8_t)orgasm_control_get_output_mode(),
         .mode_name = orgasm_control_get_output_mode_str(),
         .vibration_mode = (uint8_t)Config.vibration_mode,
-        .permit_s = orgasm_control_get_permit_orgasm_remaining_seconds(),
-        .menu_locked = orgasm_control_is_menu_locked(),
+        .permit_s = orgasm_mode.permit_s,
+        .menu_locked = orgasm_mode.settings_locked,
         .safety = (uint8_t)safety_get_stop_reason(),
-        .phase = (uint8_t)orgasm_control_get_after_orgasm_phase(),
-        .session_orgasms = orgasm_control_get_session_orgasms(),
-        .rest_s = orgasm_control_get_rest_remaining_seconds(),
+        .phase = (uint8_t)orgasm_mode.phase,
+        .session_orgasms = orgasm_mode.session_orgasms,
+        .rest_s = orgasm_mode.rest_s,
         .baseline = orgasm_control_get_baseline(),
         .hr = heart_rate_get(),
         .hr_waiting = orgasm_control_is_hr_waiting(),
