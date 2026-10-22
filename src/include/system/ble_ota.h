@@ -2,14 +2,14 @@
 #define __system__ble_ota_h
 
 #include "host/ble_gatt.h"
-#include "system/ota_session.h"
+#include "system/ota_transfer.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-// Firmware updates over BLE: a transport for system/ota_session.h, using two characteristics in the
+// Firmware updates over BLE: a transport for system/ota_transfer.h, using two characteristics in the
 // EOM service. Multi-byte values are little-endian.
 //
 // OTA control (GATTS_CHAR_OTA_CONTROL_UUID): read, write, notify
@@ -25,17 +25,15 @@ extern "C" {
 //          0x03 RESEND    value = the offset the device expects next; resume sending from there.
 //                         Sent after a gap in the data, and every second while no data arrives.
 //          0x04 RESULT    error 0: installed, the device restarts into it in a second.
-//                         Otherwise the update failed (or was refused) and the session is over.
+//                         Otherwise the update failed (or was refused) and is over.
 //
 // OTA data (GATTS_CHAR_OTA_DATA_UUID): write without response
 //   u32 offset, then image bytes (up to MTU - 7 of them)
 //
-// Flow control: the client keeps no more than BLE_OTA_WINDOW bytes beyond the last PROGRESS value
+// Flow control: the client keeps no more than OTA_WINDOW bytes beyond the last PROGRESS value
 // in flight. Data that arrives out of order (or that doesn't fit) is dropped and answered with
 // RESEND, and a stalled transfer is restarted with RESEND too, so lost packets are recovered. The
-// session ends if the client disconnects or stops sending for a while.
-
-#define BLE_OTA_WINDOW OTA_WINDOW
+// update ends if the client disconnects or stops sending for a while.
 
 #define BLE_OTA_CMD_BEGIN 0x01
 #define BLE_OTA_CMD_ABORT 0x02

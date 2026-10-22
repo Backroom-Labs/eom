@@ -1,7 +1,7 @@
 #ifndef __system__ws_ota_h
 #define __system__ws_ota_h
 
-#include "system/ota_session.h"
+#include "system/ota_transfer.h"
 #include "system/websocket_handler.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-// Firmware updates over Wi-Fi: a transport for system/ota_session.h on the WebSocket, mirroring
+// Firmware updates over Wi-Fi: a transport for system/ota_transfer.h on the WebSocket, mirroring
 // the BLE protocol (system/ble_ota.h) with the same events and result codes. The app downloads
 // and checks the image; the EOM never fetches firmware itself (ADR 0012).
 //
@@ -23,8 +23,7 @@ extern "C" {
 // Image data (binary frames):
 //   u32 offset (little-endian), then up to OTA_MAX_CHUNK image bytes.
 
-#define WS_OTA_OFFSET_LEN 4
-#define WS_OTA_MAX_FRAME (WS_OTA_OFFSET_LEN + OTA_MAX_CHUNK)
+#define WS_OTA_MAX_FRAME (OTA_OFFSET_LEN + OTA_MAX_CHUNK)
 
 void ws_ota_register(void);
 

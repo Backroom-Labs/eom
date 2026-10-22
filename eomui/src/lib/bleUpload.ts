@@ -2,7 +2,7 @@
 // service. The EOM's side is src/include/system/ble_ota.h (firmware).
 import { Capacitor } from "@capacitor/core";
 import { BleClient, ConnectionPriority } from "@capacitor-community/bluetooth-le";
-import { pushImage, type DeviceInfo, type FirmwareUploader, type OtaChannel } from "./otaProtocol.ts";
+import { offsetChunk, pushImage, type DeviceInfo, type FirmwareUploader, type OtaChannel } from "./otaProtocol.ts";
 
 const SERVICE_UUID = "00006969-0000-1000-8000-00805f9b34fb";
 const CONTROL_CHAR = "0000696d-0000-1000-8000-00805f9b34fb";
@@ -46,10 +46,7 @@ function bleChannel(deviceId: string, mtu: number): OtaChannel {
       await write(begin);
     },
     async sendChunk(offset, data) {
-      const packet = new Uint8Array(4 + data.length);
-      new DataView(packet.buffer).setUint32(0, offset, true);
-      packet.set(data, 4);
-      await BleClient.writeWithoutResponse(deviceId, SERVICE_UUID, DATA_CHAR, new DataView(packet.buffer));
+      await BleClient.writeWithoutResponse(deviceId, SERVICE_UUID, DATA_CHAR, new DataView(offsetChunk(offset, data).buffer));
     },
     abort: () => write(new Uint8Array([CMD_ABORT])),
   };

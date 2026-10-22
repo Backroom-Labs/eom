@@ -1,11 +1,8 @@
 // Run from eomui/: node --test test/*.test.ts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { wsUploader, readWsDeviceInfo, type OtaSocket } from "../src/lib/wsUpload.ts";
-import { OtaResult, type UploadStage } from "../src/lib/otaProtocol.ts";
-
-const WINDOW = 16 * 1024;
-const CHUNK = 4096;
+import { wsUploader, readWsDeviceInfo, WS_CHUNK_SIZE as CHUNK, type OtaSocket } from "../src/lib/wsUpload.ts";
+import { OtaResult, OTA_WINDOW as WINDOW, type UploadStage } from "../src/lib/otaProtocol.ts";
 
 // Plays the EOM's side of the Wi-Fi OTA protocol (src/include/system/ws_ota.h) on a fake socket.
 class FakeEom implements OtaSocket {

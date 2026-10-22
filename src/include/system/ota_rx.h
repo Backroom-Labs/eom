@@ -10,7 +10,7 @@ extern "C" {
 
 // Decides what to do with each chunk of image data that arrives during an update. Chunks carry
 // the offset they belong at; only the one the device expects next is written. Used by both
-// transports (see system/ota_session.h).
+// transports (see system/ota_transfer.h).
 
 typedef enum {
     OTA_RX_ACCEPT, // write it: next_offset has moved past it

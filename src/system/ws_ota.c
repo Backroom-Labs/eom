@@ -52,12 +52,12 @@ static command_err_t cmd_begin(cJSON* command, cJSON* response, websocket_client
     }
     bool allow_downgrade = cJSON_IsTrue(cJSON_GetObjectItem(command, "allowDowngrade"));
     // Whatever happens next, including a refusal, reaches the client as events.
-    ota_session_begin(&transport, client->fd, (size_t)size->valuedouble, allow_downgrade);
+    ota_transfer_begin(&transport, client->fd, (size_t)size->valuedouble, allow_downgrade);
     return CMD_OK;
 }
 
 static command_err_t cmd_abort(cJSON* command, cJSON* response, websocket_client_t* client) {
-    ota_session_abort(&transport, client->fd);
+    ota_transfer_abort(&transport, client->fd);
     return CMD_OK;
 }
 
@@ -72,11 +72,11 @@ void ws_ota_register(void) {
 }
 
 void ws_ota_on_binary(int fd, const uint8_t* frame, size_t len) {
-    if (len <= WS_OTA_OFFSET_LEN) return;
+    if (len <= OTA_OFFSET_LEN) return;
     size_t offset = (size_t)frame[0] | (size_t)frame[1] << 8 | (size_t)frame[2] << 16 | (size_t)frame[3] << 24;
-    ota_session_data(&transport, fd, offset, frame + WS_OTA_OFFSET_LEN, len - WS_OTA_OFFSET_LEN);
+    ota_transfer_data(&transport, fd, offset, frame + OTA_OFFSET_LEN, len - OTA_OFFSET_LEN);
 }
 
 void ws_ota_on_close(int fd) {
-    ota_session_abort(&transport, fd);
+    ota_transfer_abort(&transport, fd);
 }

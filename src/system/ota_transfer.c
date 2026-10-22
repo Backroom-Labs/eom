@@ -1,4 +1,4 @@
-#include "system/ota_session.h"
+#include "system/ota_transfer.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -7,8 +7,9 @@
 #include "freertos/task.h"
 #include "system/ota.h"
 #include "system/ota_rx.h"
+#include <inttypes.h>
 
-static const char* TAG = "ota_session";
+static const char* TAG = "ota_transfer";
 
 // Room for a full window plus the chunk that crosses it.
 #define RX_BUFFER_SIZE (OTA_WINDOW + OTA_MAX_CHUNK)
@@ -20,11 +21,11 @@ static const char* TAG = "ota_session";
 #define IDLE_TIMEOUT_MS (20 * 1000)
 
 // The transport's task fills rx; update_task() drains it into ota_write(). The lock guards
-// starting and ending a session and the chunk rule, so a transport never writes to a buffer
+// starting and ending a transfer and the chunk rule, so a transport never writes to a buffer
 // that's being freed.
 static SemaphoreHandle_t s_lock;
 static struct {
-    TaskHandle_t task; // non-NULL while a session runs
+    TaskHandle_t task; // non-NULL while a transfer runs
     StreamBufferHandle_t rx;
     const ota_transport_t* transport;
     uint32_t client;
@@ -87,7 +88,7 @@ static esp_err_t receive_image(void) {
     return ota_end();
 }
 
-static void end_session(void) {
+static void end_transfer(void) {
     xSemaphoreTake(s_lock, portMAX_DELAY);
     s.ready = false;
     vStreamBufferDelete(s.rx);
@@ -103,9 +104,15 @@ static void update_task(void* arg) {
         notify(OTA_EVT_READY, ESP_OK, 0);
         err = receive_image();
         ota_abort(); // no-op unless the image is unfinished
+        ESP_LOGI(
+            TAG,
+            "Heap after the transfer: %" PRIu32 " bytes free, lowest since boot %" PRIu32,
+            esp_get_free_heap_size(),
+            esp_get_minimum_free_heap_size()
+        );
     }
     notify(OTA_EVT_RESULT, err, 0);
-    end_session();
+    end_transfer();
 
     if (err == ESP_OK) {
         // Let the result go out first.
@@ -115,7 +122,7 @@ static void update_task(void* arg) {
     vTaskDelete(NULL);
 }
 
-esp_err_t ota_session_begin(
+esp_err_t ota_transfer_begin(
     const ota_transport_t* transport, uint32_t client, size_t image_size, bool allow_downgrade
 ) {
     esp_err_t err = ESP_OK;
@@ -154,9 +161,11 @@ esp_err_t ota_session_begin(
     return ESP_OK;
 }
 
-void ota_session_data(
+void ota_transfer_data(
     const ota_transport_t* transport, uint32_t client, size_t offset, const uint8_t* data, size_t len
 ) {
+    bool resend = false;
+    size_t resend_from = 0;
     xSemaphoreTake(s_lock, portMAX_DELAY);
     if (is_owner(transport, client) && s.ready && !s.abort) {
         switch (ota_rx_chunk(&s.rx_state, offset, len, xStreamBufferSpacesAvailable(s.rx))) {
@@ -164,22 +173,27 @@ void ota_session_data(
             xStreamBufferSend(s.rx, data, len, 0);
             break;
         case OTA_RX_RESEND:
-            notify(OTA_EVT_RESEND, ESP_OK, s.rx_state.next_offset);
+            resend = true;
+            resend_from = s.rx_state.next_offset;
             break;
         case OTA_RX_DROP:
             break;
         }
     }
     xSemaphoreGive(s_lock);
+    // Sent outside the lock: a Wi-Fi send can block while the socket is backed up.
+    if (resend) transport->notify(client, OTA_EVT_RESEND, ESP_OK, resend_from);
 }
 
-void ota_session_abort(const ota_transport_t* transport, uint32_t client) {
+void ota_transfer_abort(const ota_transport_t* transport, uint32_t client) {
+    xSemaphoreTake(s_lock, portMAX_DELAY);
     if (is_owner(transport, client)) {
         ESP_LOGW(TAG, "Update over %s ended by the client", transport->name);
         s.abort = true;
     }
+    xSemaphoreGive(s_lock);
 }
 
-void ota_session_init(void) {
+void ota_transfer_init(void) {
     s_lock = xSemaphoreCreateMutex();
 }

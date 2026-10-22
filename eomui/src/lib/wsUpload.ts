@@ -1,6 +1,6 @@
 // Firmware updates over Wi-Fi: the protocol in otaProtocol.ts on the EOM's WebSocket.
 // The EOM's side is src/include/system/ws_ota.h (firmware).
-import { OtaEvent, pushImage, type DeviceInfo, type FirmwareUploader, type OtaChannel } from "./otaProtocol.ts";
+import { OtaEvent, offsetChunk, pushImage, type DeviceInfo, type FirmwareUploader, type OtaChannel } from "./otaProtocol.ts";
 
 // The parts of a WebSocket the update uses.
 export type OtaSocket = {
@@ -9,7 +9,7 @@ export type OtaSocket = {
   removeEventListener(type: "message" | "close", listener: (event: any) => void): void;
 };
 
-const CHUNK_SIZE = 4096; // OTA_MAX_CHUNK
+export const WS_CHUNK_SIZE = 4096; // OTA_MAX_CHUNK
 const INFO_TIMEOUT_MS = 5000;
 
 const EVENTS: Record<string, number> = {
@@ -49,7 +49,7 @@ export function readWsDeviceInfo(socket: OtaSocket): Promise<DeviceInfo | null> 
 
 function wsChannel(socket: OtaSocket): OtaChannel {
   return {
-    chunkSize: CHUNK_SIZE,
+    chunkSize: WS_CHUNK_SIZE,
     async listen(onEvent, onLost) {
       const onMessage = (event: MessageEvent) => {
         const ota = parse(event)?.ota;
@@ -67,10 +67,7 @@ function wsChannel(socket: OtaSocket): OtaChannel {
       socket.send(JSON.stringify({ otaBegin: { size, allowDowngrade } }));
     },
     async sendChunk(offset, data) {
-      const frame = new Uint8Array(4 + data.length);
-      new DataView(frame.buffer).setUint32(0, offset, true);
-      frame.set(data, 4);
-      socket.send(frame);
+      socket.send(offsetChunk(offset, data));
     },
     async abort() {
       socket.send(JSON.stringify({ otaAbort: null }));

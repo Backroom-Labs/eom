@@ -1,15 +1,13 @@
 #include "system/ble_ota.h"
-#include "esp_app_desc.h"
 #include "esp_log.h"
 #include "host/ble_hs.h"
 #include "system/ota.h"
-#include "system/ota_session.h"
+#include "system/ota_transfer.h"
+#include "version.h"
 #include <stdio.h>
 #include <string.h>
 
 static const char* TAG = "ble_ota";
-
-#define OFFSET_LEN 4
 
 uint16_t ble_ota_control_val_handle;
 uint16_t ble_ota_data_val_handle;
@@ -54,7 +52,7 @@ static int begin(uint16_t conn_handle, const uint8_t* buf, size_t len) {
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     }
     // A refusal reaches the client as a RESULT event, so the write itself succeeds.
-    if (ota_session_begin(&transport, conn_handle, get_le32(buf + 1), len >= 6 && (buf[5] & 0x01)) == ESP_OK) {
+    if (ota_transfer_begin(&transport, conn_handle, get_le32(buf + 1), len >= 6 && (buf[5] & 0x01)) == ESP_OK) {
         request_fast_connection(conn_handle);
     }
     return 0;
@@ -66,7 +64,7 @@ static int read_info(uint16_t conn_handle, struct os_mbuf* om) {
         json,
         sizeof(json),
         "{\"version\":\"%s\",\"board\":\"%s\",\"mtu\":%u,\"maxSize\":%zu,\"confirmed\":%s}",
-        esp_app_get_description()->version,
+        EOM_VERSION,
         ota_get_board(),
         ble_att_mtu(conn_handle),
         ota_max_image_size(),
@@ -92,7 +90,7 @@ int ble_ota_control_access(
         case BLE_OTA_CMD_BEGIN:
             return begin(conn_handle, buf, len);
         case BLE_OTA_CMD_ABORT:
-            ota_session_abort(&transport, conn_handle);
+            ota_transfer_abort(&transport, conn_handle);
             return 0;
         default:
             return BLE_ATT_ERR_REQ_NOT_SUPPORTED;
@@ -113,14 +111,14 @@ int ble_ota_data_access(
         return BLE_ATT_ERR_UNLIKELY;
     }
     uint16_t len = OS_MBUF_PKTLEN(ctxt->om);
-    if (len <= OFFSET_LEN || len > sizeof(buf) || os_mbuf_copydata(ctxt->om, 0, len, buf) != 0) {
+    if (len <= OTA_OFFSET_LEN || len > sizeof(buf) || os_mbuf_copydata(ctxt->om, 0, len, buf) != 0) {
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
     }
     // Writes without response get no reply, so anything unwanted is simply dropped.
-    ota_session_data(&transport, conn_handle, get_le32(buf), buf + OFFSET_LEN, len - OFFSET_LEN);
+    ota_transfer_data(&transport, conn_handle, get_le32(buf), buf + OTA_OFFSET_LEN, len - OTA_OFFSET_LEN);
     return 0;
 }
 
 void ble_ota_on_disconnect(uint16_t conn_handle) {
-    ota_session_abort(&transport, conn_handle);
+    ota_transfer_abort(&transport, conn_handle);
 }

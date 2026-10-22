@@ -1,5 +1,5 @@
 // Sending a firmware image to the EOM, the same over BLE (bleUpload.ts) and Wi-Fi (wsUpload.ts).
-// The EOM's side is src/include/system/ota_session.h (firmware).
+// The EOM's side is src/include/system/ota_transfer.h (firmware).
 
 export type UploadStage = "preparing" | "sending" | "verifying";
 
@@ -8,7 +8,7 @@ export type UploadOptions = {
   onProgress: (fraction: number, stage: UploadStage) => void;
 };
 
-// The result codes the EOM sends back (esp_err_t values from src/system/ota.c and ota_session.c).
+// The result codes the EOM sends back (esp_err_t values from src/system/ota.c and ota_transfer.c).
 export const OtaResult = {
   OK: 0,
   BUSY: 0x103, // ESP_ERR_INVALID_STATE: busy (an update is running, over either transport), or still checking the last update
@@ -29,6 +29,14 @@ export interface FirmwareUploader {
 export type DeviceInfo = { version: string; board: string; maxSize: number; confirmed: boolean; mtu?: number };
 
 export const OTA_WINDOW = 16 * 1024;
+
+// A chunk as it goes on the wire, over either transport: its u32 little-endian offset, then the bytes.
+export function offsetChunk(offset: number, data: Uint8Array): Uint8Array {
+  const frame = new Uint8Array(4 + data.length);
+  new DataView(frame.buffer).setUint32(0, offset, true);
+  frame.set(data, 4);
+  return frame;
+}
 
 export const OtaEvent = { READY: 0x01, PROGRESS: 0x02, RESEND: 0x03, RESULT: 0x04 } as const;
 export type OtaEventMessage = { event: number; error: number; value: number };

@@ -1,4 +1,4 @@
-// Fakes for everything ws_ota.c calls: the WebSocket handler, the OTA session and ota.h.
+// Fakes for everything ws_ota.c calls: the WebSocket handler, the OTA transfer and ota.h.
 
 #include "fakes.h"
 
@@ -8,7 +8,7 @@
 
 #include "cJSON.h"
 #include "system/ota.h"
-#include "system/ota_session.h"
+#include "system/ota_transfer.h"
 
 char fake_log[1024];
 char fake_sent[256];
@@ -61,7 +61,7 @@ char* fake_run(const char* name, const char* json, int fd) {
     return out;
 }
 
-esp_err_t ota_session_begin(
+esp_err_t ota_transfer_begin(
     const ota_transport_t* transport, uint32_t client, size_t image_size, bool allow_downgrade
 ) {
     log_call("begin:%u:%zu:%d ", (unsigned)client, image_size, allow_downgrade);
@@ -69,13 +69,13 @@ esp_err_t ota_session_begin(
     return ESP_OK;
 }
 
-void ota_session_data(
+void ota_transfer_data(
     const ota_transport_t* transport, uint32_t client, size_t offset, const uint8_t* data, size_t len
 ) {
     log_call("data:%u:%zu:%zu ", (unsigned)client, offset, len);
 }
 
-void ota_session_abort(const ota_transport_t* transport, uint32_t client) {
+void ota_transfer_abort(const ota_transport_t* transport, uint32_t client) {
     log_call("abort:%u ", (unsigned)client);
 }
 
