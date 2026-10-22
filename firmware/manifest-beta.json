@@ -1,0 +1,19 @@
+{
+  "version": "3.7.0-beta.3",
+  "firmware": [
+    {
+      "env": "esp32dev",
+      "version": "3.7.0-beta.3",
+      "url": "https://backroom-labs.github.io/eom/firmware/3.7.0-beta.3/firmware-esp32dev.bin",
+      "sha256": "c27b6c988c6797fba7546f4a94d28b281f59c7fca1a854f8a8c37e903f29c4ca",
+      "size": 1251472
+    },
+    {
+      "env": "m5stack_atom_echo",
+      "version": "3.7.0-beta.3",
+      "url": "https://backroom-labs.github.io/eom/firmware/3.7.0-beta.3/firmware-m5stack_atom_echo.bin",
+      "sha256": "70185a5f7025e80f0be3fdbf512737ae3f4f4e530b77b150ee65fae1ad9bf407",
+      "size": 1271968
+    }
+  ]
+}
