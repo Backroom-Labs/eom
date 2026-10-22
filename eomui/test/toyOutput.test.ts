@@ -1,7 +1,7 @@
 // Run from eomui/: node --test test/*.test.ts
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { ToyFollower, toyLevels, commandGapMs, disconnectToy, DEFAULT_MIN, DEFAULT_MAX, type ToyControl, type ToyReading } from "../src/lib/toyOutput.ts";
+import { ToyFollower, toyLevels, commandGapMs, disconnectToy, DEFAULT_MIN, DEFAULT_MAX, type FollowMode, type ToyControl, type ToyReading } from "../src/lib/toyOutput.ts";
 import { buttplugToy, type ButtplugToyControl } from "../src/lib/toyList.ts";
 import { ButtplugClientDevice } from "buttplug";
 import { fakeToy, settle, type FakeOutput } from "./fakeToy.ts";
@@ -31,14 +31,14 @@ async function tick(ms: number) {
   await settle();
 }
 
-const newControl = (mode: string, feature: ButtplugToyControl["feature"], type: ButtplugToyControl["type"] = "Vibrate"): ButtplugToyControl =>
+const newControl = (mode: FollowMode, feature: ButtplugToyControl["feature"], type: ButtplugToyControl["type"] = "Vibrate"): ButtplugToyControl =>
   ({ type, mode, invert: false, min: DEFAULT_MIN, max: DEFAULT_MAX, feature });
 
 type Sent = { t: number; level: number };
 
 // A Buttplug toy with one or more controls following readings, one reading every READING_MS.
 // Returns the commands that reached the toy.
-async function run(mode: string, readings: ToyReading[], gapMs?: number, controls = 1): Promise<Sent[]> {
+async function run(mode: FollowMode, readings: ToyReading[], gapMs?: number, controls = 1): Promise<Sent[]> {
   const t = fakeToy(VIBRATOR, gapMs);
   const list = Array.from({ length: controls }, () => newControl(mode, t.feature));
   const toy = buttplugToy({ ...wrap(t.toy), controls: list });

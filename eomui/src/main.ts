@@ -4,7 +4,7 @@ import App from './App.svelte'
 import { Buffer } from 'buffer'
 
 // Polyfill Buffer for Buttplug library
-globalThis.Buffer = Buffer
+Object.assign(globalThis, { Buffer })
 
 if ('serviceWorker' in navigator) { navigator.serviceWorker.register('sw.js'); }
 

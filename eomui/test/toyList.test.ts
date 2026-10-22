@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ToyList, buttplugToy, ossmToy, type Toy, type ButtplugToyControl } from "../src/lib/toyList.ts";
 import { ossmControls } from "../src/lib/ossmControls.ts";
-import { type ToyReading } from "../src/lib/toyOutput.ts";
+import { type FollowMode, type ToyReading } from "../src/lib/toyOutput.ts";
 import { OssmWriter } from "../src/lib/ossmWriter.ts";
 import { fakeToy, settle } from "./fakeToy.ts";
 import { setRangeEnd, toyControlChanged } from "../src/lib/toyControlView.ts";
@@ -36,7 +36,7 @@ const AROUSAL_FULL: ToyReading = { motor: 0, arousal: 4096, pressure: 0, denied:
 
 // A Buttplug toy with one vibrator following arousal, on the real client; shown records what
 // the toy tells the screen.
-function fakeButtplugToy(mode = "arousal") {
+function fakeButtplugToy(mode: FollowMode = "arousal") {
   const t = fakeToy({ Vibrate: { Value: [0, 20] } });
   let stops = 0;
   const control: ButtplugToyControl = { type: "Vibrate", mode, invert: false, min: 0, max: 255, feature: t.feature };
@@ -191,6 +191,8 @@ test("an OSSM connected mid-session keeps the speed it was already at", async ()
       writes.push([name, value]);
       ossm.controls[name].value = value;
     },
+    async stop() {},
+    cancel() {},
   };
   ossm.controls.speed.value = 30; // as read from the OSSM when it connected
   toys.add(ossmToy(ossm));

@@ -1,0 +1,19 @@
+{
+  // The node --test suites in test/, and the src/lib modules they import.
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    // androidVersion.test.ts imports scripts/android-version.mjs.
+    "allowJs": true,
+    "noEmit": true,
+    "strict": true,
+    "moduleDetection": "force"
+  },
+  "include": ["test/**/*.ts"]
+}
