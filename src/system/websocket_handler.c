@@ -140,6 +140,7 @@ void websocket_run_command(
             command_err_t err = cmd->func(data, response, client);
             if (err != CMD_OK) {
                 cJSON_AddNumberToObject(response, "errno", err);
+                if (err == CMD_LOCKED) _json_add_error(response, "SETTINGS LOCKED");
             }
             return;
         }

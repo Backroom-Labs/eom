@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "heart_rate.h"
 #include "orgasm_control.h"
+#include "status_snapshot.h"
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -120,6 +121,11 @@ static cc_result_t bad_arg(const char* what) {
     return CC_BAD_ARG;
 }
 
+static cc_result_t locked(const char* what) {
+    ESP_LOGW(TAG, "Settings locked, refused %s", what);
+    return CC_LOCKED;
+}
+
 // Remotes send percentages; above 100 is treated as 100.
 static int percent_to_motor(uint8_t percent) {
     return (int)floor(MIN(percent, 100) * 2.55);
@@ -137,7 +143,13 @@ cc_result_t control_command_from_ble(const uint8_t* buf, size_t len) {
         size_t n = 0;
         bool has_motor = len >= 5;
         // A motor value means manual, whatever the mode byte says.
-        cmds[n++] = (command_t){ .kind = ENSURE_MODE, .value = has_motor ? OC_MANUAL : buf[1], .motor2 = -1 };
+        int mode = has_motor ? OC_MANUAL : buf[1];
+        // Packets repeat the current mode, so only a change to another mode counts as choosing one.
+        bool chooses_mode = mode != OC_MANUAL && mode != orgasm_control_get_output_mode();
+        if ((chooses_mode || buf[3]) && status_snapshot_settings_locked()) {
+            return locked(buf[3] ? "BLE reset denied" : "BLE mode change");
+        }
+        cmds[n++] = (command_t){ .kind = ENSURE_MODE, .value = mode, .motor2 = -1 };
         if (buf[2]) cmds[n++] = (command_t){ .kind = TRIGGER_AROUSAL, .motor2 = -1 };
         if (buf[3]) cmds[n++] = (command_t){ .kind = RESET_DENIED, .motor2 = -1 };
         if (has_motor) cmds[n++] = (command_t){ .kind = SET_MOTOR, .value = buf[4], .motor2 = len >= 6 ? buf[5] : -1 };
@@ -147,6 +159,7 @@ cc_result_t control_command_from_ble(const uint8_t* buf, size_t len) {
         // "name:value", no quotes
         const uint8_t* colon = memchr(buf + 1, ':', len - 1);
         if (colon == NULL || colon == buf + 1) return bad_arg("BLE setting without a name:value");
+        if (status_snapshot_settings_locked()) return locked("BLE setting");
         size_t name_len = colon - (buf + 1);
         size_t value_len = len - name_len - 2;
         char name[name_len + 1];
@@ -198,6 +211,7 @@ cc_result_t control_command_from_ws(const char* name, const cJSON* value) {
         if (!cJSON_IsString(value)) return bad_arg("setMode without a mode name");
         orgasm_output_mode_t mode = orgasm_control_str_to_output_mode(value->valuestring);
         if (mode < 0 || mode >= _OC_MODE_MAX) return bad_arg("setMode mode name");
+        if (mode != OC_MANUAL && status_snapshot_settings_locked()) return locked("setMode");
         return one(SET_MODE, mode);
     }
     if (!strcmp(name, "setMotor")) {
@@ -205,7 +219,10 @@ cc_result_t control_command_from_ws(const char* name, const cJSON* value) {
         return one(SET_MOTOR, value->valueint);
     }
     if (!strcmp(name, "triggerArousal")) return one(TRIGGER_AROUSAL, 0);
-    if (!strcmp(name, "resetDenied")) return one(RESET_DENIED, 0);
+    if (!strcmp(name, "resetDenied")) {
+        if (status_snapshot_settings_locked()) return locked("resetDenied");
+        return one(RESET_DENIED, 0);
+    }
     if (!strcmp(name, "heartRate")) {
         if (!cJSON_IsNumber(value)) return bad_arg("heartRate value");
         int bpm = value->valueint;
@@ -217,6 +234,7 @@ cc_result_t control_command_from_ws(const char* name, const cJSON* value) {
     }
     if (!strcmp(name, "configSet")) {
         if (!cJSON_IsObject(value)) return bad_arg("configSet without an object");
+        if (status_snapshot_settings_locked()) return locked("configSet");
         // Apply every valid entry; report a bad one after trying the rest.
         cc_result_t result = CC_OK;
         const cJSON* item;

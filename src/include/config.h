@@ -123,6 +123,7 @@ enum command_err {
     CMD_FAIL = -1,
     CMD_OK = 0,
     CMD_ARG_ERR = 1,
+    CMD_LOCKED = 2,  // refused because the Settings lock is on
     CMD_SUBCOMMAND_NOT_FOUND = 253,
     CMD_SUBCOMMAND_REQUIRED = 254,
     CMD_NOT_FOUND = 255,

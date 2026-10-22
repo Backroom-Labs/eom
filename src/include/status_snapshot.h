@@ -54,6 +54,9 @@ void status_snapshot_publish(const status_snapshot_t* snapshot);
 // Copy out the latest snapshot (all zeros before the first tick).
 void status_snapshot_get(status_snapshot_t* out);
 
+// Whether the Settings lock was on in the latest snapshot. Any task can call this.
+bool status_snapshot_settings_locked(void);
+
 // Add the WebSocket "readings" fields to an object.
 void status_snapshot_to_json(const status_snapshot_t* snapshot, cJSON* readings);
 

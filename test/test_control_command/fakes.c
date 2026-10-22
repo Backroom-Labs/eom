@@ -11,10 +11,12 @@
 #include "eom-hal-esp32.h"
 #include "heart_rate.h"
 #include "orgasm_control.h"
+#include "status_snapshot.h"
 
 char fake_log[2048];
 orgasm_output_mode_t fake_mode = OC_MANUAL;
 bool fake_config_accepts = true;
+bool fake_settings_locked = false;
 
 static void log_call(const char* fmt, ...) {
     size_t used = strlen(fake_log);
@@ -29,6 +31,7 @@ void fake_reset(void) {
     fake_log[0] = '\0';
     fake_mode = OC_MANUAL;
     fake_config_accepts = true;
+    fake_settings_locked = false;
 }
 
 orgasm_output_mode_t orgasm_control_get_output_mode(void) {
@@ -80,4 +83,8 @@ bool set_config_value(const char* option, const char* value, bool* require_reboo
 
 void config_enqueue_save(long save_at_ms) {
     log_call("save");
+}
+
+bool status_snapshot_settings_locked(void) {
+    return fake_settings_locked;
 }
