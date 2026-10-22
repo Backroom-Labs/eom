@@ -1459,6 +1459,7 @@
             <h3>About</h3>
             <dl class="facts">
               <dt>Connection</dt><dd>{isBtConnected ? "Bluetooth" : isWsConnected ? `Wi-Fi (${prefs.wsUrl})` : "None"}</dd>
+              <dt>App</dt><dd>{__APP_VERSION__}</dd>
               {#if fwVersion}<dt>Firmware</dt><dd>{fwVersion}</dd>{/if}
               <dt>Algorithm</dt><dd>{formatSetting(SETTINGS_BY_KEY.vibration_mode, config.vibration_mode)}</dd>
             </dl>
