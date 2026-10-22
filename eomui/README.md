@@ -25,9 +25,8 @@ It can be run locally if you prefer.  It should be backwards compatible with the
 
 ## Building 
 - from the eomui directory run ```npm install``` then ```npm run build```
-- the output ```index.html``` will automatically overwrite the version in the /data directory of the EOM project.
-- using platformIO tools ```build filesystem``` then ```upload filesystem``` to update your device
-- the EOM code itself doesn't need to be built/uploaded again
+- the output is ```eomui/public/index.html```, which isn't committed; CI builds it for releases
+- the app is hosted separately from the EOM, so app changes never need a device update
 
 ## Development
 - run ```vite```

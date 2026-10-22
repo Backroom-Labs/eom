@@ -149,6 +149,7 @@ If **Lock settings during Orgasm mode** or **Lock settings after orgasm** is on,
 |1|Ramp-Stop|Pleasure ramps up, stopping abruptly on arousal threshold crossing.  It's very frustrating.|
 |2|Depletion (default)|Pleasure ramps up, but is reduced for even small arousal spikes.  This makes for a constant interaction with your arousal rather than just a sudden cutoff when it's over the limit.|
 |3|Enhancement|This is the opposite of edging, it will make you orgasm faster.  Pleasure ramps up as arousal increases, holding a peak for ramp_time.  Not compatible with Orgasm mode.|
+|4|Pattern|Unfinished: the firmware accepts it but it does nothing yet, and the app doesn't offer it.|
 
 ### After an orgasm
 
@@ -205,7 +206,7 @@ While it's connected, the app shows a **Heart rate** gauge and chart line, recor
 |Setting|What it does|
 |---|---|
 |**Wait for heart rate to settle**|After an edge, the cooldown continues until your heart rate has dropped this many bpm from its peak, after **Edge delay** and for at most **Longest wait for heart rate**.  The app shows "Waiting for your heart rate to settle".|
-|**Edge zone heart rate**|At or above this heart rate the edge threshold is lowered by **Edge zone threshold drop**, so edges are caught earlier when you're close.  The arousal gauge shows the lowered threshold.|
+|**Edge zone heart rate**|At or above this heart rate the edge threshold is lowered by **Edge zone threshold drop**, so edges are caught earlier when you're close.  The arousal gauge then marks the lowered threshold next to the edge threshold; the chart and the reported threshold stay at the edge threshold.|
 |**Orgasm heart rate**|In Orgasm mode, a clench only counts as an orgasm if your heart rate is at least this high.|
 |**Detect orgasm from heart rate drop**|Experimental.  Once an orgasm is permitted, also count one when your heart rate falls this far within 30 seconds of its peak, without a clench.|
 
