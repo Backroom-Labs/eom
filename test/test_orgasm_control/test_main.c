@@ -407,6 +407,19 @@ static void test_the_roll_happens_once_per_round(void) {
     TEST_ASSERT_EQUAL_MESSAGE(2, fake_random_calls, "rolls once permitted");
 }
 
+// The roll waits for the next update, but the snapshot is published every tick: until a roll is
+// won it never reports 0 seconds, which the app reads as permitted.
+static void test_seconds_until_permitted_stay_above_0_until_a_roll_is_won(void) {
+    fake_random = ROLL_LOSES;
+    start_orgasm_mode(50);
+    run_s(54);
+    for (int t = 0; t < 2000; t += TICK_MS) {
+        run_ms(TICK_MS);
+        TEST_ASSERT_GREATER_THAN_MESSAGE(0, fake_snapshot.permit_s, "seconds until permitted");
+        TEST_ASSERT_LESS_OR_EQUAL_MESSAGE(60, fake_snapshot.permit_s, "seconds until permitted");
+    }
+}
+
 static void test_permit_orgasm_permits_at_once_without_a_roll(void) {
     Config.orgasm_chance = 0;
     Config.auto_edging_duration_minutes = 30;
@@ -450,6 +463,7 @@ int main(void) {
     RUN_TEST(test_a_lost_roll_then_max_denied_more_denials_permits_on_a_won_roll);
     RUN_TEST(test_at_0_percent_no_orgasm_is_ever_permitted);
     RUN_TEST(test_the_roll_happens_once_per_round);
+    RUN_TEST(test_seconds_until_permitted_stay_above_0_until_a_roll_is_won);
     RUN_TEST(test_permit_orgasm_permits_at_once_without_a_roll);
     RUN_TEST(test_denial_counts_stop_at_255);
     return UNITY_END();
