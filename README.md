@@ -450,7 +450,6 @@ Planned:
 - Presets: save and load your settings under a name
 - Timed programs, e.g. 20 minutes of edging then a random chance of an orgasm, or a denial lottery
 - Keyholder mode: a PIN for settings and mode changes, and a view-only second connection
-- MQTT / Home Assistant
 
 Older ideas:
 - connect to DG Labs Coyote
