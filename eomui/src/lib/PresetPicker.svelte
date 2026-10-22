@@ -5,6 +5,8 @@
 
   interface Props {
     config: Record<string, SettingValue>;
+    // Keys in the EOM's config dump (null offline); presets touch only these.
+    reported: ReadonlySet<string> | null;
     // The device's settings have been received.
     canSave: boolean;
     // Connected, settings received and no Settings lock.
@@ -13,7 +15,7 @@
     change: (key: string, value: SettingValue) => Promise<boolean>;
     notify: (text: string, tone?: "info" | "error") => void;
   }
-  let { config, canSave, canLoad, change, notify }: Props = $props();
+  let { config, reported, canSave, canLoad, change, notify }: Props = $props();
 
   const presets = new Presets(savedPreferences);
   let names = $state(presets.names());
@@ -24,7 +26,7 @@
     const name = prompt("Save the current session settings as:", selected)?.trim();
     if (!name) return;
     if (names.includes(name) && !confirm(`Replace the preset "${name}" with the current settings?`)) return;
-    presets.save(name, config);
+    presets.save(name, config, reported);
     names = presets.names();
     selected = name;
     notify(`Saved preset "${name}"`);
@@ -36,7 +38,7 @@
     loading = true;
     const failed: string[] = [];
     // One at a time, so Bluetooth writes don't overlap.
-    for (const [key, value] of Object.entries(settingsToLoad(values, config))) {
+    for (const [key, value] of Object.entries(settingsToLoad(values, config, reported))) {
       if (!(await change(key, value))) failed.push(SETTINGS_BY_KEY[key]?.label ?? key);
     }
     loading = false;

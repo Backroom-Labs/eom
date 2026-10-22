@@ -1417,6 +1417,7 @@
             <p class="muted">Save the Session, Stimulation, Detection, Clench and Heart rate settings under a name, and load them later. Saved in this browser only.</p>
             <PresetPicker
               {config}
+              reported={reportedKeys}
               canSave={configLoaded}
               canLoad={connected && configLoaded && !locked}
               change={(key, value) => changeSetting(key, value, true)}
