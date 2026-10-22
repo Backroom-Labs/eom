@@ -1034,7 +1034,8 @@ static uint16_t orgasm_control_get_permit_orgasm_remaining_seconds() {
         long remaining_ms = (round_state.start_millis +
                              (Config.auto_edging_duration_minutes * 60 * 1000)) -
                             (esp_timer_get_time() / 1000UL);
-        return (uint16_t)(remaining_ms / 1000UL);
+        // Rounded up, so 0 always means permitted: a lost roll can follow the last second.
+        return (uint16_t)((remaining_ms + 999) / 1000UL);
     }
 }
 

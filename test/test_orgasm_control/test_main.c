@@ -345,6 +345,8 @@ static void test_at_100_percent_an_orgasm_is_permitted_at_the_edging_time(void) 
     run_s(54);
     TEST_ASSERT_FALSE_MESSAGE(orgasm_control_is_permit_orgasm_reached(), "permitted a second early");
     TEST_ASSERT_INT_WITHIN_MESSAGE(1, 1, fake_snapshot.permit_s, "seconds until permitted");
+    run_ms(900);
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.permit_s, "seconds until permitted, under a second before");
     run_s(2);
     TEST_ASSERT_TRUE_MESSAGE(orgasm_control_is_permit_orgasm_reached(), "permitted at the edging time");
     TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.permit_s, "seconds until permitted");
