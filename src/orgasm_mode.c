@@ -29,6 +29,14 @@ static struct {
     uint8_t chance_denials; // lost rolls since Orgasm mode started
 } round_state;
 
+static unsigned long edging_time_ms(void) {
+    return Config.auto_edging_duration_minutes * 60 * 1000UL;
+}
+
+static uint16_t seconds_rounded_up(unsigned long ms) {
+    return (uint16_t)((ms + 999) / 1000);
+}
+
 static void start_round(unsigned long now_ms) {
     round_state.start_ms = now_ms;
     round_state.denials = 0;
@@ -36,7 +44,7 @@ static void start_round(unsigned long now_ms) {
 }
 
 static bool is_round_target_reached(unsigned long now_ms) {
-    return now_ms > round_state.start_ms + (Config.auto_edging_duration_minutes * 60 * 1000) ||
+    return now_ms > round_state.start_ms + edging_time_ms() ||
            (Config.max_denied > 0 && Config.max_denied < 100 && round_state.denials > Config.max_denied);
 }
 
@@ -57,7 +65,7 @@ void orgasm_mode_set_mode(orgasm_output_mode_t mode, unsigned long now_ms) {
 void orgasm_mode_permit(int post_orgasm_s, unsigned long now_ms) {
     state.orgasm_detected = false;
     // As if the edging time had passed: the edge_menu_lock timer counts from edging_start_ms.
-    state.edging_start_ms = now_ms - (Config.auto_edging_duration_minutes * 60 * 1000);
+    state.edging_start_ms = now_ms - edging_time_ms();
     state.post_orgasm_s = post_orgasm_s;
     round_state.won = true;
 }
@@ -189,21 +197,20 @@ orgasm_mode_action_t orgasm_mode_update(unsigned long now_ms, float* pleasure, f
 
 static uint16_t permit_seconds(unsigned long now_ms) {
     if (state.mode != OC_ORGASM || orgasm_mode_is_permitted()) return 0;
-    long remaining_ms =
-        (round_state.start_ms + (Config.auto_edging_duration_minutes * 60 * 1000)) - now_ms;
+    long remaining_ms = (round_state.start_ms + edging_time_ms()) - now_ms;
     // Rounded up and at least 1, so 0 always means permitted: the roll waits for the next update,
     // and a lost roll can follow the last second.
     if (remaining_ms < 1000) return 1;
-    return (uint16_t)((remaining_ms + 999) / 1000UL);
+    return seconds_rounded_up(remaining_ms);
 }
 
 static uint16_t rest_seconds(unsigned long now_ms) {
     if (state.rest_start_ms == 0) return 0;
     unsigned long end = state.rest_start_ms + (Config.milking_rest_seconds * 1000UL);
-    return now_ms >= end ? 0 : (uint16_t)((end - now_ms + 999) / 1000);
+    return now_ms >= end ? 0 : seconds_rounded_up(end - now_ms);
 }
 
-static oc_after_orgasm_phase_t phase(void) {
+oc_after_orgasm_phase_t orgasm_mode_phase(void) {
     if (state.ruined) return OC_PHASE_RUINED;
     if (state.rest_start_ms > 0) return OC_PHASE_RESTING;
     if (state.mode == OC_ORGASM && state.post_orgasm_start_ms > 0) return OC_PHASE_POST_ORGASM;
@@ -212,7 +219,7 @@ static oc_after_orgasm_phase_t phase(void) {
 
 void orgasm_mode_status(unsigned long now_ms, orgasm_mode_status_t* out) {
     *out = (orgasm_mode_status_t){
-        .phase = phase(),
+        .phase = orgasm_mode_phase(),
         .permit_s = permit_seconds(now_ms),
         .rest_s = rest_seconds(now_ms),
         .orgasms = state.orgasms,

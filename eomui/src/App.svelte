@@ -96,6 +96,8 @@
   const BT_CMD_RESTART = 0x04;
   const BT_CMD_SIM_PRESSURE = 0x05;
   const BT_CMD_HEART_RATE = 0x06;
+  // Status bytes: [29] counts the raw values that start here, 2 bytes each.
+  const BT_STATUS_RAW_START = 30;
 
   const isNativeMobile = Capacitor.getPlatform() === "ios" || Capacitor.getPlatform() === "android";
 
@@ -673,6 +675,7 @@
 
   function handleBtReading(value: DataView) {
     const data = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+    const rawEnd = data.length > 29 ? BT_STATUS_RAW_START + 2 * data[29] : Infinity;
     const r: Reading = {
       pressure: data[0] * 16, // scale to 0-4096
       arousal: data[1] * 16,
@@ -695,12 +698,12 @@
       hrWait: data.length > 26 ? (data[26] & 0x01) !== 0 : false,
       hrZone: data.length > 26 ? (data[26] & 0x02) !== 0 : false,
       // added in 3.8.0: rolls lost since Orgasm mode started, after the raw values
-      chanceDenials: data.length > 29 && data.length > 30 + 2 * data[29] ? data[30 + 2 * data[29]] : 0,
+      chanceDenials: data.length > rawEnd ? data[rawEnd] : 0,
       // added in 3.6.0: [27-28] raw reading number (low 16 bits), [29] count, then that many u16
-      raw: data.length > 29 && data.length >= 30 + 2 * data[29]
+      raw: data.length >= rawEnd
         ? {
             end: unwrapRawSeq((data[27] << 8) | data[28]),
-            p: Array.from({ length: data[29] }, (_, i) => (data[30 + 2 * i] << 8) | data[31 + 2 * i]),
+            p: Array.from({ length: data[29] }, (_, i) => (data[BT_STATUS_RAW_START + 2 * i] << 8) | data[BT_STATUS_RAW_START + 2 * i + 1]),
             hz: rawHz(),
           }
         : undefined,

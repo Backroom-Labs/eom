@@ -59,6 +59,7 @@ void orgasm_mode_lock_settings(bool locked);
 orgasm_mode_action_t orgasm_mode_update(unsigned long now_ms, float* pleasure, float (*increment)(void));
 
 bool orgasm_mode_is_permitted(void);
+oc_after_orgasm_phase_t orgasm_mode_phase(void);
 void orgasm_mode_status(unsigned long now_ms, orgasm_mode_status_t* out);
 
 #ifdef __cplusplus

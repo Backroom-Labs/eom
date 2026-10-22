@@ -520,15 +520,9 @@ static void orgasm_control_update_pleasure(orgasm_mode_action_t after_orgasm) {
     // }
 }
 
-static oc_after_orgasm_phase_t orgasm_control_get_after_orgasm_phase(void) {
-    orgasm_mode_status_t status;
-    orgasm_mode_status(esp_timer_get_time() / 1000UL, &status);
-    return status.phase;
-}
-
 // Once an orgasm is permitted, and after one, orgasm_mode sets pleasure; this does what it says next.
 static orgasm_mode_action_t orgasm_control_update_after_orgasm(void) {
-    if (orgasm_mode_is_permitted() && orgasm_control_get_after_orgasm_phase() == OC_PHASE_NONE) {
+    if (orgasm_mode_is_permitted() && orgasm_mode_phase() == OC_PHASE_NONE) {
         orgasm_control_hr_orgasm_detect();
     }
 
@@ -859,7 +853,7 @@ oc_bool_t orgasm_control_is_permit_orgasm_reached() {
 }
 
 oc_bool_t orgasm_control_is_post_orgasm_reached() {
-    return orgasm_control_get_after_orgasm_phase() == OC_PHASE_POST_ORGASM ? ocTRUE : ocFALSE;
+    return orgasm_mode_phase() == OC_PHASE_POST_ORGASM ? ocTRUE : ocFALSE;
 }
 
 static uint16_t orgasm_control_get_baseline(void) {
