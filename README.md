@@ -102,7 +102,6 @@ The top bar has three more buttons: **History** (with a red dot while a session 
 The **Toys** panel connects other toys to the app so they follow the EOM:
 - Bluetooth toys through [Buttplug.io](https://buttplug.io/) (vibrators, strokers and many more)
 - An [OSSM](https://github.com/KinkyMakers/OSSM-hardware) stroker
-- A Bluetooth LED strip that shows the EOM's status colour
 
 Each toy control can follow **Pleasure**, **Arousal**, **Pressure** or **Denials**, or be set by hand in **Manual**.  **Range** limits how weak and how strong it goes, and **Invert** runs it from the top of its range down.  A toy starts on Manual when it connects, and gets back the range and invert you last set for it on this phone or browser.
 
@@ -232,7 +231,7 @@ On boards with an RGB LED (WS2812/SK6812), while no automatic mode is running:
 |Solid green|App connected|
 |Flashing red|Stopped by a sensor fault|
 
-In Endless and Orgasm mode the LED shows the EOM's arousal colour instead.  This colour is also sent to the app and to a connected Bluetooth LED strip.
+In Endless and Orgasm mode the LED shows the EOM's arousal colour instead.  This colour is also sent to the app.
 
 ## Hardware
 #### [Build examples here](doc/building/building.md)
@@ -453,7 +452,6 @@ Planned:
 
 Older ideas:
 - connect to DG Labs Coyote
-- support for more bluetooth LED types
 - add build walkthrough to docs and more examples, pinouts and schematics
 - audio buzzer in the app for cooldown!
 - add a config save button so setting changes aren't immediately permanent (save toy settings also/separately?)
