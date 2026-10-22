@@ -30,7 +30,7 @@
   let connecting = $state(false);
   let lightName = $state("");
   let error = $state<string | null>(null);
-  let keepAliveInterval: NodeJS.Timeout | null = null;
+  let keepAliveInterval: ReturnType<typeof setInterval> | null = null;
 
   async function connectBluetooth() {
     try {

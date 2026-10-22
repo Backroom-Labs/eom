@@ -33,7 +33,8 @@ test("the value pill shows the toy level the toy was set to, in %", () => {
 
 // Inverted, slider 0 means 100%, but until something is sent the toy is still off.
 test("a toy control that hasn't sent anything shows 0%", () => {
-  assert.equal(toyLevelPercent({ mode: "manual", invert: true, levels: 20 }), 0);
+  const control = { mode: "manual", invert: true, levels: 20 } as const;
+  assert.equal(toyLevelPercent(control), 0);
 });
 
 test("moving one end of the range sets it", () => {

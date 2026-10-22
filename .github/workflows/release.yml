@@ -56,6 +56,25 @@ jobs:
 
       - run: pio test -e native
 
+  # The app's type check (Svelte, Vite config, tests) and its node --test suites.
+  app-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: eomui
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: eomui/package-lock.json
+
+      - run: npm ci
+      - run: npm run check
+      - run: node --test test/*.test.ts
+
   build:
     needs: [envs, test]
     runs-on: ubuntu-latest
@@ -186,7 +205,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [build, android]
+    needs: [build, android, app-test]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
