@@ -32,9 +32,12 @@ void setUp(void) {
     Config.vibration_mode = Depletion;
 
     fake_pressure = 0;
-    fake_time_us = 3600LL * 1000000;  // an hour after boot, well past any edge delay
+    // An hour on from the last test (the first starts an hour after boot, well past any edge
+    // delay). The clock never runs backwards.
+    fake_time_us += 3600LL * 1000000;
+    orgasm_control_set_output_mode(OC_MANUAL);  // init alone leaves the last test's session running
     orgasm_control_init();
-    run_s(1);
+    run_s(30);  // in Manual, long enough for the last test's arousal to fade
 }
 
 void tearDown(void) {}
@@ -69,10 +72,87 @@ static void test_endless_from_manual_with_the_slider_up_ramps(void) {
     assert_endless_ramps_from_initial();
 }
 
+// Pressure rises by `height` above `rest` and falls back: a contraction worth `height` arousal.
+static void pressure_peak(uint16_t rest, uint16_t height) {
+    fake_pressure = rest + height;
+    run_ms(200);
+    fake_pressure = rest;
+    run_ms(100);
+}
+
+// Endless, running long enough for edges to count (past minimum_on_time).
+static void start_endless(void) {
+    orgasm_control_set_output_mode(OC_AUTOMATIC);
+    run_s(5);
+    TEST_ASSERT_GREATER_THAN_MESSAGE(0, orgasm_control_get_pleasure(), "pleasure before the edge");
+}
+
+// ---- Edge detection
+
+static void test_arousal_over_the_edge_threshold_is_denied(void) {
+    start_endless();
+    pressure_peak(0, 1500);  // edge threshold 1024
+    TEST_ASSERT_EQUAL_MESSAGE(0, orgasm_control_get_pleasure(), "pleasure after the edge");
+    TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.motor, "motor reported after the edge");
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.denied, "denials");
+    TEST_ASSERT_EQUAL_MESSAGE(OC_AUTOMATIC, orgasm_control_get_output_mode(), "mode");
+}
+
+static void test_arousal_under_the_edge_threshold_is_not_denied(void) {
+    start_endless();
+    pressure_peak(0, 600);
+    TEST_ASSERT_GREATER_THAN_MESSAGE(0, orgasm_control_get_pleasure(), "pleasure");
+    TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.denied, "denials");
+    TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.cooldown, "cooldown");
+}
+
+static void test_each_edge_is_one_more_denial(void) {
+    Config.edge_delay = 2;
+    start_endless();
+    for (int i = 1; i <= 3; i++) {
+        pressure_peak(0, 1500);
+        TEST_ASSERT_EQUAL_MESSAGE(i, fake_snapshot.denied, "denials");
+        run_s(8);  // cooldown over, stimulation back on and past minimum_on_time
+    }
+}
+
+static void test_ramp_stop_stops_at_an_edge(void) {
+    Config.vibration_mode = RampStop;
+    start_endless();
+    pressure_peak(0, 1500);
+    TEST_ASSERT_EQUAL_MESSAGE(0, orgasm_control_get_pleasure(), "pleasure after the edge");
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.denied, "denials");
+}
+
+// Enhancement goes the other way: pleasure jumps to the maximum at an edge.
+static void test_enhancement_goes_to_max_at_an_edge(void) {
+    Config.vibration_mode = Enhancement;
+    Config.max_pleasure = 200;
+    start_endless();
+    pressure_peak(0, 1500);
+    TEST_ASSERT_EQUAL_MESSAGE(200, orgasm_control_get_pleasure(), "pleasure after the edge");
+    TEST_ASSERT_EQUAL_MESSAGE(1, fake_snapshot.denied, "denials");
+}
+
+static void test_no_edge_before_minimum_on_time(void) {
+    Config.minimum_on_time = 5;
+    orgasm_control_set_output_mode(OC_AUTOMATIC);
+    run_s(2);
+    pressure_peak(0, 1500);
+    TEST_ASSERT_GREATER_THAN_MESSAGE(0, orgasm_control_get_pleasure(), "pleasure");
+    TEST_ASSERT_EQUAL_MESSAGE(0, fake_snapshot.denied, "denials");
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_endless_from_a_fresh_start_ramps);
     RUN_TEST(test_endless_after_a_finished_session_ramps_again);
     RUN_TEST(test_endless_from_manual_with_the_slider_up_ramps);
+    RUN_TEST(test_arousal_over_the_edge_threshold_is_denied);
+    RUN_TEST(test_arousal_under_the_edge_threshold_is_not_denied);
+    RUN_TEST(test_each_edge_is_one_more_denial);
+    RUN_TEST(test_ramp_stop_stops_at_an_edge);
+    RUN_TEST(test_enhancement_goes_to_max_at_an_edge);
+    RUN_TEST(test_no_edge_before_minimum_on_time);
     return UNITY_END();
 }
