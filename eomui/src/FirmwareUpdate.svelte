@@ -1,28 +1,13 @@
 <script lang="ts">
-  // Firmware update over BLE. The protocol is described in src/include/system/ble_ota.h.
-  import { Capacitor } from '@capacitor/core';
-  import { BleClient, ConnectionPriority } from '@capacitor-community/bluetooth-le';
+  // Firmware update over BLE: a release found by Check for updates, or a firmware.bin chosen by hand.
+  import { bleUploader, readDeviceInfo, OtaResult, type DeviceInfo, type UploadStage } from './lib/firmwareUpload';
+  import { checkForUpdate, downloadRelease, RELEASES_URL, type ManifestEntry } from './lib/firmwareRelease';
 
   interface Props {
     deviceId: string | null;
     connected: boolean;
   }
   let { deviceId, connected }: Props = $props();
-
-  const SERVICE_UUID = "00006969-0000-1000-8000-00805f9b34fb";
-  const CONTROL_CHAR = "0000696d-0000-1000-8000-00805f9b34fb";
-  const DATA_CHAR = "0000696e-0000-1000-8000-00805f9b34fb";
-
-  const CMD_BEGIN = 0x01;
-  const CMD_ABORT = 0x02;
-  const EVT_READY = 0x01;
-  const EVT_PROGRESS = 0x02;
-  const EVT_RESEND = 0x03;
-  const EVT_RESULT = 0x04;
-
-  const WINDOW = 16 * 1024; // BLE_OTA_WINDOW
-  const ERASE_TIMEOUT_MS = 90_000;
-  const EVENT_TIMEOUT_MS = 30_000;
 
   // Layout of the signed firmware.bin (see src/system/ota.c and tools/sign_firmware.py)
   const APP_DESC_OFFSET = 32; // esp_image_header_t + esp_image_segment_header_t
@@ -32,49 +17,48 @@
   const SIG_TRAILER_LEN = 128;
   const SIG_MAGIC = "EOMSIG1";
 
-  type DeviceInfo = { version: string; board: string; mtu: number; maxSize: number; confirmed: boolean };
   type ImageInfo = { version: string; board: string; signed: boolean };
 
   let info = $state(null) as DeviceInfo | null;
-  let image = $state(null) as Uint8Array | null;
+  let image = $state(null) as Uint8Array | null; // a hand-picked file that passed the checks
   let imageInfo = $state(null) as ImageInfo | null;
+  let offer = $state(null) as ManifestEntry | null; // a newer release found by Check for updates
   let allowDowngrade = $state(false);
+  let checking = $state(false);
   let busy = $state(false);
   let progress = $state(0); // 0..1
   let status = $state("");
-
-  let sent = 0;
-  let acked = 0;
-  let resends = 0; // bumped on every RESEND, so an in-flight write knows its chunk was dropped
-  let result: number | null = null;
-  let wake: (() => void) | null = null;
+  let checkGeneration = 0; // bumped when the EOM changes, so a check still running for the old one is dropped
 
   const errors: Record<number, string> = {
-    0x103: "The EOM is busy, or still checking the firmware it last installed. Try again in 30 seconds.",
-    0x104: "This file is the wrong size for the EOM.",
-    0x107: "The transfer timed out.",
-    0x10a: "This is older than the installed firmware. Tick \"Allow downgrade\" to install it anyway.",
-    0x1503: "The EOM rejected this file: it isn't signed firmware for this board.",
+    [OtaResult.BUSY]: "The EOM is busy, or still checking the firmware it last installed. Try again in 30 seconds.",
+    [OtaResult.WRONG_SIZE]: "This file is the wrong size for the EOM.",
+    [OtaResult.TIMEOUT]: "The transfer timed out.",
+    [OtaResult.OLDER]: "This is older than the installed firmware. Tick \"Allow downgrade\" to install it anyway.",
+    [OtaResult.NOT_SIGNED_FOR_BOARD]: "The EOM rejected this file: it isn't signed firmware for this board.",
+  };
+
+  // A release is signed with the release key, so an EOM that refuses one was built and signed by someone else.
+  const releaseErrors: Record<number, string> = {
+    [OtaResult.NOT_SIGNED_FOR_BOARD]:
+      "This EOM runs its own build, so it only accepts firmware signed with the same key. Install your own build, or flash a release over USB once.",
+  };
+
+  const stages: Record<UploadStage, string> = {
+    preparing: "Preparing the EOM…",
+    sending: "Sending firmware…",
+    verifying: "Verifying…",
   };
 
   $effect(() => {
+    checkGeneration++;
+    offer = null;
     if (connected && deviceId) {
-      readInfo(deviceId);
+      readDeviceInfo(deviceId).then((value) => (info = value));
     } else {
       info = null;
     }
   });
-
-  async function readInfo(id: string) {
-    try {
-      const value = await BleClient.read(id, SERVICE_UUID, CONTROL_CHAR);
-      info = JSON.parse(new TextDecoder().decode(value));
-    } catch (error) {
-      // Firmware from before BLE updates has no control characteristic.
-      console.log("No firmware update support:", error);
-      info = null;
-    }
-  }
 
   function cString(bytes: Uint8Array, offset: number, length: number): string {
     const slice = bytes.subarray(offset, offset + length);
@@ -94,6 +78,16 @@
     };
   }
 
+  // The checks every image gets before it goes to the EOM, wherever it came from.
+  // Returns why the EOM can't take it, or null if it can.
+  function imageProblem(parsed: ImageInfo | null, bytes: Uint8Array): string | null {
+    if (!parsed) return "That isn't an EOM firmware file (firmware.bin from the build).";
+    if (!parsed.signed) return "This firmware isn't signed, so the EOM won't install it.";
+    if (info && parsed.board !== info.board) return `This firmware is for ${parsed.board}, but this EOM is ${info.board}.`;
+    if (info && bytes.length > info.maxSize) return "This firmware is too big for the EOM.";
+    return null;
+  }
+
   async function chooseFile(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
     status = "";
@@ -102,118 +96,92 @@
     if (!file) return;
     const bytes = new Uint8Array(await file.arrayBuffer());
     imageInfo = parseImage(bytes);
-    if (!imageInfo) {
-      status = "That isn't an EOM firmware file (firmware.bin from the build).";
-    } else if (!imageInfo.signed) {
-      status = "This firmware isn't signed, so the EOM won't install it.";
-    } else if (info && imageInfo.board !== info.board) {
-      status = `This firmware is for ${imageInfo.board}, but this EOM is ${info.board}.`;
-    } else if (info && bytes.length > info.maxSize) {
-      status = "This firmware is too big for the EOM.";
+    const problem = imageProblem(imageInfo, bytes);
+    if (problem) {
+      status = problem;
     } else {
       image = bytes;
     }
   }
 
-  function onEvent(value: DataView) {
-    const event = value.getUint8(0);
-    const err = value.getInt32(1, true);
-    const arg = value.getUint32(5, true);
-    if (event === EVT_PROGRESS) {
-      acked = arg;
-      progress = image ? arg / image.length : 0;
-    } else if (event === EVT_RESEND) {
-      console.log(`Firmware update: resending from ${arg}`);
-      sent = arg;
-      resends++;
-    } else if (event === EVT_RESULT) {
-      result = err;
+  async function check() {
+    if (!info) return;
+    const installed = info;
+    const generation = checkGeneration;
+    checking = true;
+    offer = null;
+    status = "Checking for updates…";
+    try {
+      const choice = await checkForUpdate(installed, { fetch: (url) => fetch(url, { cache: "no-cache" }), baseUrl: RELEASES_URL });
+      if (generation !== checkGeneration) return;
+      if (choice.kind === "offer") {
+        offer = choice.entry;
+        status = `${choice.entry.version} is available.`;
+      } else if (choice.kind === "up-to-date") {
+        status = `This EOM is up to date (${installed.version}).`;
+      } else {
+        status = `There's no release for this EOM's board (${installed.board}).`;
+      }
+    } catch (error: any) {
+      console.error("Check for updates failed:", error);
+      if (generation === checkGeneration) status = error?.message ?? String(error);
+    } finally {
+      checking = false;
     }
-    // EVT_READY needs no handling beyond waking the sender.
-    wake?.();
   }
 
-  function waitForEvent(ms: number): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        wake = null;
-        reject(new Error("timeout"));
-      }, ms);
-      wake = () => {
-        clearTimeout(timer);
-        wake = null;
-        resolve();
-      };
-    });
-  }
+  type InstallOptions = {
+    allowDowngrade: boolean;
+    messages: Record<number, string>; // overrides for the EOM's result codes
+  };
 
-  function errorMessage(err: number): string {
-    return errors[err] ?? `The update failed (error 0x${(err >>> 0).toString(16)}).`;
-  }
-
-  async function startUpdate() {
-    if (!deviceId || !image || !info) return;
-    const id = deviceId;
-    const bytes = image;
+  // Sends the image to the EOM, reporting progress in the panel. Leaves the panel idle whatever happens.
+  async function install(getImage: () => Promise<Uint8Array>, options: InstallOptions) {
+    if (!deviceId || !info) return;
+    const uploader = bleUploader(deviceId, info);
     busy = true;
     progress = 0;
-    sent = 0;
-    acked = 0;
-    result = null;
-
     try {
-      await BleClient.startNotifications(id, SERVICE_UUID, CONTROL_CHAR, onEvent);
-      if (Capacitor.getPlatform() === "android") {
-        await BleClient.requestConnectionPriority(id, ConnectionPriority.CONNECTION_PRIORITY_HIGH).catch(() => {});
+      const bytes = await getImage();
+      const result = await uploader.upload(bytes, {
+        allowDowngrade: options.allowDowngrade,
+        onProgress: (fraction, stage) => {
+          progress = fraction;
+          status = stages[stage];
+        },
+      });
+      if (result !== OtaResult.OK) {
+        const message = options.messages[result] ?? errors[result];
+        throw new Error(message ?? `The update failed (error 0x${(result >>> 0).toString(16)}).`);
       }
-
-      status = "Preparing the EOM…";
-      const begin = new DataView(new ArrayBuffer(6));
-      begin.setUint8(0, CMD_BEGIN);
-      begin.setUint32(1, bytes.length, true);
-      begin.setUint8(5, allowDowngrade ? 0x01 : 0x00);
-      // Listen before writing: a refusal can arrive as soon as the write is acknowledged.
-      const ready = waitForEvent(ERASE_TIMEOUT_MS);
-      await BleClient.write(id, SERVICE_UUID, CONTROL_CHAR, begin);
-      await ready;
-      if (result !== null) throw new Error(errorMessage(result));
-
-      // Runs until the RESULT event: a RESEND can still rewind after the last chunk went out.
-      const chunkSize = info.mtu - 3 - 4; // ATT header, offset
-      while (result === null) {
-        if (sent >= bytes.length || sent - acked >= WINDOW) {
-          status = acked >= bytes.length ? "Verifying…" : "Sending firmware…";
-          await waitForEvent(EVENT_TIMEOUT_MS);
-          continue;
-        }
-        status = "Sending firmware…";
-        const offset = sent;
-        const n = Math.min(chunkSize, bytes.length - offset);
-        const packet = new Uint8Array(4 + n);
-        new DataView(packet.buffer).setUint32(0, offset, true);
-        packet.set(bytes.subarray(offset, offset + n), 4);
-        const generation = resends;
-        await BleClient.writeWithoutResponse(id, SERVICE_UUID, DATA_CHAR, new DataView(packet.buffer));
-        if (generation === resends) sent = offset + n;
-      }
-      if (result !== 0) throw new Error(errorMessage(result));
-
       progress = 1;
       status = "Firmware installed. The EOM is restarting; reconnect in a few seconds.";
       image = null;
       imageInfo = null;
+      offer = null;
     } catch (error: any) {
       console.error("Firmware update failed:", error);
-      status = error?.message === "timeout" ? errorMessage(0x107) : (error?.message ?? String(error));
-      if (connected) {
-        const abort = new DataView(new Uint8Array([CMD_ABORT]).buffer);
-        await BleClient.write(id, SERVICE_UUID, CONTROL_CHAR, abort).catch(() => {});
-      }
+      status = error?.message ?? String(error);
     } finally {
-      await BleClient.stopNotifications(id, SERVICE_UUID, CONTROL_CHAR).catch(() => {});
-      wake = null;
       busy = false;
     }
+  }
+
+  function installFile() {
+    const bytes = image;
+    if (bytes) install(async () => bytes, { allowDowngrade, messages: {} });
+  }
+
+  function installRelease() {
+    const entry = offer;
+    if (!entry) return;
+    install(async () => {
+      status = `Downloading ${entry.version}…`;
+      const bytes = await downloadRelease(entry, { fetch: (url) => fetch(url) });
+      const problem = imageProblem(parseImage(bytes), bytes);
+      if (problem) throw new Error(problem);
+      return bytes;
+    }, { allowDowngrade: false, messages: releaseErrors });
   }
 </script>
 
@@ -227,7 +195,11 @@
   {#if !info.confirmed}
     <p>The EOM is still checking its new firmware. Updates are possible in about 30 seconds.</p>
   {/if}
-  <input type="file" accept=".bin" disabled={busy} onchange={chooseFile} />
+  <button onclick={check} disabled={busy || checking}>Check for updates</button>
+  {#if offer}
+    <button onclick={installRelease} disabled={busy || checking || !info.confirmed}>Install {offer.version}</button>
+  {/if}
+  <input type="file" accept=".bin" disabled={busy || checking} onchange={chooseFile} />
   {#if imageInfo}
     <p>File: {imageInfo.version} ({imageInfo.board})</p>
   {/if}
@@ -235,7 +207,7 @@
     <input type="checkbox" bind:checked={allowDowngrade} disabled={busy} />
     Allow downgrade
   </label>
-  <button onclick={startUpdate} disabled={busy || !image || !info.confirmed}>Install</button>
+  <button onclick={installFile} disabled={busy || checking || !image || !info.confirmed}>Install</button>
   {#if busy || progress > 0}
     <progress value={progress} max="1" style="width: 100%;"></progress>
   {/if}
