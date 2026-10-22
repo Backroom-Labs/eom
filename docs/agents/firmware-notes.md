@@ -7,6 +7,7 @@ Gotchas that the code and config don't show. The Bluetooth/WebSocket protocol, f
 - **M5Stack Atom Echo**: env `m5stack_atom_echo`, board `m5stack-atom`, 4 MB flash, SK6812 LED on G27, pressure on Grove G32 (`ADC_CHANNEL_4`).
 - It has no pressure sensor, so test with the pressure simulator build (README, "Testing without a pressure sensor"). A normal upload puts the real sensor code back, and switching the flag rebuilds everything.
 - Serial is `/dev/cu.usbserial-*`. Read boot logs with pyserial from `~/.platformio/penv/bin/python`, toggling RTS to reset the board.
+- Hardware test scripts: `tools/serial_log.py` (reset and read serial), `eomui/scripts/wifi_ota.ts` (drive Wi-Fi OTA in modes `update`, `interrupt`, `busy`, `stray`) and `eomui/scripts/confirmed.ts` (wait until the new firmware is confirmed); usage at the top of each.
 - `gatt_svc.c` logs every control write at error level, so the app's 1 Hz heart rate fills the serial log. Known and left as is.
 
 ## Build
