@@ -7,6 +7,7 @@
   import FirmwareUpdate, { type UpdateLink } from "./FirmwareUpdate.svelte";
   import Gauge from "./lib/Gauge.svelte";
   import SettingControl from "./lib/SettingControl.svelte";
+  import PresetPicker from "./lib/PresetPicker.svelte";
   import SessionHistory from "./lib/SessionHistory.svelte";
   import { Recorder, listSessions, suggestHeartRate, suggestThreshold, type SessionSummary } from "./lib/history";
   import { O2Ring, type RingReading } from "./lib/o2ring";
@@ -379,7 +380,8 @@
     await BleClient.write(btDeviceId, BT_SERVICE_UUID, BT_CONTROL_CHAR, new DataView(bytes.buffer));
   }
 
-  function changeSetting(key: string, value: SettingValue) {
+  // Resolves to false if a Bluetooth write failed. Loading a preset reports failures together, so it passes quiet.
+  async function changeSetting(key: string, value: SettingValue, quiet = false): Promise<boolean> {
     const def = SETTINGS_BY_KEY[key];
     const previous = config[key];
     config[key] = value;
@@ -391,12 +393,16 @@
       socket.send(JSON.stringify({ configSet: { [key]: wire } }));
     } else if (isBtConnected) {
       const enc = new TextEncoder();
-      btWrite(new Uint8Array([BT_CMD_SET_CONFIG, ...enc.encode(key), 0x3a, ...enc.encode(toWire(value))])).catch((err) => {
+      try {
+        await btWrite(new Uint8Array([BT_CMD_SET_CONFIG, ...enc.encode(key), 0x3a, ...enc.encode(toWire(value))]));
+      } catch (err) {
         console.error("Error sending setting via Bluetooth:", err);
         config[key] = previous;
-        showToast(`Couldn't change ${def?.label ?? key}`, "error");
-      });
+        if (!quiet) showToast(`Couldn't change ${def?.label ?? key}`, "error");
+        return false;
+      }
     }
+    return true;
   }
 
   function sendCommand(command: "setMode" | "setMotor" | "triggerArousal" | "resetDenied", value: number | string | null = null) {
@@ -1333,6 +1339,19 @@
     {#each SETTINGS_TABS as tab}
       <!-- Inactive tabs stay mounted (hidden) so a firmware update keeps running when switching. -->
       <div role="tabpanel" hidden={settingsTab !== tab.id}>
+        {#if tab.id === "session"}
+          <section class="group">
+            <h3>Presets</h3>
+            <p class="muted">Save the Session, Stimulation, Detection, Clench and Heart rate settings under a name, and load them later. Saved in this browser only.</p>
+            <PresetPicker
+              {config}
+              canSave={configLoaded}
+              canLoad={connected && configLoaded && !locked}
+              change={(key, value) => changeSetting(key, value, true)}
+              notify={showToast}
+            />
+          </section>
+        {/if}
         {#each tab.groups as groupId}
           {@const group = SETTING_GROUPS.find((g) => g.id === groupId)}
           {#if group}

@@ -117,11 +117,11 @@ While a toy is connected, the top of the main screen shows it with its level and
   <img src="doc/screenshots/settings-calibration.png" width="260" alt="Detection settings and calibration">
 </p>
 
-Every device setting is in the app, grouped into tabs.  Changes are sent to the device straight away and saved there, over Bluetooth or Wi-Fi.  Settings marked as needing a restart can be applied with **Restart device**.
+Every device setting is in the app, grouped into tabs.  Changes are sent to the device straight away and saved there, over Bluetooth or Wi-Fi.  Settings marked as needing a restart can be applied with **Restart device**.  **Presets** at the top of the Session tab save the Session, Stimulation, Detection, Clench and Heart rate settings under a name in this phone or browser, so you can load them again later; Safety and Connectivity settings are left as they are.
 
 |Tab|What's in it|
 |---|---|
-|**Session**|Algorithm, edging time and denials before orgasm, what happens after an orgasm, rest between orgasms, orgasms per session, settings lock during Orgasm mode|
+|**Session**|**Presets**, algorithm, edging time and denials before orgasm, what happens after an orgasm, rest between orgasms, orgasms per session, settings lock during Orgasm mode|
 |**Stimulation**|Maximum and starting intensity, ramp time, edge cooldown, random extra cooldown, minimum on time|
 |**Detection**|Edge and warning thresholds, sensor gain, pressure smoothing, update rate, **Calibration** (resting pressure, suggested threshold)|
 |**Clench**|Clench detection and orgasm detection, post-orgasm duration, settings lock after an orgasm, **Follow resting pressure**|
@@ -446,7 +446,6 @@ This is a product of the open source community.  This will always be open source
 Planned:
 - "Check for updates" in the app, and firmware updates over Wi-Fi
 - Atom Echo button (stop/start, change mode, unlock settings)
-- Presets: save and load your settings under a name
 - Timed programs, e.g. 20 minutes of edging then a random chance of an orgasm, or a denial lottery
 - Keyholder mode: a PIN for settings and mode changes, and a view-only second connection
 
