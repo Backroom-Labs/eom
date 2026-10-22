@@ -135,6 +135,43 @@ Sets vibration speed. Will enter manual mode.
 ```
  
 
+### `otaInfo`
+Asks what the EOM runs, before a firmware update (3.8.0). The reply is `otaInfo` below.
+
+**Example:**
+```json
+"otaInfo": null
+```
+ 
+
+### `otaBegin`
+Starts a firmware update (3.8.0). The EOM erases the inactive app partition, then sends an `ota` `ready` event. Send
+the signed `firmware.bin` in **binary frames**, each a 4-byte little-endian offset followed by up to 4096 image bytes,
+keeping no more than 16384 bytes beyond the last `progress` value in flight. Only one update runs at a time, over
+Wi-Fi or Bluetooth; a second is refused with a `result` of 259 (0x103). Closing the connection cancels the update.
+
+**Arguments:**
+
+|Argument|Type|Description|
+|---|---|---|
+|size|Numeric|Image size in bytes|
+|allowDowngrade|Boolean|Install an older version (optional, default false)|
+
+**Example:**
+```json
+"otaBegin": { "size": 1273328, "allowDowngrade": false }
+```
+ 
+
+### `otaAbort`
+Cancels the update this client started.
+
+**Example:**
+```json
+"otaAbort": null
+```
+ 
+
 ## Server Responses
 Your application should be prepared to handle these messages streamed from the server. The actual data may change as 
 this is a printed document and not live documentation. See GitHub for more up-to-date details.
@@ -246,3 +283,34 @@ and is used for providing real-time updates to your application.
 }
 ```
 
+
+### `otaInfo`
+Reply to `otaInfo`.
+
+|Parameter|Type|Description|
+|---|---|---|
+|version|String|Installed firmware version|
+|board|String|Board the firmware was built for (the PlatformIO environment)|
+|maxSize|Numeric|Largest image the EOM can take|
+|confirmed|Boolean|False while new firmware is still on probation (about 30 s after an update), when updates are refused|
+
+**Example:**
+```json
+"otaInfo": { "version": "3.8.0", "board": "m5stack_atom_echo", "maxSize": 1966080, "confirmed": true }
+```
+
+### `ota`
+Firmware update events, sent to the client that sent `otaBegin`. They match the Bluetooth update protocol
+(`src/include/system/ble_ota.h`).
+
+|Event|Value|Meaning|
+|---|---|---|
+|`ready`|0|Partition erased; send the image from offset 0|
+|`progress`|Bytes written|Written to flash so far|
+|`resend`|Offset|Resume sending from this offset (after a gap, or a stall)|
+|`result`|0|`error` 0: installed, the EOM restarts in a second. Otherwise the update failed and is over: 259 (0x103) busy or still on probation, 260 (0x104) wrong size, 263 (0x107) timed out, 266 (0x10a) older than installed, 5379 (0x1503) not signed with this EOM's key|
+
+**Example:**
+```json
+"ota": { "event": "progress", "error": 0, "value": 16384 }
+```

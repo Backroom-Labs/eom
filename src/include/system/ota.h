@@ -10,10 +10,10 @@
 extern "C" {
 #endif
 
-// Transport-independent firmware update session (used by both the BLE and WiFi OTA paths).
+// Writes and checks a firmware update (system/ota_transfer.h feeds it, for both BLE and Wi-Fi).
 //
 // Usage: ota_begin() -> ota_write() for every chunk, in order -> ota_end() -> esp_restart().
-// Any error aborts the session; the caller just reports it. Only one session can run at a time.
+// Any error aborts the update; the caller just reports it. Only one update can run at a time.
 //
 // The image is the signed firmware.bin from the build (see tools/sign_firmware.py): ota_end() only
 // accepts it if its signature matches the public key compiled into the running firmware.
@@ -58,6 +58,12 @@ ota_status_t ota_get_status(void);
 
 // Board this firmware was built for (the PlatformIO environment name).
 const char* ota_get_board(void);
+
+// False while newly installed firmware is still on probation, during which updates are refused.
+bool ota_firmware_confirmed(void);
+
+// The largest image the inactive app partition can take.
+size_t ota_max_image_size(void);
 
 #ifdef __cplusplus
 }

@@ -10,6 +10,7 @@
 #include "polyfill.h"
 #include "system/http_server.h"
 #include "system/ota.h"
+#include "system/ota_transfer.h"
 #include "version.h"
 #include "wifi_manager.h"
 #include <esp_https_ota.h>
@@ -281,6 +282,8 @@ void app_main() {
     ESP_LOGI(TAG, "LED initialization returned.");
     orgasm_control_init();
     ESP_LOGI(TAG, "Orgasm control initialization returned.");
+    // Before Bluetooth and Wi-Fi, which both take updates through it.
+    ota_transfer_init();
 
     if (MOTOR1_ENABLED || MOTOR2_ENABLED) {
         eom_hal_init_motor();

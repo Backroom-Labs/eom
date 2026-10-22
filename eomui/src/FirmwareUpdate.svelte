@@ -1,13 +1,17 @@
 <script lang="ts">
-  // Firmware update over BLE: a release found by Check for updates, or a firmware.bin chosen by hand.
-  import { bleUploader, readDeviceInfo, OtaResult, type DeviceInfo, type UploadStage } from './lib/firmwareUpload';
+  // Firmware update over BLE or Wi-Fi: a release found by Check for updates, or a firmware.bin chosen by hand.
+  import { OtaResult, type DeviceInfo, type FirmwareUploader, type UploadStage } from './lib/otaProtocol';
+  import { bleUploader, readBleDeviceInfo } from './lib/bleUpload';
+  import { readWsDeviceInfo, wsUploader, type OtaSocket } from './lib/wsUpload';
   import { checkForUpdate, downloadRelease, RELEASES_URL, type ManifestEntry } from './lib/firmwareRelease';
 
+  // How the app is connected to the EOM, or null.
+  export type UpdateLink = { kind: "ble"; deviceId: string } | { kind: "ws"; socket: OtaSocket };
+
   interface Props {
-    deviceId: string | null;
-    connected: boolean;
+    link: UpdateLink | null;
   }
-  let { deviceId, connected }: Props = $props();
+  let { link }: Props = $props();
 
   // Layout of the signed firmware.bin (see src/system/ota.c and tools/sign_firmware.py)
   const APP_DESC_OFFSET = 32; // esp_image_header_t + esp_image_segment_header_t
@@ -53,8 +57,13 @@
   $effect(() => {
     checkGeneration++;
     offer = null;
-    if (connected && deviceId) {
-      readDeviceInfo(deviceId).then((value) => (info = value));
+    if (link) {
+      const current = link;
+      const reading = current.kind === "ble" ? readBleDeviceInfo(current.deviceId) : readWsDeviceInfo(current.socket);
+      // Ignore the answer if the connection changed meanwhile.
+      reading.then((value) => {
+        if (link === current) info = value;
+      });
     } else {
       info = null;
     }
@@ -137,8 +146,8 @@
 
   // Sends the image to the EOM, reporting progress in the panel. Leaves the panel idle whatever happens.
   async function install(getImage: () => Promise<Uint8Array>, options: InstallOptions) {
-    if (!deviceId || !info) return;
-    const uploader = bleUploader(deviceId, info);
+    if (!link || !info) return;
+    const uploader: FirmwareUploader = link.kind === "ble" ? bleUploader(link.deviceId, info) : wsUploader(link.socket);
     busy = true;
     progress = 0;
     try {
@@ -186,8 +195,10 @@
 </script>
 
 <h3>Firmware update</h3>
-{#if !connected}
-  <p>Connect over Bluetooth to update the firmware.</p>
+{#if !link}
+  <p>Connect to the EOM to update its firmware.</p>
+{:else if !info && link.kind === "ws"}
+  <p>This EOM's firmware can't be updated over Wi-Fi. Update it over Bluetooth, or flash it over USB once.</p>
 {:else if !info}
   <p>This EOM's firmware can't be updated over Bluetooth. Flash it over USB once to enable updates.</p>
 {:else}

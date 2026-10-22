@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "system/websocket_handler.h"
+#include "system/ws_ota.h"
 #include "util/fs.h"
 #include "esp_wifi.h"
 #include <stdlib.h>
@@ -144,6 +145,7 @@ esp_err_t http_server_init(void) {
     esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &disconnect_handler, &_server);
 
     api_register_all();
+    ws_ota_register();
     return ESP_OK;
 }
 

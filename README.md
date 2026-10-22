@@ -48,6 +48,7 @@ You could use the app by itself to control multiple sex toys at once without an 
 
 |Version|What changed|
 |---|---|
+|**3.8.0**|**Check for updates** in the app installs the newest release for your board.  [Firmware updates](#updating-the-device) over Wi-Fi as well as Bluetooth.|
 |**3.6.0**|[Detailed recording](#session-history-and-auto-calibration) of the raw pressure at full speed, with a detailed CSV export.  [Arousal fade time and arousal memory](#arousal-fade-and-memory) settings for the quiet spells between contractions.|
 |**3.5.0**|[Heart rate](#heart-rate) from a Wellue/Viatom O2Ring (including the SleepHQ O2 Ring Pro): shown live, recorded in history, and optionally used for cooldowns, edge detection, orgasm detection and a safety stop. A time axis on the live chart.|
 |**3.4.0**|[Session history](#session-history-and-auto-calibration) with charts, stats and CSV export. Automatic calibration that follows your resting pressure, and a suggested edge threshold based on your past sessions.|
@@ -275,11 +276,11 @@ Firmware can be updated over Bluetooth from the app, or over USB from PlatformIO
 
 |What|Where it lives|Updated by|
 |---|---|---|
-|Firmware (all code in `src/`, plus a built-in copy of `data/config.json`)|app partition|The app over Bluetooth, or `Upload` (`pio run -e <board> -t upload`)|
+|Firmware (all code in `src/`, plus a built-in copy of `data/config.json`)|app partition|The app over Bluetooth or Wi-Fi, or `Upload` (`pio run -e <board> -t upload`)|
 |Filesystem: `config.json`, `server.crt`, `server.key`|SPIFFS partition|`Upload Filesystem Image` (`pio run -e <board> -t uploadfs`)|
 |Settings saved from the app|NVS + SPIFFS|The app, or overwritten as described below|
 
-**Firmware updates over Bluetooth.**  Once a device runs firmware with Bluetooth update support (flash it over USB once), you can update the firmware from the app: connect over Bluetooth, open **Settings > Device**, and under *Firmware update* choose a `firmware.bin`, either `.pio/build/<your board>/firmware.bin` from your own build or a `firmware-<board>.bin` from a [GitHub release](https://github.com/backroom-labs/eom/releases).  The filesystem (`config.json`, certificates) and your settings are not touched by these updates.
+**Firmware updates from the app.**  Once a device runs firmware with update support (flash it over USB once; Wi-Fi updates need 3.8.0 or later), you can update the firmware from the app over Bluetooth or Wi-Fi: connect, open **Settings > Device**, and under *Firmware update* press **Check for updates** to install the newest release for your board (an EOM on a beta is offered betas too), or choose a `firmware.bin`, either `.pio/build/<your board>/firmware.bin` from your own build or a `firmware-<board>.bin` from a [GitHub release](https://github.com/backroom-labs/eom/releases).  Only one update runs at a time, whichever connection started it.  The filesystem (`config.json`, certificates) and your settings are not touched by these updates.
 
 **Firmware signing.**  Every build signs `firmware.bin` with an ECDSA key that is generated into `keys/` on your first build (requires `openssl`; see [tools/gen_signing_keys.py](tools/gen_signing_keys.py)).  The device will only accept over-the-air updates signed with the same key as the firmware it is running, so **back up `keys/`**: it is not committed to git, and if you lose it, devices have to be updated over USB once more.  This also means a device running your own build only accepts your own builds, and a device running a release only accepts releases.  The device also checks that the image is for the same board and is not older than what it's running.  New firmware that crashes or stops running within 30 seconds of its first boot is rolled back automatically.
 
@@ -360,6 +361,8 @@ Newer firmware adds these to the readings, over both WebSocket (`readings`) and 
 
 Bluetooth control commands: `0x02` change a setting (saved), `0x04` save and restart, `0x05` set the simulated pressure (simulator builds only), `0x06 <bpm>` heart rate from an external sensor.  Over WebSocket the heart rate is `{"heartRate": <bpm>}`.
 
+Firmware updates use the same commands, events and result codes over both connections, and the app downloads and checks the image itself (the EOM never fetches firmware).  Bluetooth: [src/include/system/ble_ota.h](src/include/system/ble_ota.h).  WebSocket (3.8.0): `{"otaInfo": null}` reports the version, board, largest image and whether the running firmware is confirmed; `{"otaBegin": {"size": <bytes>, "allowDowngrade": false}}` starts an update; the image follows in binary frames of a 4-byte little-endian offset plus up to 4096 bytes; `{"otaAbort": null}` cancels; and the EOM answers with `{"ota": {"event": "ready" | "progress" | "resend" | "result", "error": <code>, "value": <n>}}`.  See [src/include/system/ws_ota.h](src/include/system/ws_ota.h).
+
 New settings since 3.0.0:
 
 |Key|Default|App label|
@@ -410,7 +413,7 @@ This project was first vastly simplified then expanded with compatibility in min
 
 Some notable differences are:
 - Runs on nearly any ESP32 board!  DIY friendly
-- Connects through bluetooth low energy, and firmware updates over bluetooth
+- Connects through bluetooth low energy, and firmware updates over Bluetooth or Wi-Fi
 - Orgasm mode available in the app (denies orgasms until timer runs out), with Ruin, Post-orgasm and Milking endings
 - Maximum denial count, so you get to finish after X number of edges
 - App hosted as a PWA (or Android/iOS app) and phone friendly, with session history

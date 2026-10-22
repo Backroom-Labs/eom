@@ -11,9 +11,10 @@ Gotchas that the code and config don't show. The Bluetooth/WebSocket protocol, f
 
 ## Build
 
-- Only `esp32dev` and `m5stack_atom_echo` are enabled in `platformio.ini`, so CI builds only those two (issue #15).
+- `pio` isn't on the PATH: run `~/.platformio/penv/bin/pio`.
+- `esp32dev`, `m5stack_atom_echo` and `esp32-s3-devkitm-1` are enabled in `platformio.ini`, so CI builds those three (issues #15, #35).
 - `sdkconfig.<env>` files are git-ignored and regenerated on each build. Put sdkconfig changes in `sdkconfig.defaults` or `sdkconfig.defaults.esp32`.
-- Classic ESP32 IRAM is tight: about 690 B free on ESP-IDF 5.5.2. Check IRAM usage after adding code that runs from interrupts.
+- Classic ESP32 IRAM is tight: 688 B free on `m5stack_atom_echo` with Wi-Fi OTA (ESP-IDF 5.5.2, 2026-10-22). The last `heap_init` line in the boot log (`At 4009FD50 len 000002B0 ... IRAM`) shows it. Check after adding code that runs from interrupts.
 - RMT DMA exists only on S3/P4, so `configure_led_2812` enables it only `#if SOC_RMT_SUPPORT_DMA`. Without that guard, other WS2812 boards boot-loop.
 - The first build with a new ESP-IDF can fail creating its venv (`~/.platformio/penv/.espidf-<ver>`). Rerun the build or delete that folder.
 - After deleting `dependencies.lock`, build the envs one at a time (`pio run -e X`, twice).
@@ -30,4 +31,7 @@ Gotchas that the code and config don't show. The Bluetooth/WebSocket protocol, f
 - A new image is confirmed after it has run the control loop for 30 s; otherwise it rolls back.
 - The BLE OTA protocol is documented in `src/include/system/ble_ota.h`. The BLE address is derived from the MAC plus a hash of the GATT layout, so changing the GATT table changes the address, and unbonded clients re-read the table.
 - `8mb_spiffs.csv` app slots are 3.9 MB each. 8 MB boards needed a full erase once after OTA phase 0.
-- Wi-Fi OTA (phase 2) isn't built yet: issue #61 (ADR 0012).
+- A change to how chunks are accepted or resent goes in `ota_rx.c` (host-tested), not in `ble_ota.c` or `ws_ota.c`: both transports feed `ota_transfer.c` (ADR 0012).
+- Each update allocates a 20 KB receive buffer and an 8 KB task stack. The log line "Heap after the transfer" shows the headroom: on the Echo over `ws://` with BLE on, 49 KB free at the end of a transfer and 24 KB the lowest since boot (2026-10-22). `wss://` adds the TLS session on top, so check this again once it works.
+- Wi-Fi OTA over `ws://` sends a 1.27 MB image in 20 to 25 s. Binary frames over `WS_OTA_MAX_FRAME` close the connection.
+- With `use_ssl` on, the EOM serves only `wss://` on port 443. If TLS fails you can't reach it over Wi-Fi to turn it back off: use Bluetooth. On the test Echo, `wss://` handshakes fail with `mbedtls_x509_crt_parse ... -0x3D00` (2026-10-22, issue #38), so Wi-Fi OTA over `wss://` is untested.

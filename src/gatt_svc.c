@@ -574,7 +574,6 @@ int gatt_svc_init(void) {
 
     /* 1. GATT service initialization */
     ble_svc_gatt_init();
-    ble_ota_init();
 
     /* 2. Update GATT services counter */
     rc = ble_gatts_count_cfg(gatt_svr_svcs);
